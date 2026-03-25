@@ -197,6 +197,100 @@ class ImageProcessingService:
             }
 
     # ------------------------------------------------------------------
+    # Reference image library (processed/ directory)
+    # ------------------------------------------------------------------
+
+    def scan_ref_images(self, use_counts: dict) -> List[dict]:
+        """List images in PROCESSED_DIR with use counts from DB."""
+        results = []
+        try:
+            with os.scandir(self.processed_dir) as entries:
+                for entry in entries:
+                    if not entry.is_file():
+                        continue
+                    if Path(entry.name).suffix.lower() not in IMAGE_EXTENSIONS:
+                        continue
+                    try:
+                        stat = entry.stat()
+                        count = use_counts.get(str(entry.path), 0)
+                        results.append({
+                            "filename": entry.name,
+                            "path": str(entry.path),
+                            "size_bytes": stat.st_size,
+                            "modified_at": stat.st_mtime,
+                            "thumbnail_url": f"/api/workspace/ref-images/{entry.name}/thumbnail",
+                            "use_count": count,
+                            "is_used": count > 0,
+                        })
+                    except OSError:
+                        continue
+        except OSError as e:
+            logger.error(f"Error scanning processed dir: {e}")
+        results.sort(key=lambda x: x["modified_at"], reverse=True)
+        return results
+
+    def save_ref_image(self, filename: str, data: bytes) -> str:
+        """Save image bytes directly to PROCESSED_DIR with ref_ prefix. Returns dest path."""
+        ext = Path(filename).suffix.lower()
+        if ext not in IMAGE_EXTENSIONS:
+            raise ValueError(f"Unsupported file type: {ext}")
+        timestamp = int(time.time())
+        unique_id = uuid.uuid4().hex[:8]
+        dest_name = f"ref_{timestamp}_{unique_id}{ext}"
+        dest_path = self.processed_dir / dest_name
+        dest_path.write_bytes(data)
+        logger.info(f"Saved ref image: {dest_path}")
+        return str(dest_path)
+
+    def delete_ref_image(self, filename: str) -> None:
+        """Delete a ref image from PROCESSED_DIR. Also removes its thumbnail cache."""
+        target = self.processed_dir / filename
+        if not target.exists():
+            raise FileNotFoundError(f"Ref image not found: {filename}")
+        target.unlink()
+        thumb = self.processed_dir / ".thumbnails" / f"thumb_{filename}"
+        if thumb.exists():
+            thumb.unlink()
+        logger.info(f"Deleted ref image: {filename}")
+
+    def get_ref_image_thumbnail(self, filename: str) -> Optional[bytes]:
+        """Generate or return cached thumbnail for a ref image."""
+        from PIL import Image
+        import io
+
+        original_path = self.processed_dir / filename
+        if not original_path.exists():
+            return None
+
+        thumb_dir = self.processed_dir / ".thumbnails"
+        thumb_dir.mkdir(exist_ok=True)
+        thumb_path = thumb_dir / f"thumb_{filename}"
+
+        if thumb_path.exists() and thumb_path.stat().st_mtime >= original_path.stat().st_mtime:
+            return thumb_path.read_bytes()
+
+        try:
+            with Image.open(original_path) as img:
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=85)
+                data = buf.getvalue()
+                thumb_path.write_bytes(data)
+                return data
+        except Exception as e:
+            logger.error(f"Ref image thumbnail failed for {filename}: {e}")
+            return None
+
+    def get_ref_image_bytes(self, filename: str) -> Optional[bytes]:
+        """Return raw bytes of a ref image."""
+        path = self.processed_dir / filename
+        if not path.exists():
+            return None
+        return path.read_bytes()
+
+    # ------------------------------------------------------------------
     # Input image thumbnail (served directly)
     # ------------------------------------------------------------------
 

@@ -10,8 +10,19 @@ class InputImage(BaseModel):
     thumbnail_url: str
 
 
+class RefImage(BaseModel):
+    filename: str
+    path: str
+    size_bytes: int
+    modified_at: float
+    thumbnail_url: str
+    use_count: int
+    is_used: bool
+
+
 class ProcessImageRequest(BaseModel):
     image_path: str
+    skip_prepare: bool = False  # True when image_path is already in PROCESSED_DIR
     persona: str
     workflow_type: str = "turbo"
     vision_model: str = "gpt-4o"
@@ -27,6 +38,7 @@ class ProcessImageRequest(BaseModel):
 
 class ProcessBatchRequest(BaseModel):
     image_paths: List[str]
+    skip_prepare: bool = False
     persona: str
     workflow_type: str = "turbo"
     vision_model: str = "gpt-4o"

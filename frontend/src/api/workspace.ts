@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { InputImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord } from '@/types'
+import type { InputImage, RefImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord } from '@/types'
 
 export const workspaceApi = {
   getInputImages: () =>
@@ -8,10 +8,10 @@ export const workspaceApi = {
   getThumbnailUrl: (filename: string) =>
     `/api/workspace/input-images/${filename}/thumbnail`,
 
-  process: (config: ProcessImageConfig) =>
+  process: (config: ProcessImageConfig & { skip_prepare?: boolean }) =>
     apiClient.post<{ task_id: string }>('/workspace/process', config).then(r => r.data),
 
-  processBatch: (imagePaths: string[], sharedConfig: Omit<ProcessImageConfig, 'image_path'>) =>
+  processBatch: (imagePaths: string[], sharedConfig: Omit<ProcessImageConfig, 'image_path'> & { skip_prepare?: boolean }) =>
     apiClient.post<{ task_ids: string[] }>('/workspace/process-batch', {
       image_paths: imagePaths,
       ...sharedConfig,
@@ -22,4 +22,23 @@ export const workspaceApi = {
 
   getExecutions: (params?: { limit?: number; status?: string }) =>
     apiClient.get<ExecutionRecord[]>('/workspace/executions', { params }).then(r => r.data),
+
+  // Ref image library
+  getRefImages: () =>
+    apiClient.get<RefImage[]>('/workspace/ref-images').then(r => r.data),
+
+  getRefImageThumbnailUrl: (filename: string) =>
+    `/api/workspace/ref-images/${encodeURIComponent(filename)}/thumbnail`,
+
+  getRefImageUrl: (filename: string) =>
+    `/api/workspace/ref-images/${encodeURIComponent(filename)}`,
+
+  uploadRefImages: (files: File[]) => {
+    const form = new FormData()
+    files.forEach(f => form.append('files', f))
+    return apiClient.post<RefImage[]>('/workspace/ref-images/upload', form).then(r => r.data)
+  },
+
+  deleteRefImage: (filename: string) =>
+    apiClient.delete(`/workspace/ref-images/${encodeURIComponent(filename)}`).then(r => r.data),
 }

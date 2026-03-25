@@ -10,6 +10,7 @@ from fastapi.websockets import WebSocket, WebSocketDisconnect
 from backend.api.deps import get_image_processing_service, get_image_logs_storage
 from backend.models.workspace import (
     InputImage,
+    RefImage,
     ProcessImageRequest,
     ProcessBatchRequest,
     TaskStatusResponse,
@@ -71,6 +72,7 @@ def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depen
             height=body.height,
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
+            prepare=not body.skip_prepare,
         )
         return {"task_id": task_id}
     except FileNotFoundError as e:
@@ -95,10 +97,68 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
             height=body.height,
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
+            prepare=not body.skip_prepare,
         )
         return {"task_ids": task_ids}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# Reference image library (processed/ directory)
+# ------------------------------------------------------------------
+
+@router.get("/ref-images", response_model=List[RefImage])
+def list_ref_images(
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+    storage: ImageLogsStorage = Depends(get_image_logs_storage),
+):
+    use_counts = storage.get_ref_path_use_counts()
+    return svc.scan_ref_images(use_counts)
+
+
+@router.post("/ref-images/upload", response_model=List[RefImage])
+async def upload_ref_images(
+    files: List[UploadFile] = File(...),
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+    storage: ImageLogsStorage = Depends(get_image_logs_storage),
+):
+    """Upload images directly into PROCESSED_DIR as reusable ref images."""
+    for f in files:
+        data = await f.read()
+        try:
+            svc.save_ref_image(f.filename or "upload", data)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    use_counts = storage.get_ref_path_use_counts()
+    return svc.scan_ref_images(use_counts)
+
+
+@router.delete("/ref-images/{filename}")
+def delete_ref_image(filename: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    try:
+        svc.delete_ref_image(filename)
+        return {"deleted": filename}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/ref-images/{filename}/thumbnail")
+def ref_image_thumbnail(filename: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    data = svc.get_ref_image_thumbnail(filename)
+    if not data:
+        raise HTTPException(status_code=404, detail="Ref image not found")
+    return Response(content=data, media_type="image/jpeg")
+
+
+@router.get("/ref-images/{filename}")
+def ref_image_full(filename: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    data = svc.get_ref_image_bytes(filename)
+    if not data:
+        raise HTTPException(status_code=404, detail="Ref image not found")
+    suffix = Path(filename).suffix.lower()
+    media_type = "image/png" if suffix == ".png" else "image/jpeg"
+    return Response(content=data, media_type=media_type)
 
 
 @router.get("/task/{task_id}/status", response_model=TaskStatusResponse)

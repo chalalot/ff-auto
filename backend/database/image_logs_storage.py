@@ -226,6 +226,24 @@ class ImageLogsStorage:
         finally:
             conn.close()
 
+    def get_ref_path_use_counts(self) -> dict:
+        """Return {image_ref_path: count} for all non-null ref paths."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT image_ref_path, COUNT(*) as cnt
+                FROM image_logs
+                WHERE image_ref_path IS NOT NULL
+                GROUP BY image_ref_path
+            """)
+            return {row[0]: row[1] for row in cursor.fetchall()}
+        except Exception as e:
+            logger.error(f"Failed to get ref path use counts: {e}")
+            return {}
+        finally:
+            conn.close()
+
     def get_all_completed_executions(self):
         """Get all completed executions (where result_image_path is not null)."""
         conn = self._get_connection()

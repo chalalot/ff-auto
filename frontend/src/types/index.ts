@@ -32,6 +32,16 @@ export interface LastUsedConfig {
 }
 
 // Workspace types
+export interface RefImage {
+  filename: string
+  path: string
+  size_bytes: number
+  modified_at: number
+  thumbnail_url: string
+  use_count: number
+  is_used: boolean
+}
+
 export interface InputImage {
   filename: string
   path: string
@@ -65,13 +75,14 @@ export interface TaskStatusResponse {
 }
 
 export interface ExecutionRecord {
+  id: number
   execution_id: string
   prompt?: string
   persona?: string
+  image_ref_path?: string
+  result_image_path?: string
   status: string
   created_at: string
-  ref_image?: string
-  result_path?: string
 }
 
 // Gallery types

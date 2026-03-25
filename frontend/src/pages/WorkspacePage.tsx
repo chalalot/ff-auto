@@ -15,8 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload } from 'lucide-react'
-import type { ProcessImageConfig, TaskStatusResponse } from '@/types'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, BookImage, Info, X } from 'lucide-react'
+import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord } from '@/types'
 
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
@@ -36,8 +36,13 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
 export const WorkspacePage: React.FC = () => {
   const queryClient = useQueryClient()
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
+  // Ref library: selected paths from processed/ dir (mutually exclusive with selectedImages)
+  const [selectedRefPaths, setSelectedRefPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
+  // Metadata captured at dispatch time so cards can show ref thumbnail + config info
+  const [taskMeta, setTaskMeta] = useState<Record<string, { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }>>({})
+
 
   // Fetch data
   const { data: inputImages = [], isLoading: imagesLoading, refetch: refetchImages } =
@@ -51,6 +56,11 @@ export const WorkspacePage: React.FC = () => {
   const { data: executions = [] } = useQuery({
     queryKey: ['workspace', 'executions'],
     queryFn: () => workspaceApi.getExecutions({ limit: 20 }),
+  })
+
+  const { data: refImages = [], refetch: refetchRefImages } = useQuery({
+    queryKey: ['workspace', 'ref-images'],
+    queryFn: workspaceApi.getRefImages,
   })
 
   // Load last used config on mount
@@ -80,20 +90,36 @@ export const WorkspacePage: React.FC = () => {
     }
   }, [personas, config.persona])
 
-  // Process mutation
+  // Process mutation — supports both input queue (prepare=true) and ref library (skip_prepare=true)
   const processMutation = useMutation({
     mutationFn: async () => {
-      const paths = Array.from(selectedImages)
+      const usingRef = selectedRefPaths.size > 0
+      const paths = usingRef ? Array.from(selectedRefPaths) : Array.from(selectedImages)
+      const extra = usingRef ? { skip_prepare: true } : {}
+      let taskIds: string[]
       if (paths.length === 1) {
-        const result = await workspaceApi.process({ ...config, image_path: paths[0] })
-        return [result.task_id]
+        const result = await workspaceApi.process({ ...config, image_path: paths[0], ...extra })
+        taskIds = [result.task_id]
       } else {
-        const result = await workspaceApi.processBatch(paths, config)
-        return result.task_ids
+        const result = await workspaceApi.processBatch(paths, { ...config, ...extra })
+        taskIds = result.task_ids
       }
+      return { taskIds, refPaths: usingRef ? paths : [], configSnapshot: { ...config } }
     },
-    onSuccess: async (taskIds) => {
+    onSuccess: async ({ taskIds, refPaths, configSnapshot }) => {
       setActiveTaskIds(prev => [...prev, ...taskIds])
+      // Store meta per task so cards can show ref thumbnail + info
+      setTaskMeta(prev => {
+        const next = { ...prev }
+        taskIds.forEach((id, i) => {
+          next[id] = {
+            refImagePath: refPaths[i] ?? refPaths[0],
+            persona: configSnapshot.persona,
+            config: configSnapshot,
+          }
+        })
+        return next
+      })
       // Save last used config
       await configApi.saveLastUsed({
         persona: config.persona,
@@ -128,6 +154,7 @@ export const WorkspacePage: React.FC = () => {
   }
 
   const toggleImage = (path: string) => {
+    setSelectedRefPaths(new Set()) // clear ref selection
     setSelectedImages(prev => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
@@ -136,8 +163,45 @@ export const WorkspacePage: React.FC = () => {
     })
   }
 
-  const selectAll = () => setSelectedImages(new Set(inputImages.map(i => i.path)))
-  const clearSelection = () => setSelectedImages(new Set())
+  const toggleRefImage = (path: string) => {
+    setSelectedImages(new Set()) // clear input queue selection
+    setSelectedRefPaths(prev => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  const selectAll = () => { setSelectedRefPaths(new Set()); setSelectedImages(new Set(inputImages.map(i => i.path))) }
+  const clearSelection = () => { setSelectedImages(new Set()); setSelectedRefPaths(new Set()) }
+
+  const [uploadingRef, setUploadingRef] = useState(false)
+  const handleRefUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploadingRef(true)
+    try {
+      await workspaceApi.uploadRefImages(Array.from(files))
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
+    } finally {
+      setUploadingRef(false)
+    }
+  }
+
+  const deleteRefMutation = useMutation({
+    mutationFn: (filename: string) => workspaceApi.deleteRefImage(filename),
+    onSuccess: (_, filename) => {
+      setSelectedRefPaths(prev => {
+        const next = new Set(prev)
+        // Remove any selected path whose filename matches
+        for (const p of next) {
+          if (p.endsWith('/' + filename) || p === filename) next.delete(p)
+        }
+        return next
+      })
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
+    },
+  })
 
   return (
     <div className="flex h-full">
@@ -281,16 +345,19 @@ export const WorkspacePage: React.FC = () => {
         <div className="p-4 border-b flex items-center justify-between">
           <h1 className="text-xl font-bold">Workspace</h1>
           <div className="flex items-center gap-2">
+            {selectedRefPaths.size > 0 && (
+              <Badge variant="outline" className="border-amber-500 text-amber-600">{selectedRefPaths.size} ref selected</Badge>
+            )}
             {selectedImages.size > 0 && (
               <Badge variant="secondary">{selectedImages.size} selected</Badge>
             )}
             <Button
               onClick={() => processMutation.mutate()}
-              disabled={selectedImages.size === 0 || processMutation.isPending}
+              disabled={(selectedImages.size === 0 && selectedRefPaths.size === 0) || processMutation.isPending}
               isLoading={processMutation.isPending}
             >
               <Play className="w-4 h-4 mr-2" />
-              Process {selectedImages.size > 0 ? `(${selectedImages.size})` : ''}
+              Process {(selectedImages.size + selectedRefPaths.size) > 0 ? `(${selectedImages.size + selectedRefPaths.size})` : ''}
             </Button>
           </div>
         </div>
@@ -298,6 +365,10 @@ export const WorkspacePage: React.FC = () => {
         <Tabs defaultValue="queue" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="mx-4 mt-4 w-fit">
             <TabsTrigger value="queue">Input Queue ({inputImages.length})</TabsTrigger>
+            <TabsTrigger value="reflibrary">
+              <BookImage className="w-3.5 h-3.5 mr-1.5" />
+              Ref Library ({refImages.length})
+            </TabsTrigger>
             <TabsTrigger value="history">Execution History</TabsTrigger>
             <TabsTrigger value="tasks">Active Tasks ({activeTaskIds.length})</TabsTrigger>
           </TabsList>
@@ -383,6 +454,52 @@ export const WorkspacePage: React.FC = () => {
             )}
           </TabsContent>
 
+          {/* Ref Library Tab */}
+          <TabsContent value="reflibrary" className="flex-1 overflow-auto px-4 pb-4">
+            {/* Upload zone */}
+            <label
+              className="flex flex-col items-center justify-center w-full mb-4 p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); void handleRefUpload(e.dataTransfer.files) }}
+            >
+              <input
+                type="file"
+                className="hidden"
+                accept=".png,.jpg,.jpeg,.webp"
+                multiple
+                onChange={(e) => void handleRefUpload(e.target.files)}
+              />
+              {uploadingRef ? (
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
+              ) : (
+                <BookImage className="w-6 h-6 text-muted-foreground mb-2" />
+              )}
+              <p className="text-sm text-muted-foreground">
+                {uploadingRef ? 'Uploading...' : 'Upload directly to ref library'}
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP</p>
+            </label>
+
+            <div className="flex items-center gap-2 mb-3">
+              <Button variant="outline" size="sm" onClick={() => refetchRefImages()}>
+                <RefreshCw className="w-4 h-4 mr-2" />Refresh
+              </Button>
+              {selectedRefPaths.size > 0 && (
+                <Button variant="ghost" size="sm" onClick={() => setSelectedRefPaths(new Set())}>
+                  <Square className="w-4 h-4 mr-2" />Clear selection
+                </Button>
+              )}
+            </div>
+
+            <RefImageLibrary
+              images={refImages}
+              selectedPaths={selectedRefPaths}
+              onToggle={toggleRefImage}
+              onDelete={(filename) => deleteRefMutation.mutate(filename)}
+              deletingFilename={deleteRefMutation.isPending ? (deleteRefMutation.variables as string) : null}
+            />
+          </TabsContent>
+
           {/* Execution History Tab */}
           <TabsContent value="history" className="flex-1 overflow-auto px-4 pb-4">
             <div className="space-y-2">
@@ -393,22 +510,7 @@ export const WorkspacePage: React.FC = () => {
                 </div>
               ) : (
                 executions.map(exec => (
-                  <Card key={exec.execution_id}>
-                    <CardContent className="p-3 flex items-center justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{exec.execution_id}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {exec.persona} • {formatDistanceToNow(new Date(exec.created_at), { addSuffix: true })}
-                        </p>
-                      </div>
-                      <Badge variant={
-                        exec.status === 'completed' ? 'success' :
-                        exec.status === 'failed' ? 'destructive' : 'secondary'
-                      }>
-                        {exec.status}
-                      </Badge>
-                    </CardContent>
-                  </Card>
+                  <ExecutionCard key={exec.execution_id} exec={exec} />
                 ))
               )}
             </div>
@@ -424,7 +526,7 @@ export const WorkspacePage: React.FC = () => {
                 </div>
               ) : (
                 activeTaskIds.map(taskId => (
-                  <TaskCard key={taskId} taskId={taskId} onDone={() => {
+                  <TaskCard key={taskId} taskId={taskId} meta={taskMeta[taskId]} onDone={() => {
                     setActiveTaskIds(prev => prev.filter(id => id !== taskId))
                     queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
                   }} />
@@ -438,8 +540,136 @@ export const WorkspacePage: React.FC = () => {
   )
 }
 
+// ------------------------------------------------------------------
+// Ref Image Library component
+// ------------------------------------------------------------------
+const RefImageLibrary: React.FC<{
+  images: RefImage[]
+  selectedPaths: Set<string>
+  onToggle: (path: string) => void
+  onDelete: (filename: string) => void
+  deletingFilename: string | null
+}> = ({ images, selectedPaths, onToggle, onDelete, deletingFilename }) => {
+  const unused = images.filter(i => !i.is_used)
+  const used = images.filter(i => i.is_used)
+
+  if (images.length === 0) {
+    return (
+      <div className="text-center py-16 text-muted-foreground">
+        <BookImage className="w-12 h-12 mx-auto mb-4 opacity-50" />
+        <p>No ref images yet</p>
+        <p className="text-xs mt-1">Process an input image or upload directly above</p>
+      </div>
+    )
+  }
+
+  const renderGrid = (items: RefImage[]) => (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+      {items.map(img => {
+        const isSelected = selectedPaths.has(img.path)
+        const isDeleting = deletingFilename === img.filename
+        return (
+          <div
+            key={img.filename}
+            className={`relative rounded-lg border-2 overflow-hidden transition-all
+              ${isSelected ? 'border-amber-500 shadow-md' : 'border-transparent hover:border-muted-foreground/30'}
+              ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
+          >
+            <div
+              className="aspect-square bg-muted cursor-pointer"
+              onClick={() => onToggle(img.path)}
+            >
+              <img
+                src={workspaceApi.getRefImageThumbnailUrl(img.filename)}
+                alt={img.filename}
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+            <div className="p-2 flex items-start justify-between gap-1">
+              <div className="min-w-0 flex-1 cursor-pointer" onClick={() => onToggle(img.path)}>
+                <p className="text-xs truncate font-medium">{img.filename}</p>
+                {img.use_count > 0 && (
+                  <p className="text-xs text-muted-foreground">{img.use_count}× used</p>
+                )}
+              </div>
+              <button
+                className="shrink-0 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                onClick={(e) => { e.stopPropagation(); onDelete(img.filename) }}
+                title="Delete"
+              >
+                {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            {isSelected && (
+              <div className="absolute top-2 right-2 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center">
+                <CheckSquare className="w-3 h-3 text-white" />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      {unused.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/40 inline-block" />
+            Unused ({unused.length})
+          </h3>
+          {renderGrid(unused)}
+        </div>
+      )}
+      {used.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+            Used ({used.length})
+          </h3>
+          {renderGrid(used)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------
+// Shared helpers
+// ------------------------------------------------------------------
+function refFilenameFromPath(refPath?: string): string | null {
+  if (!refPath) return null
+  return refPath.split('/').pop() ?? null
+}
+
+// ------------------------------------------------------------------
+// Info Modal — lightweight overlay (no Dialog component available)
+// ------------------------------------------------------------------
+const InfoModal: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div
+      className="bg-card border rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] flex flex-col"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between p-4 border-b shrink-0">
+        <h3 className="font-semibold text-sm">{title}</h3>
+        <button className="text-muted-foreground hover:text-foreground transition-colors" onClick={onClose}>
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+      <div className="overflow-y-auto p-4 space-y-3 text-sm">{children}</div>
+    </div>
+  </div>
+)
+
+// ------------------------------------------------------------------
 // Task progress card component
-const TaskCard: React.FC<{ taskId: string; onDone: () => void }> = ({ taskId, onDone }) => {
+// ------------------------------------------------------------------
+type TaskMeta = { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }
+
+const TaskCard: React.FC<{ taskId: string; meta?: TaskMeta; onDone: () => void }> = ({ taskId, meta, onDone }) => {
   const { data: task } = useTaskProgress(taskId)
 
   React.useEffect(() => {
@@ -460,33 +690,179 @@ const TaskCard: React.FC<{ taskId: string; onDone: () => void }> = ({ taskId, on
     </Card>
   )
 
+  return <TaskCardDisplay task={task} taskId={taskId} meta={meta} />
+}
+
+const TaskCardDisplay: React.FC<{ task: TaskStatusResponse; taskId: string; meta?: TaskMeta }> = ({ task, taskId, meta }) => {
+  const [showInfo, setShowInfo] = useState(false)
+  const refFilename = refFilenameFromPath(meta?.refImagePath)
+
   return (
-    <TaskCardDisplay task={task} taskId={taskId} />
+    <>
+      <Card className={task.state === 'FAILURE' ? 'border-destructive' : task.state === 'SUCCESS' ? 'border-success' : ''}>
+        <CardContent className="p-3 flex gap-3">
+          {/* Ref image thumbnail */}
+          {refFilename && (
+            <div className="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-muted border">
+              <img
+                src={workspaceApi.getRefImageThumbnailUrl(refFilename)}
+                alt="ref"
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-xs text-muted-foreground truncate">{taskId}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                {meta && (
+                  <button
+                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={() => setShowInfo(true)}
+                    title="Show dispatch info"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <Badge variant={
+                  task.state === 'SUCCESS' ? 'success' :
+                  task.state === 'FAILURE' ? 'destructive' :
+                  'secondary'
+                }>
+                  {task.state}
+                </Badge>
+              </div>
+            </div>
+            <p className="text-sm">{task.status_message}</p>
+            {task.progress !== undefined && task.progress > 0 && (
+              <div className="space-y-1">
+                <Progress value={task.progress} className="h-2" />
+                <p className="text-xs text-right text-muted-foreground">{Math.round(task.progress)}%</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {showInfo && meta && (
+        <InfoModal title="Dispatch config" onClose={() => setShowInfo(false)}>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            {Object.entries({
+              Persona: meta.persona,
+              Workflow: meta.config.workflow_type,
+              'Vision model': meta.config.vision_model,
+              'CLIP model': meta.config.clip_model_type,
+              Variations: meta.config.variation_count,
+              Strength: meta.config.strength,
+              'Seed strategy': meta.config.seed_strategy,
+              ...(meta.config.seed_strategy === 'fixed' ? { 'Base seed': meta.config.base_seed } : {}),
+              Width: meta.config.width,
+              Height: meta.config.height,
+              LoRA: meta.config.lora_name || '—',
+            }).map(([k, v]) => (
+              <React.Fragment key={k}>
+                <span className="text-muted-foreground">{k}</span>
+                <span className="font-medium">{String(v)}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          {meta.refImagePath && (
+            <div className="mt-3 pt-3 border-t">
+              <p className="text-xs text-muted-foreground mb-1">Ref image</p>
+              <p className="text-xs font-mono break-all">{meta.refImagePath}</p>
+            </div>
+          )}
+        </InfoModal>
+      )}
+    </>
   )
 }
 
-const TaskCardDisplay: React.FC<{ task: TaskStatusResponse; taskId: string }> = ({ task, taskId }) => {
+// ------------------------------------------------------------------
+// Execution history card
+// ------------------------------------------------------------------
+const ExecutionCard: React.FC<{ exec: ExecutionRecord }> = ({ exec }) => {
+  const [showInfo, setShowInfo] = useState(false)
+  const refFilename = refFilenameFromPath(exec.image_ref_path)
+
   return (
-    <Card className={task.state === 'FAILURE' ? 'border-destructive' : task.state === 'SUCCESS' ? 'border-success' : ''}>
-      <CardContent className="p-4 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-xs text-muted-foreground truncate">{taskId}</span>
-          <Badge variant={
-            task.state === 'SUCCESS' ? 'success' :
-            task.state === 'FAILURE' ? 'destructive' :
-            'secondary'
-          }>
-            {task.state}
-          </Badge>
-        </div>
-        <p className="text-sm">{task.status_message}</p>
-        {task.progress !== undefined && task.progress > 0 && (
-          <div className="space-y-1">
-            <Progress value={task.progress} className="h-2" />
-            <p className="text-xs text-right text-muted-foreground">{Math.round(task.progress)}%</p>
+    <>
+      <Card>
+        <CardContent className="p-3 flex gap-3 items-start">
+          {/* Ref image thumbnail */}
+          {refFilename ? (
+            <div className="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-muted border">
+              <img
+                src={workspaceApi.getRefImageThumbnailUrl(refFilename)}
+                alt="ref"
+                className="w-full h-full object-cover"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+              />
+            </div>
+          ) : (
+            <div className="shrink-0 w-12 h-12 rounded-md bg-muted border flex items-center justify-center">
+              <ImageIcon className="w-4 h-4 text-muted-foreground/40" />
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-medium truncate">{exec.execution_id}</p>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setShowInfo(true)}
+                  title="Show execution info"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                </button>
+                <Badge variant={
+                  exec.status === 'completed' ? 'success' :
+                  exec.status === 'failed' ? 'destructive' : 'secondary'
+                }>
+                  {exec.status}
+                </Badge>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {exec.persona} • {formatDistanceToNow(new Date(exec.created_at), { addSuffix: true })}
+            </p>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {showInfo && (
+        <InfoModal title="Execution info" onClose={() => setShowInfo(false)}>
+          {exec.prompt ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Prompt sent to ComfyUI</p>
+              <pre className="text-xs bg-muted rounded-lg p-3 whitespace-pre-wrap break-words font-mono leading-relaxed">
+                {exec.prompt}
+              </pre>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No prompt recorded.</p>
+          )}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs border-t pt-3">
+            {[
+              ['Persona', exec.persona ?? '—'],
+              ['Status', exec.status],
+              ['Created', new Date(exec.created_at).toLocaleString()],
+            ].map(([k, v]) => (
+              <React.Fragment key={k}>
+                <span className="text-muted-foreground">{k}</span>
+                <span className="font-medium">{v}</span>
+              </React.Fragment>
+            ))}
+          </div>
+          {exec.image_ref_path && (
+            <div className="border-t pt-3">
+              <p className="text-xs text-muted-foreground mb-1">Ref image path</p>
+              <p className="text-xs font-mono break-all">{exec.image_ref_path}</p>
+            </div>
+          )}
+        </InfoModal>
+      )}
+    </>
   )
 }
