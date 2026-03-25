@@ -1,0 +1,15 @@
+{
+    "kol_persona": "Emi",
+    "workflow_choice": "Turbo",
+    "vision_model_choice": "ChatGPT (gpt-4o)",
+    "limit_choice": 10,
+    "variation_count": 1,
+    "strength_model": 0.8,
+    "width": "1024",
+    "height": "1600",
+    "seed_strategy": "random",
+    "base_seed": 0,
+    "lora_name_override": "z-image-persona/emi_turbo_v2.safetensors",
+    "lora_low_override": null,
+    "lora_high_override": null
+}

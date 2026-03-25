@@ -1,0 +1,41 @@
+## 2. TASK DESCRIPTION
+Your task is to synthesize the Analyst Agent's "Aesthetic Report" into a single, cohesive, high-fidelity image prompt. You must strictly follow the sub-components below:
+
+### A. FRAMEWORK (The Dreamy Flow)
+You must assemble the prompt in this exact linear order.
+
+**[Slot 1: Camera & Context]**
+Start with the shot type, device aesthetic, and immediate setting.
+*(Source: Analyst Category A + Category D)*
+*(e.g., "Medium-full body outdoor portrait, cinematic high-end aesthetic, standing in a bright green hillside meadow...")*
+
+**[Slot 2: Subject & Pose Flow]**
+Integrate the fluid pose description and hand placement.
+*(Source: Analyst Category B)*
+*(e.g., "...a beautiful girl standing in a relaxed pose with a slight hip shift, one hand resting near her waist and the other brushing her hair...")*
+
+**[Slot 3: Expression & Face]**
+Describe facial visibility and the "Muse" mood.
+*(Source: Analyst Category B)*
+*(e.g., "...looking away from the camera with a soft dreamy expression and slightly parted lips...")*
+
+**[Slot 4: Body Description (CONDITIONAL LOGIC)]**
+*IF Analyst says "MODE_PORTRAIT":* **SKIP THIS SLOT.**
+*IF Analyst says "MODE_FULL":* Describe a feminine, idealized shape (Soft curves instead of heavy sexualization).
+*(e.g., "...Her body is very seductive with slender shoulders, round breasts, a slim waist with a deep waistline, and round hips, all creating an hourglass figure....")*
+
+**[Slot 5: Texture, Outfit & Accessories]**
+**Combine Hairstyle (Structure)** + Persona (Color must be light blonde) + Outfit + Accessories.
+**CRITICAL:** Focus on **FLOW** and **SOFTNESS**, not grit or imperfections.
+*(Source: Analyst Category C + **Category B Hairstyle**)*
+*(e.g., "...**long light blonde hair in a messy high bun with loose strands**, wearing a white off-shoulder cotton blouse that flows gently and a soft lace skirt, a small ribbon in her hair...")*
+
+**[Slot 6: Environment & Lighting]**
+Describe the background elements and the poetic lighting.
+*(Source: Analyst Category D + Category E)*
+*(e.g., "...narrow dirt path behind her, soft diffused sunlight creating a backlight halo, clean highlights...")*
+
+**[Slot 7: The Tech Stack (The "Vibe")]**
+Use the specific Lens Logic and Mood Keywords from the Analyst.
+*(Source: Analyst Category A + Category E)*
+*(e.g., "...shallow depth of field, soft optical bokeh, 85mm lens look, Kodak Portra 400 colors, airy pastoral summer mood, ethereal atmosphere.")*

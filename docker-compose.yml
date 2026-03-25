@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Sorted:/app/Sorted
+      - ./processed:/app/processed
+      - ./results:/app/results
+      - ./prompts:/app/prompts
+      - ./image_logs.db:/app/image_logs.db
+      - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+    env_file:
+      - .env
+    environment:
+      - CELERY_BROKER_URL=redis://global-redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
+      - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+    networks:
+      - ff-shared-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - ff-shared-net
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.celery_app worker -B --loglevel=info --concurrency=2
+    volumes:
+      - ./Sorted:/app/Sorted
+      - ./processed:/app/processed
+      - ./results:/app/results
+      - ./prompts:/app/prompts
+      - ./image_logs.db:/app/image_logs.db
+      - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+    env_file:
+      - .env
+    environment:
+      - CELERY_BROKER_URL=redis://global-redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
+      - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+    networks:
+      - ff-shared-net
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+networks:
+  ff-shared-net:
+    external: true

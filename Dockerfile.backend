@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+# System deps: ffmpeg for moviepy, gcc for some pip builds
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ ./backend/
+COPY prompts/ ./prompts/
+COPY workflow.json ./workflow.json
+
+# Directories that will be bind-mounted in production;
+# create them so the app starts cleanly without mounts too.
+RUN mkdir -p Sorted processed results
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PROMPTS_DIR=/app/prompts \
+    INPUT_DIR=/app/Sorted \
+    PROCESSED_DIR=/app/processed \
+    OUTPUT_DIR=/app/results
+
+EXPOSE 8000

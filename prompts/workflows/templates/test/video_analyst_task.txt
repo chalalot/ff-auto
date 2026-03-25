@@ -1,0 +1,14 @@
+Analyze the source image at: {image_path}
+
+Describe in detail:
+1. The Character (Hair, Face, Body, Outfit - BE EXACT).
+2. The Setting/Background.
+3. The Lighting and Mood.
+4. The Current Action/Pose.
+
+IMPORTANT: Output your analysis wrapped in [VISUAL_ANCHOR] tags.
+
+Example Format:
+[VISUAL_ANCHOR]
+The character is a young woman with long blonde hair...
+[/VISUAL_ANCHOR]

@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/trung/Work/ff-automation-captioning/**)",
+      "Bash(for d:*)",
+      "Bash(do touch:*)",
+      "Bash(done)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/database/image_logs_storage.py /Users/trung/Work/ff-auto/backend/database/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/database/video_logs_storage.py /Users/trung/Work/ff-auto/backend/database/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/database/runs_posts_storage.py /Users/trung/Work/ff-auto/backend/database/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/database/db_utils.py /Users/trung/Work/ff-auto/backend/database/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/utils/constants.py /Users/trung/Work/ff-auto/backend/utils/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/third_parties/comfyui_client.py /Users/trung/Work/ff-auto/backend/third_parties/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/third_parties/comfyui_queue_manager.py /Users/trung/Work/ff-auto/backend/third_parties/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/third_parties/gcs_client.py /Users/trung/Work/ff-auto/backend/third_parties/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/third_parties/kling_client.py /Users/trung/Work/ff-auto/backend/third_parties/)",
+      "Bash(cp /Users/trung/Work/ff-automation-captioning/src/tools/vision_tool.py /Users/trung/Work/ff-auto/backend/tools/)",
+      "Bash(python3 -:*)",
+      "Bash(pip install:*)",
+      "Bash(python3 -m pip show fastapi)",
+      "Bash(python3 -c \"import sys; print\\(sys.version, sys.prefix\\)\")",
+      "Bash(pip3 install:*)",
+      "Bash(conda run -n base python3 -c \":*)",
+      "Bash(conda run:*)",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Read(//Users/trung/.claude/skills/**)",
+      "Edit(~/.claude/skills/tutor/**)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss:*)",
+      "Bash(./node_modules/.bin/tailwindcss init:*)",
+      "Bash(npx tailwindcss@3 init -p)",
+      "Bash(npm run:*)",
+      "Bash(ls /Users/trung/Work/ff-auto/frontend/tailwind.config* /Users/trung/Work/ff-auto/frontend/postcss.config*)",
+      "Bash(node -e \"const l = require\\(''lucide-react''\\); console.log\\(''MemoryStick:'', !!l.MemoryStick, ''Grid:'', !!l.Grid\\)\")",
+      "Bash(node --input-type=module --eval \"import * as l from ''''lucide-react''''; console.log\\(''''MemoryStick:'''', typeof l.MemoryStick, ''''Grid:'''', typeof l.Grid, ''''LayoutGrid:'''', typeof l.LayoutGrid\\)\")",
+      "Bash(node --input-type=module --eval \":*)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(python -c \"import multipart\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/workspace/upload -F \"files=@/dev/null;type=image/png\")"
+    ],
+    "additionalDirectories": [
+      "/Users/trung/Work/ff-automation-captioning/src/utils",
+      "/Users/trung/.claude/skills"
+    ]
+  }
+}

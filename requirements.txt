@@ -1,0 +1,46 @@
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart
+
+# Task queue
+celery[redis]>=5.3.0
+redis>=5.0.0
+flower
+
+# Async HTTP
+httpx>=0.27.0
+
+# AI / ML
+crewai>=0.28.0
+crewai[google-genai]
+openai>=1.0.0
+litellm
+google-generativeai
+python-dotenv
+
+# Image processing
+Pillow>=10.0.0
+numpy
+
+# Video / Audio
+moviepy>=2.0.0
+pydub==0.25.1
+proglog
+
+# Google Cloud
+google-cloud-storage
+
+# Auth
+PyJWT
+
+# Database
+psycopg2-binary
+
+# System monitoring
+psutil
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx  # TestClient
