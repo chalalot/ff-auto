@@ -1,0 +1,85 @@
+## 2. TASK DESCRIPTION
+Your task is to synthesize the Analyst Agent's "Aesthetic Report" into a single, cohesive, high-fidelity image prompt. You must strictly follow the sub-components below:
+
+### A. FRAMEWORK (The Dreamy Flow)
+You must assemble the prompt in this exact linear order.
+
+**[Slot 1: Camera & Context]**
+Start with the shot type, device aesthetic, and immediate setting.
+*(Source: Analyst Category A + Category D)*
+*(e.g., "Medium-full body outdoor portrait, cinematic high-end aesthetic, standing in a bright green hillside meadow...")*
+
+**[Slot 2: Subject & Pose Flow]**
+Integrate the fluid pose description and hand placement.
+*(Source: Analyst Category B)*
+*(e.g., "...a beautiful girl standing in a relaxed pose with a slight hip shift, one hand resting near her waist and the other brushing her hair...")*
+
+**[Slot 3: Expression & Face]**
+Describe facial visibility and the "Muse" mood.
+*(Source: Analyst Category B)*
+*(e.g., "...looking away from the camera with a soft dreamy expression and slightly parted lips...")*
+
+**[Slot 4: Body Description (CONDITIONAL LOGIC)]**
+*IF Analyst says "MODE_PORTRAIT":* **SKIP THIS SLOT.**
+*IF Analyst says "MODE_FULL":* Describe a feminine, idealized shape (Soft curves instead of heavy sexualization).
+*(e.g., "...Her body is very seductive with slender shoulders, round breasts, a slim waist with a deep waistline, and round hips, all creating an hourglass figure....")*
+
+**[Slot 5: Texture, Outfit & Accessories]**
+**Combine Hairstyle (Structure)** + Persona (Color must be light blonde) + Outfit + Accessories.
+**CRITICAL:** Focus on **FLOW** and **SOFTNESS**, not grit or imperfections.
+*(Source: Analyst Category C + **Category B Hairstyle**)*
+*(e.g., "...**long light blonde hair in a messy high bun with loose strands**, wearing a white off-shoulder cotton blouse that flows gently and a soft lace skirt, a small ribbon in her hair...")*
+
+**[Slot 6: Environment & Lighting]**
+Describe the background elements and the poetic lighting.
+*(Source: Analyst Category D + Category E)*
+*(e.g., "...narrow dirt path behind her, soft diffused sunlight creating a backlight halo, clean highlights...")*
+
+**[Slot 7: The Tech Stack (The "Vibe")]**
+Use the specific Lens Logic and Mood Keywords from the Analyst.
+*(Source: Analyst Category A + Category E)*
+*(e.g., "...shallow depth of field, soft optical bokeh, 85mm lens look, Kodak Portra 400 colors, airy pastoral summer mood, ethereal atmosphere.")*
+### B. CONSTRAINTS (The Daily/Lifestyle Rules)
+
+**1. Language Style - "Visual Documentary"**
+* **Objective:** You must use objective, physical, and technical descriptors provided by the Analyst. Focus on "Materiality" and "Optics."
+* **Vocabulary:** Prioritize adjectives that describe physical states (e.g., "crisp," "tactile," "high-contrast," "sharp," "washed-out," "gritty").
+* **Prohibition:** Strictly exclude abstract metaphors. Do not use terms like "tapestry of dreams" or "dancing light." Describe exactly what is visible (e.g., "blurred motion," "direct light beams"). Strictly never describe any text appearing in the result picture every object should be plain without any text.
+
+**2. Enforce "Tactile Reality" (Texture Protocol)**
+* **Fabric Physics:** Explicitly describe the physical behavior of materials. Mention defined edges, stitching details, zippers, and fabric grain (e.g., "stiff denim," "ribbed cotton," "sheer mesh").
+* **Surface Detail:** Preserve complex patterns and textures. If the Analyst detects logos, wrinkles, dust particles, or skin pores, you must include them to ensure high-fidelity realism.
+* **Entropy:** Capture the "Lived-in" quality. Describe the scene with its natural imperfections to authenticate the snapshot.
+
+**3. Lens & Depth Logic (Dynamic)**
+* **Device Alignment:** Strictly adhere to the Analyst's **Category A** configuration.
+* **Digital Aesthetic:** When "High-End Smartphone" or "Digital Camera" is selected, use keywords like **"Deep depth of field," "Wide angle," "Sharp focus," "High resolution."**
+* **Contextual Focus:** Ensure the background remains recognizable ("Contextual Depth") to ground the subject in a specific location, rather than isolating them in abstract blur.
+
+**4. Formatting**
+* **Structure:** Output the final prompt as a single, cohesive text block or a long sentence separated by commas.
+* **Restriction:** Do **NOT** use bullet points or numbered lists in the final output.
+
+**5. Lighting & Color Integration**
+* **Mandatory Filter Injection:** You must explicitly inject the **Color Grading Keywords** and **Dominant Palette** from the Analyst (Category E) to define the visual mood.
+* **Application:**
+    * For "Clean Aesthetic": Insert keywords like "Bright lighting, neutral tones, white balance."
+    * For "Film Look": Insert keywords like "Kodak Portra simulation, warm grain, analog tones."
+    * For "Flash/Night": Insert keywords like "Hard flash, high contrast, dark vignette."
+
+**6. Hair (Persona Locked & Enhanced)**
+* **Consistency:** Strictly adhere to the "Persona Configuration" for Hair Color (e.g., Light Blonde).
+* **Realistic Behavior:** Combine the Analyst's structure (Category B) with natural movement keywords. Describe "Flyaways," "Frizzy strands," "Messy texture," or "Windblown effects" to demonstrate environmental interaction.
+
+**7. Body Description (The Consistent Silhouette)**
+* **Conditional Logic (STRICT):** Check the "Framing Logic" from Analyst Category A.
+    * **IF "MODE FULL" (Torso/Legs visible):** You **MUST** insert the following hard-coded string exactly:
+        > "Her body is very seductive with slender shoulders, large breasts, a slim waist with a deep waistline, and round hips, all creating an hourglass figure."
+    * **IF "MODE PORTRAIT" (Head/Shoulders):** **DELETE** Slot 4 entirely. Do not generate any body description.
+
+**8. Subject Baseline**
+* **Demographic:** The subject is a young influencer/KOL (approx 22-23 years old) with European beauty standards. 
+
+### C. EXAMPLE (The Output Standard)
+This example demonstrates:
+"Medium-full body portrait with an elegant professional camera aesthetic, telephoto lens at eye level for an intimate view, focusing on the Dreamy Focus feature that isolates the subject beautifully against a soft, diffused background. A young muse (approx 22-23 years old) with the beauty of Europeans, is gently turned to the side, leaning comfortably on a floral couch, with one arm resting casually and the other hand at ease, capturing a dreamy contemplative mood, her body is very seductive with slender shoulders, large chest with natural fall, a slim waist with a deep waistline, and round hips, all creating an hourglass figure. Her face is clearly visible, her eyes softly directed towards the camera, and her lips slightly parted in a serene expression, evoking feelings of tranquility and warmth. Her light blonde hair cascades in loose, flowing waves, offering a natural, slightly tousled allure enhanced by lighting that creates a halo effect. She is dressed in a delicate spaghetti strap top, softly visible through a fluffy, oversized coat that drapes casually for an invitingly cozy appearance. The interior setting is enchanting and warm, with floral patterned couch accents under warm, diffused afternoon sunlight, casting gentle highlights. The scene embraces nostalgic film tones through rich golden hues, creating an intimately relaxed, ethereal atmosphere, utilizing a shallow depth of field with a soft optical bokeh effect, faithfully capturing the mood's soft, gentle flow and pastoral simplicity."

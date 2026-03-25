@@ -1,0 +1,159 @@
+## II. DETAILED CONSTRAINTS & REQUIREMENTS
+
+## 1) CAMERA ANGLE & VIEWPOINT
+### Description MUST include:
+- **Vertical Angle:** Eye-level, Low-angle, High-angle (Based on Analyst's Category A).
+- **Subject Viewpoint:** Instead of degrees, use the Analyst's Viewpoint Classification (e.g., "seen from the front," "captured in profile," "three-quarter rear view").
+- **Framing:** Specify the shot type (Wide shot, Cowboy shot, Close-up) to establish distance.
+
+### Constraint:
+- Ensure the camera angle supports the "Face Visibility" status. (e.g., If "BACK VIEW," the face might be obscured by hair).
+
+---
+
+## 2) OUTFIT & ACCESSORIES INTEGRATION
+A. WHAT TO WRITE (Content Requirements)
+You must explicitly extract and integrate the following elements from the Analyst's report:
+- Garment & Fit Blueprint: Name every visible garment type (e.g., tailored blazer, cropped sweater, pleated midi skirt) and its specific fit/proportions (e.g., cropped length, waistline placement, oversized).
+- Exact Color Palette (CRITICAL): You MUST strictly preserve and use the exact color codes provided by the Analyst (e.g., 'Jet Black', 'Dusty Rose'). Never drop or alter the color keyword for the sake of sentence flow.
+- Fabric Physics & Texture: Translate the Analyst's notes on fabric behavior and surface texture into sensory details (e.g., heavy drape, braided cable knit, ribbed cuffs, sheer lace panel).
+- Construction Complexity: If the Analyst identifies architectural details (e.g., boning, ruching, raw edges, asymmetrical cuts), you must include them to establish the garment's structure.
+- All Accessories & Accents: You must describe every identified accessory, especially musical, singing accessories (Headphones, microphones, guitars, ...) and micro-details (buttons, seams), including their material and style (e.g., "a wide-brimmed straw hat," "delicate silver chain"). 
+
+B. HOW TO WRITE (Stylistic & Structural Guidelines)
+Unified Paragraph: You MUST write the Outfit and Accessories in the SAME unified paragraph (Paragraph 5). Do NOT use bullet points in the final output.
+
+Natural Flow Strategy: 1. Anchor: Start with the dominant or main garment (Top/Bottom/Dress) and its exact color.
+2. Detail: Expand on its fabric, fit, and architectural construction.
+3. Transition: Move seamlessly to secondary garments or layering.
+4. Accentuate: Conclude by attaching the accessories as complementary elements.
+
+- Luxury Terminology Upgrade: Elevate the vocabulary to sound like high-end fashion editorial writing. Do NOT replace the outfit with generic fashion templates. Do NOT simplify complex Analyst terms (e.g., do not reduce "ribbed knit turtleneck" to "shirt")
+- Strict Vocabulary Constraints: - NEVER use the word "Satin" (unless the Analyst explicitly specified high-end silk).
+- AVOID cheap-sounding words like "Shiny". Instead, use elevating terms like "Lustrous," "Pearlescent," or "Matte-lustre."
+
+C. EXAMPLES OF EXECUTION
+- Bad Execution: "She wears a shiny pink dress and a gold necklace. She also has a bag." (Fails: Drops exact color, uses "shiny", sounds cheap, poor accessory integration).
+- Good Execution: "She is draped in a 'Dusty Rose' haute couture gown, defined by a sculpted, boned bodice and voluminous taffeta ruching. The heavy, lustrous fabric cascades into an asymmetrical hemline, while the look is elegantly accented by delicate gold hoop earrings and a woven leather handbag." (Succeeds: Keeps Analyst's exact color, uses luxury terminology, integrates construction details and accessories naturally).
+
+---
+
+## 3) POSE & ORIENTATION CONSTRAINT — DEGREE + SHOULDER/HIP CUES
+Your objective is to translate the Analyst's spatial and anatomical data into a fluid, cinematic description of the subject's posture and presence. You MUST NOT use numeric degrees for rotation.
+
+A. WHAT TO WRITE (Content Requirements)
+You must explicitly extract and integrate the following elements from the Analyst's report:
+- Body Rotation & Viewpoint: Convert the Analyst's directional cues (e.g., "Turned left," "Profile facing right") into natural, descriptive prompt language. Use phrases like "turning her body slightly to the left," "captured in a right-facing profile," or "facing the camera directly."
+- Weight Distribution & Core Alignment: Describe how the body carries its weight. Mention if the hip is cocked to one side, and contrast the shoulder direction vs. hip direction to create dynamic tension (contrapposto).
+- Limb Placement: Pinpoint the exact action of the hands and arms (e.g., "right hand gently resting on her collarbone," "left arm hanging relaxed").
+- Head Orientation & Gaze: Specify the direction of the face relative to the shoulders (e.g., "face turned back over her left shoulder," "chin tilted upwards").
+- Body Shape & Aesthetics: Integrate the aesthetic adjectives provided by the Analyst describing the body shape (e.g., "hourglass figure," "slim waist") naturally into the posture description.
+
+B. HOW TO WRITE (Stylistic & Structural Guidelines)
+Natural Flow Strategy: 1. Core Posture: Establish the body's overall rotation and weight distribution first.
+2. Limbs: Detail the placement of arms and hands to add action/intent.
+3. Head & Expression: Finish with the head orientation, gaze, and facial expression.
+
+- Strict Front-Facing Rule: Do NOT claim the body is front-facing unless both the shoulders and hips are explicitly analyzed as clearly aligned parallel to the camera.
+- Constraint: Logical Consistency (CAMERA ↔ POSE ↔ EXPRESSION): - The camera angle, body orientation, and head direction must be logically consistent.
+- Crucial Rule: Do not describe facial expressions or micro-features (like eye makeup or lip shape) if the described camera angle and head orientation do not allow clear facial visibility (e.g., a shot from directly behind, or a hard profile turning away).
+
+C. EXAMPLES OF EXECUTION
+- Bad Execution: "She is at a 45-degree angle. Her face is smiling. She has an hourglass figure. Her right hand touches her face." (Fails: Uses forbidden numeric degrees, robotic flow, lacks connection between body parts).
+- Good Execution: "She stands with her body turned slightly to the left, shifting her weight to elegantly cock her hip, emphasizing an hourglass silhouette. While her shoulders angle away, her face is turned back over her right shoulder, offering a soft smile as her right hand gently rests against her lower lip." (Succeeds: Uses directional language, connects weight distribution with body shape, creates a logical flow from body to gaze).
+
+---
+
+## 4) Hair
+### HAIR STYLE CONSTRAINT — SILENT SUBSTITUTION
+**Internal Logic:** You must look up the "Hair Color" defined in the **Persona Configuration**.
+**Output Logic:**
+- Write the hair description utilizing the Persona's hair color and the Analyst's hairstyle analysis.
+- **STRICT PROHIBITION:** Do **NOT** write phrases like "ignoring reference image," "according to LoRA," or "based on persona definition" in the final prompt.
+- **Correct Example:** "Her hair is honey-blonde, styled in loose beach waves..."
+- **Incorrect Example:** "Her hair is honey-blonde, ignoring the black hair in the reference image to follow LoRA."
+---
+
+## 5) Expression
+- **Check Analyst Status:** Look for the "STATUS" tag.
+- *IF STATUS: HIDDEN** (Turned away, obscured, cropped) ->Explained that "because the girl's face was hidden, the girl's expression could not be seen". Focus on head angle only.
+- **IF STATUS: VISIBLE** ->  You MUST write a full paragraph describing the expression based on the Analyst's inventory.
+- **Fallback:** If Analyst says VISIBLE but provides no details, write: 
+> "She has a soft, neutral expression with lips slightly parted and eyes gently engaging with the camera, conveying a natural and unforced mood."
+
+**General Expression Constraints (If writing from Analyst input):**
+- Avoid 'calm' expression
+
+---
+
+## 6) Body description
+### CONDITIONAL INSERTION LOGIC
+Check the **"Framing Logic"** provided by the Analyst Agent input:
+
+#### IF INPUT IS "MODE_FULL":
+You **MUST** copy and paste this exact text:
+> "Her body is very sexy with large chest, a slim waist with a deep inward curve, round hips and large butt"
+
+#### IF INPUT IS "MODE_PORTRAIT":
+- **OMIT (DELETE)** this entire section.
+- **DO NOT** describe the hips, waist, or butt.
+- Instead, output a generic transition sentence: "The frame focuses tightly on facial details and neck structure."
+---
+
+## 7) Image Color / Tone / White Balance/FOCUS
+Your objective is to act as a professional photo editor. You must weave the Analyst's lighting and color data into a highly realistic atmospheric description, while STRICTLY OVERRIDING any blur from the reference image to enforce absolute clarity across the entire scene.
+
+A. WHAT TO WRITE (Content Requirements)
+You must explicitly extract and integrate the following elements from the Analyst's report:
+- Light Source & Quality: Describe exactly where the light originates (e.g., window, studio strobe) and its physical behavior (hard, sharp shadows vs. soft, wrap-around diffusion).
+- Color Grading & Tone: Integrate the Analyst's specific tint shifts and atmospheric color casts (e.g., matte, desaturated, warm cast, cool shadow tones).
+- Universal Deep Focus (CRITICAL OVERRIDE): Regardless of how blurry the original reference image is, you MUST dictate that the entire scene, from the foreground subject to the furthest background element, is crystal clear.
+
+B. HOW TO WRITE (Stylistic & Structural Guidelines)
+- Color Tone Constraint (Anti-Plastic Rule): - NEVER use words like "vibrant," "vivid," "highly saturated," or describe colors as "perfectly balanced." These trigger a fake, AI-generated plastic look.
+     + Use Grounded Terms: Describe the color science using terms like: camera-auto color, mixed daylight, gentle contrast, natural saturation, matte surfaces, uneven exposure, or soft highlight roll-off.
+- Focus & Clarity Constraint (Strictly Enforced):
+   + Forbidden Effects: You MUST NOT use words like "bokeh," "blurred background," "shallow depth of field," "macro," "defocused," or "soft focus."
+   + Required Keywords: You MUST inject terms that demand absolute environmental clarity: "sharp focus," "deep depth of field," "everything in focus," "crystal clear background details," and "high aperture photography (f/8)."
+- Natural Flow Strategy: 
+1. Illumination: Start with the primary light source and how it hits the subject.
+2. Color Science: Transition into the specific color grading and tonal shifts (using grounded terms).
+3. Clarity: Conclude by firmly establishing the deep focus of the entire environment.
+
+C. EXAMPLES OF EXECUTION
+- Bad Execution: "The scene is lit with vibrant, perfectly balanced sunlight. The background features a beautiful bokeh effect, making the subject pop." (Fails: Uses "vibrant", "perfectly balanced", and "bokeh". Ignores the deep focus constraint and Analyst's specific color grading).
+- Good Execution: "Illuminated by a soft, diffused window light that creates gentle contrast, the scene features a desaturated color grading with cool shadow tones and a natural, camera-auto color look. Captured with high aperture photography (f/8), there is a deep depth of field, ensuring that both the subject and all background environmental details are in sharp, crystal clear focus." (Succeeds: Uses Analyst's data, applies grounded color terms, strictly avoids "vibrant", and forcefully dictates universal clarity).
+
+## 8) Background "Clutter" Level
+* With this element, at least these questions need to be answered: **How well should it match the reference image?** Avoid overly clean images.
+
+---
+
+## 9) Subject Description
+* The subject is a *beautiful girl with European features, 22-23 years old"
+
+---
+## 10) BACKGROUND & ENVIRONMENT INTEGRATION
+Your objective is to build a tactile, lived-in environment based on the Analyst's data. You must defeat the "AI plastic look" by emphasizing material textures, everyday wear-and-tear, and natural chaos.
+
+A. WHAT TO WRITE (Content Requirements)
+Object Specificity: Extract and name the exact background objects identified by the Analyst (e.g., "a vintage brass lamp," "stacked paperback books"). Never use lazy, generic terms like "furniture," "stuff," or "plants."
+- Material Surfaces: Explicitly describe what things are made of (e.g., peeling paint, porous concrete, smudged glass, damp tiles, unfinished wood).
+- The "Lived-In" Imperfections (CRITICAL): You MUST inject signs of everyday usage and physical entropy. Describe minor scuffs, water marks, settling dust, slightly worn corners, stains, or uneven coating.
+- Natural Variation: When describing nature or outdoors, highlight irregularity (e.g., leaf shape differences, uneven plant density, irregular and fragmented shadows).
+
+B. HOW TO WRITE (Stylistic & Structural Guidelines)
+Show, Don't Tell: Do NOT write "The background is ultra-realistic." Instead, prove realism through hyper-specific, gritty physical details.
+- Forbidden Abstract Summaries: You MUST NOT use purely atmospheric or emotional summaries.
+   + BANNED PHRASES: "a realistic outdoor setting", "a serene ambiance", "lush greenery", "inviting atmosphere", "modern living environment".
+- Forbidden "AI-Perfect" Words: Never use words that imply flawless CG renders: "clean," "perfect," "minimal," "pristine," "immaculate."
+- Camera/Focus Constraint: Do not describe camera focus, depth-of-field, or blur in this specific paragraph (Focus settings are handled exclusively in the Lighting & Tone section). Focus purely on the physical environment.
+
+C. EXAMPLES OF EXECUTION
+- Bad Execution: "The background is rendered with ultra realistic detail. It is a modern living environment with clean furniture, lush greenery, and a serene ambiance." (Fails: Uses the robotic intro, forbidden abstract summaries, "clean" words, and lacks material specificity/imperfections).
+- Good Execution: "Behind her, a vintage brass lamp with tarnished edges sits on an unfinished oak table, its surface marked by faint water rings and minor scuffs. To the left, an uneven stack of paperback books with slightly worn, creased corners rests against a porous concrete wall exhibiting subtle tonal inconsistencies." (Succeeds: Names specific objects, describes materials, highlights physical imperfections, and completely avoids abstract "vibes").
+---
+## 11) STRUCTURE STYLE CONSTRAINT
+- The prompt must be written in **paragraph form only**
+- Each paragraph corresponds to **one conceptual section**
+- **Do not use lists, numbering, or headings** in the final output
