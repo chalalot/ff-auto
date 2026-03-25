@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
 import {
   useGalleryImages, useGalleryStats,
   useApproveImages, useDisapproveImages, useUndoImages
@@ -12,7 +13,8 @@ import { galleryApi, type GalleryStatus } from '@/api/gallery'
 import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
-  Image as ImageIcon, Loader2, ChevronLeft, ChevronRight
+  Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
+  LayoutGrid
 } from 'lucide-react'
 import type { GalleryImage } from '@/types'
 
@@ -23,6 +25,7 @@ export const GalleryPage: React.FC = () => {
   const [page, setPage] = useState(1)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
   const [renameMap, setRenameMap] = useState<Record<string, string>>({})
+  const [columns, setColumns] = useState(4)
 
   const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE)
   const { data: stats } = useGalleryStats()
@@ -153,6 +156,8 @@ export const GalleryPage: React.FC = () => {
               isLoading={isLoading}
               selectedImages={selectedImages}
               renameMap={renameMap}
+              columns={columns}
+              onColumnsChange={setColumns}
               onToggle={toggleImage}
               onRename={(filename, value) => setRenameMap(prev => ({ ...prev, [filename]: value }))}
               onSelectAll={() => setSelectedImages(new Set((gallery?.items || []).map(i => i.filename)))}
@@ -191,6 +196,8 @@ interface ImageGridProps {
   isLoading: boolean
   selectedImages: Set<string>
   renameMap: Record<string, string>
+  columns: number
+  onColumnsChange: (n: number) => void
   onToggle: (filename: string) => void
   onRename: (filename: string, value: string) => void
   onSelectAll: () => void
@@ -200,6 +207,7 @@ interface ImageGridProps {
 
 const ImageGrid: React.FC<ImageGridProps> = ({
   images, status, isLoading, selectedImages, renameMap,
+  columns, onColumnsChange,
   onToggle, onRename, onSelectAll, onClearAll, onAction
 }) => {
   if (isLoading) return (
@@ -217,12 +225,24 @@ const ImageGrid: React.FC<ImageGridProps> = ({
 
   return (
     <>
-      <div className="flex items-center gap-2 mb-4 mt-2">
+      <div className="flex items-center gap-2 mb-4 mt-2 flex-wrap">
         <Button variant="outline" size="sm" onClick={onSelectAll}>Select All</Button>
         <Button variant="outline" size="sm" onClick={onClearAll}>Clear</Button>
         <span className="text-sm text-muted-foreground">{images.length} images</span>
+        <div className="flex items-center gap-2 ml-auto">
+          <LayoutGrid className="w-4 h-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground w-5 text-center">{columns}</span>
+          <Slider
+            min={2}
+            max={8}
+            step={1}
+            value={[columns]}
+            onValueChange={([v]) => onColumnsChange(v)}
+            className="w-28"
+          />
+        </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+      <div className="gap-3" style={{ display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
         {images.map(img => (
           <ImageCard
             key={img.filename}
@@ -278,7 +298,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
     <div className={`relative rounded-lg border-2 overflow-hidden group transition-all
       ${isSelected ? 'border-primary shadow-md' : 'border-transparent hover:border-muted-foreground/30'}`}
     >
-      <div className="aspect-square bg-muted relative cursor-pointer" onClick={onToggle}>
+      <div className="aspect-[9/16] bg-muted relative cursor-pointer" onClick={onToggle}>
         <img
           src={thumbnailUrl}
           alt={image.filename}

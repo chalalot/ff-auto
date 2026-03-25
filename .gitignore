@@ -9,12 +9,12 @@ soulie-gcp-bucket.json
 *.db
 *.sqlite
 *.sqlite3
-
+image_logs.db
 # --- Image/video data directories ---
 Sorted/
 processed/
 results/
-
+prompts/
 # --- Python ---
 __pycache__/
 **/__pycache__/

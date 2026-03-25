@@ -1,1 +1,0 @@
-Based on the 3 Concepts and the Visual Analysis, generate 3 Image Generation Prompts (one for each concept).

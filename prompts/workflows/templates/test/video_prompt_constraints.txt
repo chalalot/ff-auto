@@ -1,7 +1,0 @@
-**CRITICAL RULES:**
-1. **Consistency**: You MUST use the EXACT outfit, hair, and appearance details from the Analysis.
-2. **Background Consistency**: You MUST use the EXACT background/setting description from the Analysis. Do NOT change the background.
-3. **Fixed View**: Do NOT include camera movements (like "zoom in", "pan"). Keep "static camera" or "fixed shot".
-4. **Prompt Style**: Instagirl WAN2.2 style (Daily, Casual, Realistic).
-5. **Content**: Describe the character performing the specific action from the Concept.
-6. **Length Limit**: The prompt MUST be under 500 characters. Concise and high impact.
