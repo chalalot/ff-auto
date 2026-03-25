@@ -201,6 +201,11 @@ GET    /api/gallery/images/{filename}/metadata
        → Extract ComfyUI metadata from PNG
        → Returns: {seed, prompt, workflow, persona, ref_image}
 
+GET    /api/gallery/images/{filename}/ref-image
+       → Serve the reference image used to generate this result
+       → Resolves ref_image path from metadata → serves binary
+       → Returns: image/jpeg or image/png binary (404 if not found)
+
 POST   /api/gallery/approve
        → Approve one or more images
        → Body: {filenames: [], rename_map: {old: new}}
@@ -380,7 +385,7 @@ frontend/src/
 │   │   ├── ImageCard.tsx         # Single image with actions
 │   │   ├── StatusTabs.tsx        # Pending | Approved | Disapproved
 │   │   ├── BulkActions.tsx       # Select all, approve/reject batch
-│   │   ├── ImageDetail.tsx       # Lightbox with metadata + execution info
+│   │   ├── ImageDetail.tsx       # Lightbox with metadata, execution info, and reference image
 │   │   ├── StatsPanel.tsx        # Daily approval stats
 │   │   └── DownloadPanel.tsx     # ZIP download by date
 │   │
@@ -499,7 +504,7 @@ Deferred to after Workspace + Gallery are stable. The pattern will be identical:
 - [ ] ImageGrid — lazy-loaded thumbnail grid with intersection observer
 - [ ] ImageCard — hover actions (approve, reject, view detail)
 - [ ] BulkActions — select multiple, batch approve/reject
-- [ ] ImageDetail lightbox — full image + metadata + execution record
+- [ ] ImageDetail lightbox — full image + metadata + execution record + reference image side-by-side (via `/ref-image` endpoint, graceful 404 handling)
 - [ ] StatsPanel — daily approval chart
 - [ ] DownloadPanel — ZIP download
 

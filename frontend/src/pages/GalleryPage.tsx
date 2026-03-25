@@ -14,8 +14,9 @@ import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
   Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
-  LayoutGrid
+  LayoutGrid, Info, X
 } from 'lucide-react'
+import type { ImageMetadata } from '@/types'
 import type { GalleryImage } from '@/types'
 
 const ITEMS_PER_PAGE = 20
@@ -260,6 +261,119 @@ const ImageGrid: React.FC<ImageGridProps> = ({
   )
 }
 
+// ---------------------------------------------------------------------------
+// ImageDetailModal
+// ---------------------------------------------------------------------------
+
+interface ImageDetailModalProps {
+  image: GalleryImage
+  status: GalleryStatus
+  onClose: () => void
+}
+
+const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onClose }) => {
+  const [metadata, setMetadata] = useState<ImageMetadata | null>(null)
+  const [loading, setLoading] = useState(true)
+  const refImageUrl = galleryApi.getRefImageUrl(image.filename, status)
+
+  React.useEffect(() => {
+    setLoading(true)
+    galleryApi.getMetadata(image.filename, status)
+      .then(setMetadata)
+      .catch(() => setMetadata(null))
+      .finally(() => setLoading(false))
+  }, [image.filename, status])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      onClick={onClose}
+    >
+      <div
+        className="bg-background rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <h2 className="text-base font-semibold mb-4 pr-6 truncate">{image.filename}</h2>
+
+        <div className="grid grid-cols-2 gap-4">
+          {/* Generated image */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Generated</p>
+            <img
+              src={galleryApi.getThumbnailUrl(image.filename, status)}
+              alt="generated"
+              className="w-full rounded-lg object-cover"
+            />
+          </div>
+
+          {/* Reference image */}
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Reference</p>
+            <img
+              src={refImageUrl}
+              alt="reference"
+              className="w-full rounded-lg object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none'
+                const sibling = e.currentTarget.nextElementSibling as HTMLElement | null
+                if (sibling) sibling.style.display = 'flex'
+              }}
+            />
+            <div className="hidden items-center justify-center h-32 rounded-lg bg-muted text-xs text-muted-foreground">
+              No reference image
+            </div>
+          </div>
+        </div>
+
+        {/* Metadata */}
+        <div className="mt-4 space-y-3">
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading metadata...
+            </div>
+          )}
+          {!loading && metadata && (
+            <>
+              {metadata.persona && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Persona</p>
+                  <p className="text-sm">{metadata.persona}</p>
+                </div>
+              )}
+              {metadata.seed != null && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Seed</p>
+                  <p className="text-sm font-mono">{metadata.seed}</p>
+                </div>
+              )}
+              {metadata.prompt && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Prompt</p>
+                  <p className="text-sm whitespace-pre-wrap break-words">{metadata.prompt}</p>
+                </div>
+              )}
+              {!metadata.persona && metadata.seed == null && !metadata.prompt && (
+                <p className="text-sm text-muted-foreground">No metadata available</p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ImageCard
+// ---------------------------------------------------------------------------
+
 interface ImageCardProps {
   image: GalleryImage
   status: GalleryStatus
@@ -274,6 +388,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
   image, status, isSelected, renameValue, onToggle, onRename, onAction
 }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [showDetail, setShowDetail] = useState(false)
   const thumbnailUrl = galleryApi.getThumbnailUrl(image.filename, status)
 
   const handleAction = async (action: string) => {
@@ -379,6 +494,13 @@ const ImageCard: React.FC<ImageCardProps> = ({
               <RotateCcw className="w-3 h-3 mr-1" />Recover
             </Button>
           )}
+          <button
+            className="flex items-center justify-center h-7 w-7 rounded-md border border-input hover:bg-accent transition-colors"
+            onClick={(e) => { e.stopPropagation(); setShowDetail(true) }}
+            title="View metadata"
+          >
+            <Info className="w-3 h-3" />
+          </button>
           <a
             href={galleryApi.getDownloadUrl(image.filename)}
             download
@@ -389,6 +511,14 @@ const ImageCard: React.FC<ImageCardProps> = ({
           </a>
         </div>
       </div>
+
+      {showDetail && (
+        <ImageDetailModal
+          image={image}
+          status={status}
+          onClose={() => setShowDetail(false)}
+        />
+      )}
     </div>
   )
 }

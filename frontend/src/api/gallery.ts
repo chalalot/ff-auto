@@ -21,6 +21,9 @@ export const galleryApi = {
       params: { status }
     }).then(r => r.data),
 
+  getRefImageUrl: (filename: string, status: GalleryStatus) =>
+    `/api/gallery/images/${encodeURIComponent(filename)}/ref-image?status=${status}`,
+
   getDownloadUrl: (filename: string) =>
     `/api/gallery/download/${encodeURIComponent(filename)}`,
 

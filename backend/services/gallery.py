@@ -137,7 +137,7 @@ class GalleryService:
 
     def extract_metadata(self, filename: str, status: str = "pending") -> dict:
         path = self._dir_for_status(status) / filename
-        metadata = {"seed": None, "prompt": None, "raw_metadata": {}}
+        metadata = {"seed": None, "prompt": None, "persona": None, "ref_image": None, "raw_metadata": {}}
 
         try:
             with Image.open(path) as img:
@@ -159,7 +159,32 @@ class GalleryService:
         except Exception as e:
             logger.debug(f"Could not extract metadata from {filename}: {e}")
 
+        # Enrich from DB
+        try:
+            record = self.storage.get_execution_by_result_path(str(path))
+            if record:
+                metadata["persona"] = record.get("persona")
+                ref_path = record.get("image_ref_path")
+                if ref_path and Path(ref_path).exists():
+                    metadata["ref_image"] = ref_path
+        except Exception as e:
+            logger.debug(f"Could not look up DB record for {filename}: {e}")
+
         return metadata
+
+    def get_ref_image(self, filename: str, status: str = "pending") -> Optional[bytes]:
+        path = self._dir_for_status(status) / filename
+        try:
+            record = self.storage.get_execution_by_result_path(str(path))
+            if not record:
+                return None
+            ref_path = record.get("image_ref_path")
+            if not ref_path or not Path(ref_path).exists():
+                return None
+            return Path(ref_path).read_bytes()
+        except Exception as e:
+            logger.debug(f"Could not get ref image for {filename}: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # Approve / disapprove / undo

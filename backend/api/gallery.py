@@ -51,6 +51,18 @@ def image_metadata(
     return svc.extract_metadata(filename, status=status)
 
 
+@router.get("/images/{filename}/ref-image")
+def image_ref(
+    filename: str,
+    status: str = Query("pending", pattern="^(pending|approved|disapproved)$"),
+    svc: GalleryService = Depends(get_gallery_service),
+):
+    data = svc.get_ref_image(filename, status=status)
+    if not data:
+        raise HTTPException(status_code=404, detail="Reference image not found")
+    return Response(content=data, media_type="image/jpeg")
+
+
 @router.get("/download/{filename}")
 def download_image(
     filename: str,

@@ -51,4 +51,6 @@ class NotesRequest(BaseModel):
 class ImageMetadata(BaseModel):
     seed: Optional[int] = None
     prompt: Optional[str] = None
+    persona: Optional[str] = None
+    ref_image: Optional[str] = None
     raw_metadata: dict = {}
