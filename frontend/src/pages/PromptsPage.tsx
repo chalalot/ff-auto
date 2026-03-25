@@ -4,7 +4,8 @@ import { apiClient } from '@/lib/api-client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Save, CheckCircle } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Loader2, Save, CheckCircle, Plus, AlertTriangle } from 'lucide-react'
 
 const TEMPLATE_FILES = [
   { key: 'turbo_prompt_template.txt', label: 'Prompt Template', description: 'Main output template' },
@@ -25,7 +26,53 @@ const templateApi = {
     }).then(r => r.data),
 }
 
+const personaApi = {
+  listPersonas: () => apiClient.get<{ name: string; type: string }[]>('/config/personas').then(r => r.data),
+  listTypes: () => apiClient.get<string[]>('/config/persona-types').then(r => r.data),
+  updateType: (name: string, type: string) =>
+    apiClient.put(`/config/personas/${name}`, { type }).then(r => r.data),
+  createType: (name: string) =>
+    apiClient.post('/config/persona-types', { name }).then(r => r.data),
+}
+
+// ---------------------------------------------------------------------------
+// Top-level page with tab switcher
+// ---------------------------------------------------------------------------
+
 export const PromptsPage: React.FC = () => {
+  const [tab, setTab] = useState<'templates' | 'personas'>('templates')
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Top tab bar */}
+      <div className="border-b bg-card px-4 flex items-center gap-0 shrink-0">
+        {(['templates', 'personas'] as const).map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-3 text-sm border-b-2 transition-colors capitalize
+              ${tab === t
+                ? 'border-primary text-foreground font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            {t === 'templates' ? 'Templates' : 'Personas & Types'}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-hidden">
+        {tab === 'templates' ? <TemplatesTab /> : <PersonasTab />}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Templates tab (unchanged logic)
+// ---------------------------------------------------------------------------
+
+const TemplatesTab: React.FC = () => {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<string>(TEMPLATE_FILES[0].key)
   const [savedFile, setSavedFile] = useState<string | null>(null)
@@ -47,7 +94,6 @@ export const PromptsPage: React.FC = () => {
     enabled: !!selectedType,
   })
 
-  // Clear local edits when switching type (new files loaded)
   const prevType = React.useRef(selectedType)
   React.useEffect(() => {
     if (prevType.current !== selectedType) {
@@ -69,12 +115,10 @@ export const PromptsPage: React.FC = () => {
 
   const currentContent = edits[selectedFile] ?? (files?.[selectedFile] || '')
   const isDirty = selectedFile in edits
-
   const fileInfo = TEMPLATE_FILES.find(f => f.key === selectedFile)
 
   return (
     <div className="flex h-full">
-      {/* Type list */}
       <aside className="w-44 border-r bg-card flex flex-col">
         <div className="p-3 border-b">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Types</h2>
@@ -102,9 +146,7 @@ export const PromptsPage: React.FC = () => {
         </div>
       </aside>
 
-      {/* File tabs + editor */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* File tabs */}
         <div className="border-b bg-card px-4 flex items-center gap-1 overflow-x-auto">
           {TEMPLATE_FILES.map(f => (
             <button
@@ -124,9 +166,7 @@ export const PromptsPage: React.FC = () => {
           ))}
         </div>
 
-        {/* Editor area */}
         <div className="flex-1 flex flex-col overflow-hidden p-4 gap-3">
-          {/* Header row */}
           <div className="flex items-center justify-between">
             <div>
               <span className="text-sm font-medium">{fileInfo?.label}</span>
@@ -151,7 +191,6 @@ export const PromptsPage: React.FC = () => {
             </Button>
           </div>
 
-          {/* Textarea */}
           {filesLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -167,6 +206,201 @@ export const PromptsPage: React.FC = () => {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Personas & Types tab
+// ---------------------------------------------------------------------------
+
+const PersonasTab: React.FC = () => {
+  const [newTypeName, setNewTypeName] = useState('')
+  const queryClient = useQueryClient()
+
+  const { data: personas = [], isLoading: personasLoading } = useQuery({
+    queryKey: ['personas'],
+    queryFn: personaApi.listPersonas,
+  })
+
+  const { data: personaTypes = [], isLoading: typesLoading } = useQuery({
+    queryKey: ['persona-types'],
+    queryFn: personaApi.listTypes,
+  })
+
+  // Template types = types that actually have a templates/ directory
+  const { data: templateTypes = [] } = useQuery({
+    queryKey: ['templates'],
+    queryFn: templateApi.listTypes,
+  })
+
+  const createTypeMutation = useMutation({
+    mutationFn: personaApi.createType,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['persona-types'] })
+      queryClient.invalidateQueries({ queryKey: ['templates'] })
+      setNewTypeName('')
+    },
+  })
+
+  const updateTypeMutation = useMutation({
+    mutationFn: ({ name, type }: { name: string; type: string }) =>
+      personaApi.updateType(name, type),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personas'] })
+    },
+  })
+
+  const isLoading = personasLoading || typesLoading
+
+  // Group personas by type for the sanity check
+  const byType = personaTypes.reduce<Record<string, string[]>>((acc, t) => {
+    acc[t] = personas.filter(p => p.type === t).map(p => p.name)
+    return acc
+  }, {})
+  const unassigned = personas.filter(p => !personaTypes.includes(p.type))
+
+  return (
+    <div className="p-6 overflow-y-auto h-full space-y-8 max-w-3xl">
+
+      {/* Create new type */}
+      <section>
+        <h2 className="text-sm font-semibold mb-3">Persona Types</h2>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {typesLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          ) : (
+            personaTypes.map(t => (
+              <Badge
+                key={t}
+                variant={templateTypes.includes(t) ? 'secondary' : 'outline'}
+                className="text-xs"
+              >
+                {t}
+                {!templateTypes.includes(t) && (
+                  <AlertTriangle className="w-3 h-3 ml-1 text-yellow-500" />
+                )}
+              </Badge>
+            ))
+          )}
+        </div>
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="New type name (e.g. dancer)"
+            value={newTypeName}
+            onChange={e => setNewTypeName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && newTypeName.trim()) {
+                createTypeMutation.mutate(newTypeName.trim())
+              }
+            }}
+            className="h-8 text-sm w-60"
+          />
+          <Button
+            size="sm"
+            disabled={!newTypeName.trim() || createTypeMutation.isPending}
+            onClick={() => createTypeMutation.mutate(newTypeName.trim())}
+          >
+            {createTypeMutation.isPending
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Plus className="w-4 h-4 mr-1" />
+            }
+            Create
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Creating a type also scaffolds the template files under Templates tab.
+          <AlertTriangle className="w-3 h-3 inline ml-1 text-yellow-500" /> = type exists but has no templates directory yet.
+        </p>
+      </section>
+
+      {/* Persona → type assignments */}
+      <section>
+        <h2 className="text-sm font-semibold mb-3">Persona Assignments</h2>
+        {isLoading ? (
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        ) : personas.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No personas found.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs text-muted-foreground">
+                <th className="pb-2 font-medium w-1/3">Persona</th>
+                <th className="pb-2 font-medium w-1/3">Type</th>
+                <th className="pb-2 font-medium">Template status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {personas.map(p => {
+                const hasTemplates = templateTypes.includes(p.type)
+                const typeKnown = personaTypes.includes(p.type)
+                return (
+                  <tr key={p.name} className="h-10">
+                    <td className="pr-4 font-mono text-xs">{p.name}</td>
+                    <td className="pr-4">
+                      <select
+                        value={p.type}
+                        onChange={e => updateTypeMutation.mutate({ name: p.name, type: e.target.value })}
+                        className="bg-background border border-input rounded-md px-2 py-1 text-xs h-7 focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        {personaTypes.map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                        {/* Keep current value if it's not in the known types list */}
+                        {!typeKnown && (
+                          <option value={p.type}>{p.type} (unknown)</option>
+                        )}
+                      </select>
+                    </td>
+                    <td>
+                      {hasTemplates ? (
+                        <span className="flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle className="w-3.5 h-3.5" /> Templates exist
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-yellow-600">
+                          <AlertTriangle className="w-3.5 h-3.5" /> No templates
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Sanity check: type → personas breakdown */}
+      <section>
+        <h2 className="text-sm font-semibold mb-3">Sanity Check — Type → Personas</h2>
+        <div className="space-y-3">
+          {personaTypes.map(t => (
+            <div key={t} className="flex items-start gap-3">
+              <Badge variant="outline" className="text-xs mt-0.5 shrink-0 w-28 justify-center">{t}</Badge>
+              <div className="flex flex-wrap gap-1.5">
+                {byType[t]?.length ? (
+                  byType[t].map(name => (
+                    <span key={name} className="text-xs bg-muted px-2 py-0.5 rounded font-mono">{name}</span>
+                  ))
+                ) : (
+                  <span className="text-xs text-muted-foreground italic">no personas</span>
+                )}
+              </div>
+            </div>
+          ))}
+          {unassigned.length > 0 && (
+            <div className="flex items-start gap-3">
+              <Badge variant="destructive" className="text-xs mt-0.5 shrink-0 w-28 justify-center">unknown type</Badge>
+              <div className="flex flex-wrap gap-1.5">
+                {unassigned.map(p => (
+                  <span key={p.name} className="text-xs bg-muted px-2 py-0.5 rounded font-mono">{p.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   )
 }

@@ -59,6 +59,13 @@ class ConfigService:
     def get_persona_types(self) -> List[str]:
         return self._config_manager.get_persona_types()
 
+    def create_persona_type(self, type_name: str) -> bool:
+        try:
+            return self._config_manager.create_persona_template_structure(type_name)
+        except Exception as e:
+            logger.error(f"Failed to create persona type {type_name}: {e}")
+            return False
+
     # ------------------------------------------------------------------
     # Presets
     # ------------------------------------------------------------------
@@ -183,6 +190,7 @@ class ConfigService:
             "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
             "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
             "khiemle__xz-comfy__emi_turbo_v2.safetensors",
+            "Macincesht__ff-loras__emi%20_v3.safetensors",
             "khiemle__xz-comfy__roxie_v3.safetensors",
             "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
             "khiemle__xz-comfy__Sephera%20v7.safetensors",

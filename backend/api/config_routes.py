@@ -1,6 +1,7 @@
 from typing import Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 
 from backend.api.deps import get_config_service
 from backend.models.config import PersonaSummary, PersonaUpdateRequest, PresetConfig, LastUsedConfig
@@ -98,6 +99,21 @@ def lora_options(svc: ConfigService = Depends(get_config_service)):
 @router.get("/persona-types", response_model=List[str])
 def persona_types(svc: ConfigService = Depends(get_config_service)):
     return svc.get_persona_types()
+
+
+class CreatePersonaTypeRequest(BaseModel):
+    name: str
+
+
+@router.post("/persona-types")
+def create_persona_type(body: CreatePersonaTypeRequest, svc: ConfigService = Depends(get_config_service)):
+    name = body.name.strip().lower().replace(" ", "_")
+    if not name:
+        raise HTTPException(status_code=400, detail="Type name cannot be empty")
+    ok = svc.create_persona_type(name)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to create persona type")
+    return {"ok": True, "name": name}
 
 
 # ------------------------------------------------------------------
