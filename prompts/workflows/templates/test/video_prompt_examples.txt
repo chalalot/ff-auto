@@ -1,7 +1,0 @@
-**Output Format**:
-Provide the output STRICTLY as a Python list of dictionaries:
-[
-    { "variation": 1, "concept_name": "...", "prompt": "..." },
-    { "variation": 2, "concept_name": "...", "prompt": "..." },
-    { "variation": 3, "concept_name": "...", "prompt": "..." }
-]
