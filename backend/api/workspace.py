@@ -1,5 +1,4 @@
 import asyncio
-import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -42,17 +41,15 @@ async def upload_images(
     files: List[UploadFile] = File(...),
     svc: ImageProcessingService = Depends(get_image_processing_service),
 ):
-    """Save uploaded images into INPUT_DIR so they appear in the queue."""
-    allowed = {".png", ".jpg", ".jpeg", ".webp"}
+    """Save uploaded images directly into PROCESSED_DIR (unified library)."""
     saved = []
     for f in files:
-        ext = Path(f.filename or "").suffix.lower()
-        if ext not in allowed:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: {f.filename}")
-        dest = Path(svc.input_dir) / f.filename
-        with dest.open("wb") as out:
-            shutil.copyfileobj(f.file, out)
-        saved.append(f.filename)
+        data = await f.read()
+        try:
+            path = svc.save_ref_image(f.filename or "upload", data)
+            saved.append(Path(path).name)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     return {"saved": saved, "count": len(saved)}
 
 

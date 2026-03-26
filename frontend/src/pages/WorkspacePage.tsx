@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, BookImage, Info, X } from 'lucide-react'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X } from 'lucide-react'
 import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord } from '@/types'
 
 // Default config
@@ -35,18 +35,12 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
 
 export const WorkspacePage: React.FC = () => {
   const queryClient = useQueryClient()
-  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
-  // Ref library: selected paths from processed/ dir (mutually exclusive with selectedImages)
-  const [selectedRefPaths, setSelectedRefPaths] = useState<Set<string>>(new Set())
+  // Unified library selection — all images live in processed/
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
   // Metadata captured at dispatch time so cards can show ref thumbnail + config info
   const [taskMeta, setTaskMeta] = useState<Record<string, { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }>>({})
-
-
-  // Fetch data
-  const { data: inputImages = [], isLoading: imagesLoading, refetch: refetchImages } =
-    useQuery({ queryKey: ['workspace', 'input-images'], queryFn: workspaceApi.getInputImages })
 
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
@@ -58,7 +52,7 @@ export const WorkspacePage: React.FC = () => {
     queryFn: () => workspaceApi.getExecutions({ limit: 20 }),
   })
 
-  const { data: refImages = [], refetch: refetchRefImages } = useQuery({
+  const { data: library = [], refetch: refetchLibrary } = useQuery({
     queryKey: ['workspace', 'ref-images'],
     queryFn: workspaceApi.getRefImages,
   })
@@ -90,37 +84,29 @@ export const WorkspacePage: React.FC = () => {
     }
   }, [personas, config.persona])
 
-  // Process mutation — supports both input queue (prepare=true) and ref library (skip_prepare=true)
+  // All images live in processed/ — always skip prepare
   const processMutation = useMutation({
     mutationFn: async () => {
-      const usingRef = selectedRefPaths.size > 0
-      const paths = usingRef ? Array.from(selectedRefPaths) : Array.from(selectedImages)
-      const extra = usingRef ? { skip_prepare: true } : {}
+      const paths = Array.from(selectedPaths)
       let taskIds: string[]
       if (paths.length === 1) {
-        const result = await workspaceApi.process({ ...config, image_path: paths[0], ...extra })
+        const result = await workspaceApi.process({ ...config, image_path: paths[0], skip_prepare: true })
         taskIds = [result.task_id]
       } else {
-        const result = await workspaceApi.processBatch(paths, { ...config, ...extra })
+        const result = await workspaceApi.processBatch(paths, { ...config, skip_prepare: true })
         taskIds = result.task_ids
       }
-      return { taskIds, refPaths: usingRef ? paths : [], configSnapshot: { ...config } }
+      return { taskIds, paths, configSnapshot: { ...config } }
     },
-    onSuccess: async ({ taskIds, refPaths, configSnapshot }) => {
+    onSuccess: async ({ taskIds, paths, configSnapshot }) => {
       setActiveTaskIds(prev => [...prev, ...taskIds])
-      // Store meta per task so cards can show ref thumbnail + info
       setTaskMeta(prev => {
         const next = { ...prev }
         taskIds.forEach((id, i) => {
-          next[id] = {
-            refImagePath: refPaths[i] ?? refPaths[0],
-            persona: configSnapshot.persona,
-            config: configSnapshot,
-          }
+          next[id] = { refImagePath: paths[i], persona: configSnapshot.persona, config: configSnapshot }
         })
         return next
       })
-      // Save last used config
       await configApi.saveLastUsed({
         persona: config.persona,
         vision_model: config.vision_model,
@@ -135,27 +121,24 @@ export const WorkspacePage: React.FC = () => {
         workflow_type: config.workflow_type,
       })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
     },
   })
 
   const [uploading, setUploading] = useState(false)
-
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     setUploading(true)
     try {
-      const form = new FormData()
-      Array.from(files).forEach(f => form.append('files', f))
-      await fetch('/api/workspace/upload', { method: 'POST', body: form })
-      refetchImages()
+      await workspaceApi.uploadRefImages(Array.from(files))
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
     } finally {
       setUploading(false)
     }
   }
 
   const toggleImage = (path: string) => {
-    setSelectedRefPaths(new Set()) // clear ref selection
-    setSelectedImages(prev => {
+    setSelectedPaths(prev => {
       const next = new Set(prev)
       if (next.has(path)) next.delete(path)
       else next.add(path)
@@ -163,37 +146,14 @@ export const WorkspacePage: React.FC = () => {
     })
   }
 
-  const toggleRefImage = (path: string) => {
-    setSelectedImages(new Set()) // clear input queue selection
-    setSelectedRefPaths(prev => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }
+  const selectAll = () => setSelectedPaths(new Set(library.map(i => i.path)))
+  const clearSelection = () => setSelectedPaths(new Set())
 
-  const selectAll = () => { setSelectedRefPaths(new Set()); setSelectedImages(new Set(inputImages.map(i => i.path))) }
-  const clearSelection = () => { setSelectedImages(new Set()); setSelectedRefPaths(new Set()) }
-
-  const [uploadingRef, setUploadingRef] = useState(false)
-  const handleRefUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploadingRef(true)
-    try {
-      await workspaceApi.uploadRefImages(Array.from(files))
-      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
-    } finally {
-      setUploadingRef(false)
-    }
-  }
-
-  const deleteRefMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: (filename: string) => workspaceApi.deleteRefImage(filename),
     onSuccess: (_, filename) => {
-      setSelectedRefPaths(prev => {
+      setSelectedPaths(prev => {
         const next = new Set(prev)
-        // Remove any selected path whose filename matches
         for (const p of next) {
           if (p.endsWith('/' + filename) || p === filename) next.delete(p)
         }
@@ -345,158 +305,64 @@ export const WorkspacePage: React.FC = () => {
         <div className="p-4 border-b flex items-center justify-between">
           <h1 className="text-xl font-bold">Workspace</h1>
           <div className="flex items-center gap-2">
-            {selectedRefPaths.size > 0 && (
-              <Badge variant="outline" className="border-amber-500 text-amber-600">{selectedRefPaths.size} ref selected</Badge>
-            )}
-            {selectedImages.size > 0 && (
-              <Badge variant="secondary">{selectedImages.size} selected</Badge>
+            {selectedPaths.size > 0 && (
+              <Badge variant="secondary">{selectedPaths.size} selected</Badge>
             )}
             <Button
               onClick={() => processMutation.mutate()}
-              disabled={(selectedImages.size === 0 && selectedRefPaths.size === 0) || processMutation.isPending}
+              disabled={selectedPaths.size === 0 || processMutation.isPending}
               isLoading={processMutation.isPending}
             >
               <Play className="w-4 h-4 mr-2" />
-              Process {(selectedImages.size + selectedRefPaths.size) > 0 ? `(${selectedImages.size + selectedRefPaths.size})` : ''}
+              Process {selectedPaths.size > 0 ? `(${selectedPaths.size})` : ''}
             </Button>
           </div>
         </div>
 
-        <Tabs defaultValue="queue" className="flex-1 flex flex-col overflow-hidden">
+        <Tabs defaultValue="library" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="mx-4 mt-4 w-fit">
-            <TabsTrigger value="queue">Input Queue ({inputImages.length})</TabsTrigger>
-            <TabsTrigger value="reflibrary">
-              <BookImage className="w-3.5 h-3.5 mr-1.5" />
-              Ref Library ({refImages.length})
-            </TabsTrigger>
+            <TabsTrigger value="library">Library ({library.length})</TabsTrigger>
             <TabsTrigger value="history">Execution History</TabsTrigger>
             <TabsTrigger value="tasks">Active Tasks ({activeTaskIds.length})</TabsTrigger>
           </TabsList>
 
-          {/* Input Queue Tab */}
-          <TabsContent value="queue" className="flex-1 overflow-auto px-4 pb-4">
+          {/* Unified Library Tab */}
+          <TabsContent value="library" className="flex-1 overflow-auto px-4 pb-4">
             {/* Upload zone */}
             <label
               className="flex flex-col items-center justify-center w-full mb-4 p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
             >
-              <input
-                type="file"
-                className="hidden"
-                accept=".png,.jpg,.jpeg,.webp"
-                multiple
-                onChange={(e) => void handleUpload(e.target.files)}
-              />
-              {uploading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
-              ) : (
-                <Upload className="w-6 h-6 text-muted-foreground mb-2" />
-              )}
+              <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp" multiple
+                onChange={(e) => void handleUpload(e.target.files)} />
+              {uploading
+                ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
+                : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
               <p className="text-sm text-muted-foreground">
-                {uploading ? 'Uploading...' : 'Drop reference images here or click to upload'}
+                {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP</p>
             </label>
 
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-3">
               <Button variant="outline" size="sm" onClick={selectAll}>
                 <CheckSquare className="w-4 h-4 mr-2" />Select All
               </Button>
               <Button variant="outline" size="sm" onClick={clearSelection}>
                 <Square className="w-4 h-4 mr-2" />Clear
               </Button>
-              <Button variant="outline" size="sm" onClick={() => refetchImages()}>
+              <Button variant="outline" size="sm" onClick={() => refetchLibrary()}>
                 <RefreshCw className="w-4 h-4 mr-2" />Refresh
               </Button>
             </div>
 
-            {imagesLoading ? (
-              <div className="flex items-center justify-center h-32">
-                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : inputImages.length === 0 ? (
-              <div className="text-center py-16 text-muted-foreground">
-                <ImageIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No images in input directory</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                {inputImages.map(img => (
-                  <div
-                    key={img.filename}
-                    className={`relative rounded-lg border-2 cursor-pointer overflow-hidden transition-all
-                      ${selectedImages.has(img.path) ? 'border-primary shadow-md' : 'border-transparent hover:border-muted-foreground/30'}`}
-                    onClick={() => toggleImage(img.path)}
-                  >
-                    <div className="aspect-square bg-muted">
-                      <img
-                        src={`/api/workspace/input-images/${encodeURIComponent(img.filename)}/thumbnail`}
-                        alt={img.filename}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    </div>
-                    <div className="p-2">
-                      <p className="text-xs truncate font-medium">{img.filename}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(new Date(img.modified_at), { addSuffix: true })}
-                      </p>
-                    </div>
-                    {selectedImages.has(img.path) && (
-                      <div className="absolute top-2 right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center">
-                        <CheckSquare className="w-3 h-3 text-primary-foreground" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          {/* Ref Library Tab */}
-          <TabsContent value="reflibrary" className="flex-1 overflow-auto px-4 pb-4">
-            {/* Upload zone */}
-            <label
-              className="flex flex-col items-center justify-center w-full mb-4 p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); void handleRefUpload(e.dataTransfer.files) }}
-            >
-              <input
-                type="file"
-                className="hidden"
-                accept=".png,.jpg,.jpeg,.webp"
-                multiple
-                onChange={(e) => void handleRefUpload(e.target.files)}
-              />
-              {uploadingRef ? (
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
-              ) : (
-                <BookImage className="w-6 h-6 text-muted-foreground mb-2" />
-              )}
-              <p className="text-sm text-muted-foreground">
-                {uploadingRef ? 'Uploading...' : 'Upload directly to ref library'}
-              </p>
-              <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP</p>
-            </label>
-
-            <div className="flex items-center gap-2 mb-3">
-              <Button variant="outline" size="sm" onClick={() => refetchRefImages()}>
-                <RefreshCw className="w-4 h-4 mr-2" />Refresh
-              </Button>
-              {selectedRefPaths.size > 0 && (
-                <Button variant="ghost" size="sm" onClick={() => setSelectedRefPaths(new Set())}>
-                  <Square className="w-4 h-4 mr-2" />Clear selection
-                </Button>
-              )}
-            </div>
-
-            <RefImageLibrary
-              images={refImages}
-              selectedPaths={selectedRefPaths}
-              onToggle={toggleRefImage}
-              onDelete={(filename) => deleteRefMutation.mutate(filename)}
-              deletingFilename={deleteRefMutation.isPending ? (deleteRefMutation.variables as string) : null}
+            <ImageLibrary
+              images={library}
+              selectedPaths={selectedPaths}
+              onToggle={toggleImage}
+              onDelete={(filename) => deleteMutation.mutate(filename)}
+              deletingFilename={deleteMutation.isPending ? (deleteMutation.variables as string) : null}
             />
           </TabsContent>
 
@@ -541,9 +407,9 @@ export const WorkspacePage: React.FC = () => {
 }
 
 // ------------------------------------------------------------------
-// Ref Image Library component
+// Unified image library component
 // ------------------------------------------------------------------
-const RefImageLibrary: React.FC<{
+const ImageLibrary: React.FC<{
   images: RefImage[]
   selectedPaths: Set<string>
   onToggle: (path: string) => void
@@ -556,9 +422,9 @@ const RefImageLibrary: React.FC<{
   if (images.length === 0) {
     return (
       <div className="text-center py-16 text-muted-foreground">
-        <BookImage className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <p>No ref images yet</p>
-        <p className="text-xs mt-1">Process an input image or upload directly above</p>
+        <ImageIcon className="w-12 h-12 mx-auto mb-4 opacity-50" />
+        <p>No images yet</p>
+        <p className="text-xs mt-1">Upload images above to get started</p>
       </div>
     )
   }

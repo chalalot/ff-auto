@@ -124,7 +124,6 @@ class ConfigService:
         "turbo_framework.txt",
         "turbo_constraints.txt",
         "turbo_example.txt",
-        "turbo_prompt_template.txt",
         "analyst_agent.txt",
         "analyst_task.txt",
     ]

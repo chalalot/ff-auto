@@ -294,13 +294,20 @@ class ImageToPromptWorkflow:
         hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
         hairstyle_options = f"{header}\n{hairstyle_list}"
 
-        # Load template from file
-        template_path = os.path.join(template_dir, 'turbo_prompt_template.txt')
-        try:
-            with open(template_path, 'r', encoding='utf-8') as f:
-                turbo_template = f.read()
-        except Exception as e:
-            raise FileNotFoundError(f"Could not load Turbo template from {template_path}: {e}")
+        # Assemble template from three separate editable parts
+        def _read_part(filename):
+            path = os.path.join(template_dir, filename)
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                raise FileNotFoundError(f"Could not load {filename} from {template_dir}: {e}")
+
+        turbo_template = (
+            _read_part('turbo_framework.txt') + "\n" +
+            _read_part('turbo_constraints.txt') + "\n" +
+            _read_part('turbo_example.txt')
+        )
 
         # Safe formatting
         try:

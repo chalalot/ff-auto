@@ -8,7 +8,6 @@ import { Input } from '@/components/ui/input'
 import { Loader2, Save, CheckCircle, Plus, AlertTriangle } from 'lucide-react'
 
 const TEMPLATE_FILES = [
-  { key: 'turbo_prompt_template.txt', label: 'Prompt Template', description: 'Main output template' },
   { key: 'turbo_agent.txt', label: 'Turbo Agent', description: 'Agent backstory / persona' },
   { key: 'turbo_framework.txt', label: 'Framework', description: 'Prompt structure rules' },
   { key: 'turbo_constraints.txt', label: 'Constraints', description: 'What to avoid' },
