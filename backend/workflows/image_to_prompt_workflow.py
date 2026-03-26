@@ -232,21 +232,28 @@ class ImageToPromptWorkflow:
         vision_result = vision_tool_instance._run(prompt=vision_prompt, image_path=image_path)
 
         # 4. Check for Failure/Moderation
-        # Relaxed check: Only fail if it says unable/unfortunately AND DOES NOT offer a description
-        is_refusal = "unable to analyze" in vision_result or "Unfortunately" in vision_result
-        has_content = "However," in vision_result or "description based on" in vision_result or "1. **" in vision_result
+        _REFUSAL_PHRASES = [
+            "sorry, i cannot", "sorry i cannot", "i'm sorry", "i am sorry",
+            "i cannot assist", "i can't assist", "i cannot help", "i can't help",
+            "i'm unable", "i am unable", "i cannot analyze", "i can't analyze",
+            "i'm not able", "i am not able", "i apologize, but",
+            "unfortunately, i cannot", "unfortunately i cannot",
+        ]
+        vision_lower = vision_result.strip().lower()
+
+        if not vision_lower:
+            logger.error("❌ Vision Analysis Failed: empty response from vision model.")
+            raise ValueError("Vision model returned an empty response.")
 
         if vision_result.startswith("Error"):
-             # Real error from tool
-             logger.error(f"Vision Tool Error: {vision_result}")
-             raise ValueError(f"Vision Analysis Failed: {vision_result}")
+            logger.error(f"❌ Vision Analysis Failed (tool error): {vision_result}")
+            raise ValueError(f"Vision model returned an error: {vision_result}")
 
-        if is_refusal and not has_content:
-            logger.error(f"Vision Analysis Failed or Moderated: {vision_result}")
-            raise ValueError(f"Vision Analysis Failed: {vision_result}")
-        
-        logger.info("Vision Analysis Successful.")
-        logger.info(f"\n{'='*60}\n[VISION RESULT]\n{'='*60}\n{vision_result}\n{'='*60}")
+        if any(phrase in vision_lower for phrase in _REFUSAL_PHRASES):
+            logger.error(f"❌ Vision Analysis Failed: LLM refused to analyze the image.\nModel response: {vision_result}")
+            raise ValueError(f"Vision model refused to analyze the image (content policy or moderation). Response: {vision_result[:300]}")
+
+        logger.info(f"✅ Vision Analysis Successful.\n{'='*60}\n[VISION RESULT]\n{'='*60}\n{vision_result}\n{'='*60}")
 
         # --- CREW SETUP ---
         
@@ -316,8 +323,6 @@ class ImageToPromptWorkflow:
         except KeyError:
              base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
         
-        logger.info(f"\n{'='*60}\n[TURBO INSTRUCTION (base_instruction)]\n{'='*60}\n{base_instruction}\n{'='*60}")
-
         for i in range(variation_count):
             # No explicit variation instruction; rely on LLM temperature for natural variance.
             task = Task(
@@ -343,14 +348,11 @@ class ImageToPromptWorkflow:
 
         # Capture the descriptive output
         descriptive_prompt = str(analyze_task.output)
-        logger.info(f"\n{'='*60}\n[ANALYST OUTPUT]\n{'='*60}\n{descriptive_prompt}\n{'='*60}")
 
         # Collect generated prompts
         generated_prompts = []
-        for i, task in enumerate(generate_prompt_tasks):
-            raw = str(task.output)
-            logger.info(f"\n{'='*60}\n[TURBO OUTPUT - Variation {i+1}]\n{'='*60}\n{raw}\n{'='*60}")
-            generated_prompts.append(raw)
+        for task in generate_prompt_tasks:
+            generated_prompts.append(str(task.output))
 
         logger.info(f"\n✅ Generated {len(generated_prompts)} Prompts.")
 
