@@ -246,6 +246,7 @@ class ImageToPromptWorkflow:
             raise ValueError(f"Vision Analysis Failed: {vision_result}")
         
         logger.info("Vision Analysis Successful.")
+        logger.info(f"\n{'='*60}\n[VISION RESULT]\n{'='*60}\n{vision_result}\n{'='*60}")
 
         # --- CREW SETUP ---
         
@@ -315,6 +316,8 @@ class ImageToPromptWorkflow:
         except KeyError:
              base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
         
+        logger.info(f"\n{'='*60}\n[TURBO INSTRUCTION (base_instruction)]\n{'='*60}\n{base_instruction}\n{'='*60}")
+
         for i in range(variation_count):
             # No explicit variation instruction; rely on LLM temperature for natural variance.
             task = Task(
@@ -337,14 +340,17 @@ class ImageToPromptWorkflow:
         )
 
         crew.kickoff()
-        
+
         # Capture the descriptive output
         descriptive_prompt = str(analyze_task.output)
-        
+        logger.info(f"\n{'='*60}\n[ANALYST OUTPUT]\n{'='*60}\n{descriptive_prompt}\n{'='*60}")
+
         # Collect generated prompts
         generated_prompts = []
-        for task in generate_prompt_tasks:
-            generated_prompts.append(str(task.output))
+        for i, task in enumerate(generate_prompt_tasks):
+            raw = str(task.output)
+            logger.info(f"\n{'='*60}\n[TURBO OUTPUT - Variation {i+1}]\n{'='*60}\n{raw}\n{'='*60}")
+            generated_prompts.append(raw)
 
         logger.info(f"\n✅ Generated {len(generated_prompts)} Prompts.")
 
