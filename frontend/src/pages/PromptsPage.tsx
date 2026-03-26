@@ -75,6 +75,8 @@ const TemplatesTab: React.FC = () => {
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<string>(TEMPLATE_FILES[0].key)
   const [savedFile, setSavedFile] = useState<string | null>(null)
+  const [savingAll, setSavingAll] = useState(false)
+  const [allSaved, setAllSaved] = useState(false)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const queryClient = useQueryClient()
 
@@ -111,6 +113,26 @@ const TemplatesTab: React.FC = () => {
       setTimeout(() => setSavedFile(null), 2000)
     },
   })
+
+  const dirtyCount = Object.keys(edits).length
+
+  const saveAll = async () => {
+    if (!selectedType || dirtyCount === 0) return
+    setSavingAll(true)
+    try {
+      await Promise.all(
+        Object.entries(edits).map(([filename, content]) =>
+          templateApi.saveFile(selectedType, filename, content)
+        )
+      )
+      setEdits({})
+      queryClient.invalidateQueries({ queryKey: ['templates', selectedType] })
+      setAllSaved(true)
+      setTimeout(() => setAllSaved(false), 2000)
+    } finally {
+      setSavingAll(false)
+    }
+  }
 
   const currentContent = edits[selectedFile] ?? (files?.[selectedFile] || '')
   const isDirty = selectedFile in edits
@@ -174,20 +196,39 @@ const TemplatesTab: React.FC = () => {
                 <Badge variant="outline" className="ml-2 text-xs">{selectedType}</Badge>
               )}
             </div>
-            <Button
-              size="sm"
-              disabled={!isDirty || saveMutation.isPending}
-              onClick={() => saveMutation.mutate({ filename: selectedFile, content: currentContent })}
-            >
-              {saveMutation.isPending && saveMutation.variables?.filename === selectedFile ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : savedFile === selectedFile ? (
-                <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
-              ) : (
-                <Save className="w-4 h-4 mr-2" />
+            <div className="flex items-center gap-2">
+              {dirtyCount > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={savingAll}
+                  onClick={saveAll}
+                >
+                  {savingAll ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : allSaved ? (
+                    <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  {allSaved ? 'All Saved' : `Save All (${dirtyCount})`}
+                </Button>
               )}
-              {savedFile === selectedFile ? 'Saved' : 'Save'}
-            </Button>
+              <Button
+                size="sm"
+                disabled={!isDirty || saveMutation.isPending}
+                onClick={() => saveMutation.mutate({ filename: selectedFile, content: currentContent })}
+              >
+                {saveMutation.isPending && saveMutation.variables?.filename === selectedFile ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : savedFile === selectedFile ? (
+                  <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                {savedFile === selectedFile ? 'Saved' : 'Save'}
+              </Button>
+            </div>
           </div>
 
           {filesLoading ? (

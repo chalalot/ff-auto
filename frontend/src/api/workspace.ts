@@ -36,7 +36,10 @@ export const workspaceApi = {
   uploadRefImages: (files: File[]) => {
     const form = new FormData()
     files.forEach(f => form.append('files', f))
-    return apiClient.post<RefImage[]>('/workspace/ref-images/upload', form).then(r => r.data)
+    // Must unset Content-Type so the browser sets multipart/form-data with boundary
+    return apiClient.post<RefImage[]>('/workspace/ref-images/upload', form, {
+      headers: { 'Content-Type': undefined },
+    }).then(r => r.data)
   },
 
   deleteRefImage: (filename: string) =>

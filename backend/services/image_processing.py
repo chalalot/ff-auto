@@ -25,9 +25,9 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 class ImageProcessingService:
     def __init__(self):
-        self.input_dir = Path(GlobalConfig.INPUT_DIR)
-        self.processed_dir = Path(GlobalConfig.PROCESSED_DIR)
-        self.output_dir = Path(GlobalConfig.OUTPUT_DIR)
+        self.input_dir = Path(GlobalConfig.INPUT_DIR).resolve()
+        self.processed_dir = Path(GlobalConfig.PROCESSED_DIR).resolve()
+        self.output_dir = Path(GlobalConfig.OUTPUT_DIR).resolve()
 
         self.input_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
