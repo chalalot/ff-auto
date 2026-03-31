@@ -23,12 +23,6 @@ celery_app.conf.update(
     task_track_started=True,
 )
 
-celery_app.conf.beat_schedule = {
-    "populate-generated-images-every-minute": {
-        "task": "backend.tasks.run_populate_images",
-        "schedule": 60.0,
-    },
-}
 
 if __name__ == "__main__":
     celery_app.start()

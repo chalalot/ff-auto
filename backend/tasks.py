@@ -1,17 +1,24 @@
 import asyncio
 import logging
+from pathlib import Path
+
 from backend.celery_app import celery_app
+from backend.config import GlobalConfig
 from backend.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 from backend.third_parties.comfyui_client import ComfyUIClient
 from backend.database.image_logs_storage import ImageLogsStorage
 from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
-from backend.scripts.populate_generated_images import main as run_populate_images_async
 
 logger = logging.getLogger(__name__)
 
 _workflow = None
 _client = None
 _storage = None
+
+# How often to re-check a pending ComfyUI execution (seconds)
+DOWNLOAD_POLL_INTERVAL = int(GlobalConfig.COMFYUI_POLL_INTERVAL)
+# Max retries before giving up (~1 hour at 5s intervals)
+DOWNLOAD_MAX_RETRIES = int(GlobalConfig.COMFYUI_MAX_POLL_TIME) // DOWNLOAD_POLL_INTERVAL
 
 
 def get_instances():
@@ -25,13 +32,75 @@ def get_instances():
     return _workflow, _client, _storage
 
 
-@celery_app.task(name="backend.tasks.run_populate_images")
-def run_populate_images():
-    """Background task to populate generated images via Celery Beat."""
+@celery_app.task(
+    bind=True,
+    name="backend.tasks.download_execution_task",
+    max_retries=DOWNLOAD_MAX_RETRIES,
+    default_retry_delay=DOWNLOAD_POLL_INTERVAL,
+)
+def download_execution_task(self, execution_id: str, image_ref_path: str):
+    """Check a single ComfyUI execution and download the result when ready.
+
+    Uses Celery's retry mechanism so the worker is not blocked between checks.
+    """
+    _, client, storage = get_instances()
+    output_dir = Path(GlobalConfig.OUTPUT_DIR)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     try:
-        asyncio.run(run_populate_images_async())
+        status_data = asyncio.run(client.check_status(execution_id))
     except Exception as e:
-        logger.error(f"Error in run_populate_images: {e}")
+        logger.error(f"[download_execution_task] Status check failed for {execution_id}: {e}")
+        raise self.retry(exc=e, countdown=DOWNLOAD_POLL_INTERVAL)
+
+    status = status_data.get("status")
+
+    if status == "completed":
+        output_images = status_data.get("output_images", [])
+        comfy_image_path = None
+        if output_images and isinstance(output_images, list):
+            first_output = output_images[0]
+            if isinstance(first_output, dict):
+                for _, paths in first_output.items():
+                    if paths:
+                        comfy_image_path = paths[0]
+                        break
+
+        if not comfy_image_path:
+            logger.warning(f"[download_execution_task] No output image path for {execution_id}")
+            storage.mark_as_failed(execution_id)
+            return
+
+        try:
+            image_bytes = asyncio.run(client.download_image_by_path(comfy_image_path))
+        except Exception as e:
+            logger.error(f"[download_execution_task] download_image_by_path failed for {execution_id}: {e}")
+            try:
+                image_bytes = asyncio.run(client.download_image(execution_id))
+            except Exception as inner_e:
+                logger.error(f"[download_execution_task] Fallback download failed for {execution_id}: {inner_e}")
+                storage.mark_as_failed(execution_id)
+                return
+
+        base_name = Path(image_ref_path).stem if image_ref_path else execution_id
+        result_filename = f"result_{base_name}_{execution_id}.png"
+        local_result_path = output_dir / result_filename
+        local_result_path.write_bytes(image_bytes)
+
+        storage.update_result_path(
+            execution_id=execution_id,
+            result_image_path=str(local_result_path),
+            new_ref_path=None,
+        )
+        logger.info(f"[download_execution_task] ✅ Saved {local_result_path}")
+
+    elif status == "failed":
+        logger.error(f"[download_execution_task] ❌ Execution {execution_id} failed.")
+        storage.mark_as_failed(execution_id)
+
+    else:
+        # still running / queued — retry after interval
+        raise self.retry(countdown=DOWNLOAD_POLL_INTERVAL)
 
 
 @celery_app.task(bind=True, name="backend.tasks.process_image_task")
@@ -117,6 +186,13 @@ async def async_process_image(
         raise e
 
     prompts = result.get("generated_prompts", [result.get("generated_prompt")])
+    logger.info(
+        f"[PROMPT DEBUG] {len(prompts)} prompt(s) generated for {dest_image_path}:\n"
+        + "\n".join(
+            f"--- Variation {i+1} ({len(p)} chars) ---\n{p}"
+            for i, p in enumerate(prompts)
+        )
+    )
     successful_queues_for_image = 0
     execution_ids = []
 
@@ -149,6 +225,10 @@ async def async_process_image(
                 prompt=prompt_content,
                 image_ref_path=dest_image_path,
                 persona=persona,
+            )
+            download_execution_task.apply_async(
+                args=[execution_id, dest_image_path],
+                countdown=DOWNLOAD_POLL_INTERVAL,
             )
             successful_queues_for_image += 1
             execution_ids.append(execution_id)
