@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import logging
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -163,6 +164,25 @@ class ImageLogsStorage:
             conn.commit()
         except Exception as e:
             logger.error(f"Failed to update result path for {execution_id}: {e}")
+            raise
+        finally:
+            conn.close()
+
+    def log_failed_execution(self, image_ref_path: str, error_message: str, persona: str = None) -> int:
+        """Log an execution that failed before reaching ComfyUI (e.g. vision refusal)."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        synthetic_id = f"failed_{uuid.uuid4().hex[:12]}"
+        try:
+            cursor.execute("""
+                INSERT INTO image_logs (execution_id, prompt, persona, image_ref_path, result_image_path, status)
+                VALUES (?, ?, ?, ?, NULL, 'failed')
+            """, (synthetic_id, error_message, persona, image_ref_path))
+            row_id = cursor.lastrowid
+            conn.commit()
+            return row_id
+        except Exception as e:
+            logger.error(f"Failed to log failed execution: {e}")
             raise
         finally:
             conn.close()

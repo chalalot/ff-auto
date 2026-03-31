@@ -164,26 +164,30 @@ async def async_process_image(
             vision_model=vision_model,
             variation_count=variation_count,
         )
-    except ValueError as e:
-        error_msg = str(e)
-        if "Invalid response from LLM call - None or empty" in error_msg:
-            formatted_error = (
-                "Agent Generation Failed: The AI returned an empty response.\n"
-                "Possible reasons:\n"
-                "1) API Rate Limits or Timeouts\n"
-                "2) Safety/Moderation filters blocked the image or description\n"
-                "3) Context length limits exceeded\n"
-                "Check Celery logs for deep raw LLM responses (enable verbose mode)."
-            )
-            task.update_state(state="FAILURE", meta={"status": f"❌ {formatted_error}", "progress": 0})
-            logger.error(formatted_error)
-            raise ValueError(formatted_error) from e
-        else:
-            task.update_state(state="FAILURE", meta={"status": f"❌ Error: {error_msg}", "progress": 0})
-            raise e
     except Exception as e:
-        task.update_state(state="FAILURE", meta={"status": f"❌ Workflow Error: {str(e)}", "progress": 0})
-        raise e
+        error_msg = str(e)
+        is_vision_refusal = "refused to analyze" in error_msg or "content policy" in error_msg.lower()
+        is_empty_response = "Invalid response from LLM call - None or empty" in error_msg
+
+        if is_vision_refusal or is_empty_response:
+            if is_vision_refusal:
+                label = f"Vision model refused: {error_msg}"
+            else:
+                label = (
+                    "Agent Generation Failed: The AI returned an empty response. "
+                    "Possible reasons: API Rate Limits/Timeouts, Safety filters, or Context length exceeded."
+                )
+            logger.error(f"[PROMPT FAILED] {label}")
+            storage.log_failed_execution(
+                image_ref_path=dest_image_path,
+                error_message=label,
+                persona=persona,
+            )
+            task.update_state(state="FAILURE", meta={"status": f"❌ {label}", "progress": 0})
+            raise ValueError(label) from e
+        else:
+            task.update_state(state="FAILURE", meta={"status": f"❌ Workflow Error: {error_msg}", "progress": 0})
+            raise e
 
     prompts = result.get("generated_prompts", [result.get("generated_prompt")])
     logger.info(
