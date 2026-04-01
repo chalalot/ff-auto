@@ -6,6 +6,7 @@ import { WorkspacePage } from '@/pages/WorkspacePage'
 import { GalleryPage } from '@/pages/GalleryPage'
 import { MonitorPage } from '@/pages/MonitorPage'
 import { PromptsPage } from '@/pages/PromptsPage'
+import { VideoPage } from '@/pages/VideoPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,6 +58,7 @@ function App() {
               <Route index element={<Navigate to="/workspace" replace />} />
               <Route path="workspace" element={<WorkspacePage />} />
               <Route path="gallery" element={<GalleryPage />} />
+              <Route path="video" element={<VideoPage />} />
               <Route path="monitor" element={<MonitorPage />} />
               <Route path="prompts" element={<PromptsPage />} />
             </Route>

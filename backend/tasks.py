@@ -183,10 +183,11 @@ async def async_process_image(
                 error_message=label,
                 persona=persona,
             )
-            task.update_state(state="FAILURE", meta={"status": f"❌ {label}", "progress": 0})
-            raise ValueError(label) from e
+            # Return instead of raise so Celery doesn't try to re-serialize the
+            # exception on top of the FAILURE meta we already wrote, which causes
+            # "Exception information must include the exception type".
+            return {"success": False, "image_path": dest_image_path, "error": label}
         else:
-            task.update_state(state="FAILURE", meta={"status": f"❌ Workflow Error: {error_msg}", "progress": 0})
             raise e
 
     prompts = result.get("generated_prompts", [result.get("generated_prompt")])
@@ -251,3 +252,34 @@ async def async_process_image(
         "total_variations": len(prompts),
         "execution_ids": execution_ids,
     }
+
+
+@celery_app.task(bind=True, name="backend.tasks.merge_videos_task")
+def merge_videos_task(self, filenames: list, transition_type: str, transition_duration: float):
+    """Merge multiple videos with transitions."""
+    from backend.config import GlobalConfig
+    from backend.utils.video_utils import merge_videos
+    from pathlib import Path
+    import uuid
+
+    video_dir = Path(GlobalConfig.VIDEO_DIR)
+    video_paths = [str(video_dir / f) for f in filenames]
+    output_filename = f"merged_{uuid.uuid4().hex[:8]}.mp4"
+    output_path = str(video_dir / output_filename)
+
+    def progress_cb(p):
+        self.update_state(state="PROGRESS", meta={"progress": int(p * 100)})
+
+    merge_videos(video_paths, output_path, transition_type, transition_duration, progress_cb)
+    return {"output_filename": output_filename, "output_path": output_path}
+
+
+@celery_app.task(bind=True, name="backend.tasks.analyze_music_task")
+def analyze_music_task(self, audio_path: str):
+    """Run music analysis workflow on an audio file."""
+    from backend.workflows.music_analysis_workflow import MusicAnalysisWorkflow
+
+    self.update_state(state="PROGRESS", meta={"status": "Analyzing audio...", "progress": 20})
+    workflow = MusicAnalysisWorkflow(verbose=False)
+    result = workflow.process(audio_path)
+    return {"vibe": result.get("vibe", ""), "lyrics": result.get("lyrics", ""), "analysis": str(result)}

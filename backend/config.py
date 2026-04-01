@@ -75,6 +75,7 @@ class GlobalConfig:
     INPUT_DIR = os.getenv("INPUT_DIR", "Sorted")
     PROCESSED_DIR = os.getenv("PROCESSED_DIR", "processed")
     OUTPUT_DIR = os.getenv("OUTPUT_DIR", "results")
+    VIDEO_DIR = os.getenv("VIDEO_DIR", "raw_video")
 
     # Prompts directory (for personas, presets, templates)
     PROMPTS_DIR = os.getenv("PROMPTS_DIR", "prompts")

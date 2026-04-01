@@ -6,7 +6,7 @@ import { Image, Grid, Video, Activity, FileText, Settings } from 'lucide-react'
 const navItems = [
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
-  { to: '/video', label: 'Video', icon: Video, disabled: true },
+  { to: '/video', label: 'Video', icon: Video },
   { to: '/monitor', label: 'Monitor', icon: Activity },
   { to: '/prompts', label: 'Prompts', icon: FileText },
 ]

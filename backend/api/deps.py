@@ -25,3 +25,11 @@ def get_gallery_service() -> GalleryService:
 @lru_cache
 def get_config_service() -> ConfigService:
     return ConfigService()
+
+
+from backend.services.video import VideoService
+
+
+@lru_cache
+def get_video_service() -> VideoService:
+    return VideoService()
