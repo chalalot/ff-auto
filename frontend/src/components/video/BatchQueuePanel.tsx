@@ -28,8 +28,8 @@ const STATUS_BADGE: Record<string, 'default' | 'secondary' | 'destructive' | 'ou
   failed: 'destructive',
 }
 
-const TaskCard: React.FC<{ taskId: string; label: string }> = ({ taskId, label }) => {
-  const { data } = useVideoStatus(taskId)
+const TaskCard: React.FC<{ taskId: string; label: string; backend: VideoBackend }> = ({ taskId, label, backend }) => {
+  const { data } = useVideoStatus(taskId, backend)
   const status = data?.status ?? 'pending'
   const progress = data?.progress ?? 0
   const variant = STATUS_BADGE[status] ?? 'secondary'
@@ -40,10 +40,10 @@ const TaskCard: React.FC<{ taskId: string; label: string }> = ({ taskId, label }
         <p className="text-sm truncate">{label}</p>
         <Badge variant={variant} className="text-xs shrink-0 capitalize">{status}</Badge>
       </div>
-      {(status === 'pending' || status === 'processing') && (
+      {(status === 'pending' || status === 'processing' || !['completed', 'succeed', 'failed'].includes(status)) && (
         <Progress value={progress} className="h-1.5" />
       )}
-      {(status === 'completed' || status === 'succeed') && data?.video_url && (
+      {(status === 'completed' || status === 'succeed') && (data?.video_url || backend === 'comfy') && (
         <a
           href={data.video_url}
           target="_blank"
@@ -118,7 +118,7 @@ export const BatchQueuePanel: React.FC<BatchQueuePanelProps> = ({
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground uppercase tracking-wide">Progress</p>
           {taskIds.map(t => (
-            <TaskCard key={t.id} taskId={t.id} label={t.label} />
+            <TaskCard key={t.id} taskId={t.id} label={t.label} backend={backend} />
           ))}
         </div>
       )}

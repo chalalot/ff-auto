@@ -39,6 +39,27 @@ export const videoApi = {
   getStatus: (taskId: string) =>
     apiClient.get<VideoStatusResponse>(`/video/status/${taskId}`).then(r => r.data),
 
+  getComfyStatus: (taskId: string) =>
+    apiClient
+      .get<{ task_id: string; state: string; progress: number; result: Record<string, unknown> | null }>(
+        `/video/comfy-status/${taskId}`
+      )
+      .then(r => {
+        const { task_id, state, progress, result } = r.data
+        const stateMap: Record<string, string> = {
+          SUCCESS: 'completed',
+          FAILURE: 'failed',
+          STARTED: 'processing',
+          PENDING: 'pending',
+        }
+        return {
+          task_id,
+          status: stateMap[state] ?? 'pending',
+          progress,
+          video_url: undefined,
+        } as VideoStatusResponse
+      }),
+
   // List
   listVideos: (params?: { page?: number; per_page?: number }) =>
     apiClient.get<VideoListResponse>('/video/list', { params }).then(r => r.data),
