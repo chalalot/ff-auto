@@ -43,7 +43,7 @@ const TaskCard: React.FC<{ taskId: string; label: string; backend: VideoBackend 
       {(status === 'pending' || status === 'processing' || !['completed', 'succeed', 'failed'].includes(status)) && (
         <Progress value={progress} className="h-1.5" />
       )}
-      {(status === 'completed' || status === 'succeed') && (data?.video_url || backend === 'comfy') && (
+      {(status === 'completed' || status === 'succeed') && data?.video_url && (
         <a
           href={data.video_url}
           target="_blank"

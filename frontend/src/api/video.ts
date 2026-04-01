@@ -45,7 +45,7 @@ export const videoApi = {
         `/video/comfy-status/${taskId}`
       )
       .then(r => {
-        const { task_id, state, progress, result } = r.data
+        const { task_id, state, progress } = r.data
         const stateMap: Record<string, string> = {
           SUCCESS: 'completed',
           FAILURE: 'failed',
