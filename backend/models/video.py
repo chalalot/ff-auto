@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -13,11 +13,28 @@ class KlingSettings(BaseModel):
     voice_list: Optional[List[str]] = None
 
 
+class ComfyKlingSettings(BaseModel):
+    """Parameters injected directly into kling.json node 45 (KlingImage2VideoNode)."""
+    model_name: str = "kling-v2-5-turbo"
+    mode: str = "std"          # "std" | "pro"
+    duration: str = "5"        # "5" | "10"
+    aspect_ratio: str = "9:16"
+    cfg_scale: float = Field(default=0.5, ge=0.0, le=1.0)
+    negative_prompt: str = (
+        "wrinkles, nasolabial folds, smile lines, aging, old face, harsh shadows on face, "
+        "textured skin, rough skin, pores, ugly, deformed, cartoon, illustration, 3d render, "
+        "slow motion, frozen, morphing, distorted hands, text, watermark, blur, low quality, "
+        "rushed action, timelapse"
+    )
+
+
 class VideoGenerateRequest(BaseModel):
     image_path: str
     prompt: Optional[str] = None
     kling_settings: KlingSettings = Field(default_factory=KlingSettings)
     batch_id: Optional[str] = None
+    backend: str = "api"  # "api" or "comfy"
+    comfy_settings: Optional[ComfyKlingSettings] = None
 
 
 class VideoGenerateResponse(BaseModel):
@@ -35,6 +52,8 @@ class VideoBatchItem(BaseModel):
 class VideoBatchRequest(BaseModel):
     items: List[VideoBatchItem]
     kling_settings: KlingSettings = Field(default_factory=KlingSettings)
+    backend: str = "api"  # "api" or "comfy"
+    comfy_settings: Optional[ComfyKlingSettings] = None
 
 
 class VideoBatchResponse(BaseModel):

@@ -15,7 +15,8 @@ import { VideoGallery } from '@/components/video/VideoGallery'
 import { AudioUploader } from '@/components/video/AudioUploader'
 import { AudioTrimmer } from '@/components/video/AudioTrimmer'
 import { MusicAnalysisResults } from '@/components/video/MusicAnalysisResults'
-import type { KlingSettings, StoryboardResult } from '@/types/video'
+import { ComfyKlingSettingsPanel, DEFAULT_COMFY_KLING_SETTINGS } from '@/components/video/ComfyKlingSettingsPanel'
+import type { KlingSettings, StoryboardResult, ComfyKlingSettings, VideoBackend } from '@/types/video'
 
 const DEFAULT_KLING_SETTINGS: KlingSettings = {
   model_name: 'kling-v1.6',
@@ -37,6 +38,8 @@ export const VideoPage: React.FC = () => {
   const [queueItems, setQueueItems] = useState<QueueItem[]>([])
   const [klingSettings, setKlingSettings] = useState<KlingSettings>(DEFAULT_KLING_SETTINGS)
   const [storyboardResults, setStoryboardResults] = useState<StoryboardResult[]>([])
+  const [videoBackend, setVideoBackend] = useState<VideoBackend>('api')
+  const [comfySettings, setComfySettings] = useState<ComfyKlingSettings>(DEFAULT_COMFY_KLING_SETTINGS)
 
   // Video Constructor tab state
   const [timeline, setTimeline] = useState<string[]>([])
@@ -160,17 +163,52 @@ export const VideoPage: React.FC = () => {
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     4. Kling Settings
                   </h2>
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2">
-                      <KlingSettingsPanel value={klingSettings} onChange={setKlingSettings} />
-                    </div>
-                    <div>
-                      <KlingPresetManager
-                        currentSettings={klingSettings}
-                        onLoad={setKlingSettings}
-                      />
-                    </div>
+
+                  {/* Backend selector */}
+                  <div className="flex items-center gap-2 p-3 rounded-md border bg-muted/40">
+                    <span className="text-sm font-medium mr-2">Backend:</span>
+                    <button
+                      onClick={() => setVideoBackend('api')}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        videoBackend === 'api'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background border hover:bg-accent'
+                      }`}
+                    >
+                      Kling API
+                    </button>
+                    <button
+                      onClick={() => setVideoBackend('comfy')}
+                      className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                        videoBackend === 'comfy'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-background border hover:bg-accent'
+                      }`}
+                    >
+                      ComfyUI (kling.json)
+                    </button>
+                    {videoBackend === 'comfy' && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        Uses KlingImage2VideoNode via Comfy Cloud
+                      </span>
+                    )}
                   </div>
+
+                  {videoBackend === 'api' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <div className="lg:col-span-2">
+                        <KlingSettingsPanel value={klingSettings} onChange={setKlingSettings} />
+                      </div>
+                      <div>
+                        <KlingPresetManager
+                          currentSettings={klingSettings}
+                          onLoad={setKlingSettings}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <ComfyKlingSettingsPanel value={comfySettings} onChange={setComfySettings} />
+                  )}
                 </section>
 
                 <Separator />
@@ -180,7 +218,12 @@ export const VideoPage: React.FC = () => {
                   <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     5. Queue to Kling
                   </h2>
-                  <BatchQueuePanel items={queueItems} klingSettings={klingSettings} />
+                  <BatchQueuePanel
+                    items={queueItems}
+                    klingSettings={klingSettings}
+                    backend={videoBackend}
+                    comfySettings={comfySettings}
+                  />
                 </section>
               </>
             )}

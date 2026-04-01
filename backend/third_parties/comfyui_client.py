@@ -413,6 +413,189 @@ class ComfyUIClient:
                 logger.error(f"Error while polling status: {e}")
                 await asyncio.sleep(poll_interval)
 
+    async def upload_image(self, image_path: str) -> str:
+        """
+        Upload a local image to ComfyUI Cloud so it can be referenced in a workflow.
+
+        Returns:
+            The filename as stored on the ComfyUI server (use this in LoadImage nodes).
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+
+        url = f"{self.cloud_api_url}/upload/image"
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
+        image_name = os.path.basename(image_path)
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+
+        # Determine content type from extension
+        ext = os.path.splitext(image_name)[1].lower()
+        content_type = "image/png" if ext == ".png" else "image/jpeg"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                files={"image": (image_name, image_data, content_type)},
+            )
+            response.raise_for_status()
+            data = response.json()
+            # ComfyUI returns {"name": "...", "subfolder": "...", "type": "input"}
+            return data.get("name", image_name)
+
+    async def generate_video_comfy(
+        self,
+        image_path: str,
+        prompt: str = "",
+        negative_prompt: str = "",
+        model_name: str = "kling-v2-5-turbo",
+        cfg_scale: float = 0.5,
+        mode: str = "std",
+        aspect_ratio: str = "9:16",
+        duration: str = "5",
+        kling_workflow_path: Optional[str] = None,
+    ) -> str:
+        """
+        Submit a Kling image-to-video job via the ComfyUI KlingImage2VideoNode workflow.
+
+        Loads kling.json, injects the parameters, uploads the source image,
+        and submits via queue_prompt().
+
+        Returns:
+            prompt_id (execution ID) from ComfyUI.
+        """
+        # Resolve workflow path
+        if kling_workflow_path is None:
+            kling_workflow_path = os.getenv(
+                "KLING_WORKFLOW_JSON_PATH",
+                os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                    "kling.json",
+                ),
+            )
+
+        with open(kling_workflow_path, "r") as f:
+            workflow = json.load(f)
+
+        # Upload the source image and get the server-side filename
+        uploaded_name = await self.upload_image(image_path)
+        logger.info(f"[generate_video_comfy] Uploaded image as: {uploaded_name}")
+
+        # Patch LoadImage node (node 40) with the uploaded filename
+        if "40" in workflow:
+            workflow["40"]["inputs"]["image"] = uploaded_name
+
+        # Patch KlingImage2VideoNode (node 45) with user params
+        if "45" in workflow:
+            node = workflow["45"]["inputs"]
+            node["prompt"] = prompt
+            node["negative_prompt"] = negative_prompt
+            node["model_name"] = model_name
+            node["cfg_scale"] = cfg_scale
+            node["mode"] = mode
+            node["aspect_ratio"] = aspect_ratio
+            node["duration"] = duration
+
+        prompt_id = await self.queue_prompt(workflow)
+        logger.info(f"[generate_video_comfy] Queued Kling ComfyUI job: {prompt_id}")
+        return prompt_id
+
+    async def check_video_status(self, execution_id: str) -> Dict[str, Any]:
+        """
+        Check status of a ComfyUI video job. Handles both 'images' and 'videos'/'gifs'
+        output types from SaveVideo / VHS_VideoCombine nodes.
+
+        Returns the same shape as check_status() but with 'output_videos' instead of
+        'output_images' when video outputs are found.
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+
+        status_url = f"{self.cloud_api_url}/job/{execution_id}/status"
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            status_response = await client.get(status_url, headers=headers)
+            status_response.raise_for_status()
+            job_status = status_response.json().get("status", "").lower()
+
+            if job_status in ["success", "completed"]:
+                history_url = f"{self.cloud_api_url}/history_v2/{execution_id}"
+                history_response = await client.get(history_url, headers=headers)
+                history_response.raise_for_status()
+                history_data = history_response.json()
+
+                job_data = history_data.get(execution_id, {})
+                outputs = job_data.get("outputs", {})
+
+                output_videos: list = []
+                output_images: list = []
+
+                for node_id, node_output in outputs.items():
+                    # Handle video outputs (SaveVideo / VHS_VideoCombine)
+                    for video_key in ("videos", "gifs", "video"):
+                        if video_key in node_output:
+                            paths = []
+                            for item in node_output[video_key]:
+                                fname = item.get("filename", "")
+                                sub = item.get("subfolder", "")
+                                ftype = item.get("type", "output")
+                                paths.append(f"{sub}/{fname}?type={ftype}" if sub else f"{fname}?type={ftype}")
+                            output_videos.append({node_id: paths})
+
+                    # Handle image outputs (fallback)
+                    if "images" in node_output:
+                        paths = []
+                        for img in node_output["images"]:
+                            fname = img.get("filename", "")
+                            sub = img.get("subfolder", "")
+                            ftype = img.get("type", "output")
+                            paths.append(f"{sub}/{fname}?type={ftype}" if sub else f"{fname}?type={ftype}")
+                        output_images.append({node_id: paths})
+
+                return {
+                    "status": "completed",
+                    "output_videos": output_videos,
+                    "output_images": output_images,
+                    "raw_history": history_data,
+                }
+
+            elif job_status in ["failed", "error"]:
+                return {"status": "failed", "error_message": status_response.text}
+            else:
+                return {"status": "running"}
+
+    async def download_file_by_path(self, file_path: str) -> bytes:
+        """
+        Download any file (image or video) from ComfyUI /view endpoint by path string.
+        Same logic as download_image_by_path but generalized.
+        """
+        if not self.cloud_api_url:
+            raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
+
+        filename_part = file_path.split("?")[0]
+        query_part = file_path.split("?")[1] if "?" in file_path else "type=output"
+
+        view_url = f"{self.cloud_api_url}/view?filename={os.path.basename(filename_part)}&{query_part}"
+        if "/" in filename_part:
+            sub = os.path.dirname(filename_part)
+            view_url += f"&subfolder={sub}"
+
+        headers = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
+        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+            resp = await client.get(view_url, headers=headers)
+            resp.raise_for_status()
+            return resp.content
+
     async def generate_and_wait(
         self,
         positive_prompt: str,

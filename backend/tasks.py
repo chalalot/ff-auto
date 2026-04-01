@@ -283,3 +283,71 @@ def analyze_music_task(self, audio_path: str):
     workflow = MusicAnalysisWorkflow(verbose=False)
     result = workflow.process(audio_path)
     return {"vibe": result.get("vibe", ""), "lyrics": result.get("lyrics", ""), "analysis": str(result)}
+
+
+@celery_app.task(
+    bind=True,
+    name="backend.tasks.poll_comfy_video_task",
+    max_retries=120,
+    default_retry_delay=10,
+)
+def poll_comfy_video_task(self, prompt_id: str, image_path: str, batch_id=None):
+    """
+    Poll ComfyUI for a Kling video job and download the result when complete.
+    Retries every 10 seconds for up to 20 minutes.
+    """
+    import asyncio
+    from pathlib import Path
+    from backend.third_parties.comfyui_client import ComfyUIClient
+    from backend.database.video_logs_storage import VideoLogsStorage
+    from backend.config import GlobalConfig
+
+    client = ComfyUIClient()
+    video_dir = Path(GlobalConfig.VIDEO_DIR)
+    video_dir.mkdir(parents=True, exist_ok=True)
+    storage = VideoLogsStorage(str(video_dir / "video_logs.db"))
+
+    try:
+        status_data = asyncio.run(client.check_video_status(prompt_id))
+    except Exception as e:
+        logger.error(f"[poll_comfy_video_task] Status check failed for {prompt_id}: {e}")
+        raise self.retry(exc=e)
+
+    status = status_data.get("status")
+
+    if status == "completed":
+        # Try to find the output video path
+        output_videos = status_data.get("output_videos", [])
+        output_path = None
+
+        if output_videos:
+            for node_output in output_videos:
+                for node_id, paths in node_output.items():
+                    if paths:
+                        video_file_path = paths[0]
+                        try:
+                            video_bytes = asyncio.run(client.download_file_by_path(video_file_path))
+                            local_filename = f"comfy_{prompt_id}.mp4"
+                            local_path = video_dir / local_filename
+                            local_path.write_bytes(video_bytes)
+                            output_path = str(local_path)
+                            logger.info(f"[poll_comfy_video_task] Downloaded ComfyUI video to {local_path}")
+                        except Exception as e:
+                            logger.error(f"[poll_comfy_video_task] Download failed for {prompt_id}: {e}")
+                        break
+                if output_path:
+                    break
+
+        storage.update_result(
+            execution_id=prompt_id,
+            video_output_path=output_path,
+            status="completed",
+        )
+
+    elif status == "failed":
+        logger.error(f"[poll_comfy_video_task] ComfyUI job {prompt_id} failed.")
+        storage.update_result(execution_id=prompt_id, status="failed")
+
+    else:
+        # Still running — retry
+        raise self.retry()

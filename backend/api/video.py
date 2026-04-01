@@ -70,12 +70,22 @@ def generate_video(
 ):
     """Queue a single Kling video generation task."""
     try:
-        task_id = svc.queue_video(
-            image_path=body.image_path,
-            prompt=body.prompt,
-            kling_settings=body.kling_settings,
-            batch_id=body.batch_id,
-        )
+        if body.backend == "comfy":
+            from backend.models.video import ComfyKlingSettings
+            comfy_settings = body.comfy_settings or ComfyKlingSettings()
+            task_id = svc.queue_video_comfy(
+                image_path=body.image_path,
+                prompt=body.prompt,
+                comfy_settings=comfy_settings,
+                batch_id=body.batch_id,
+            )
+        else:
+            task_id = svc.queue_video(
+                image_path=body.image_path,
+                prompt=body.prompt,
+                kling_settings=body.kling_settings,
+                batch_id=body.batch_id,
+            )
         return VideoGenerateResponse(task_id=task_id, batch_id=body.batch_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,12 +103,22 @@ def generate_video_batch(
     for item in body.items:
         for _ in range(item.variation_count):
             try:
-                task_id = svc.queue_video(
-                    image_path=item.image_path,
-                    prompt=item.prompt,
-                    kling_settings=body.kling_settings,
-                    batch_id=batch_id,
-                )
+                if body.backend == "comfy":
+                    from backend.models.video import ComfyKlingSettings
+                    comfy_settings = body.comfy_settings or ComfyKlingSettings()
+                    task_id = svc.queue_video_comfy(
+                        image_path=item.image_path,
+                        prompt=item.prompt,
+                        comfy_settings=comfy_settings,
+                        batch_id=batch_id,
+                    )
+                else:
+                    task_id = svc.queue_video(
+                        image_path=item.image_path,
+                        prompt=item.prompt,
+                        kling_settings=body.kling_settings,
+                        batch_id=batch_id,
+                    )
                 task_ids.append(task_id)
             except Exception as e:
                 raise HTTPException(
@@ -270,3 +290,19 @@ def delete_preset(name: str, svc: VideoService = Depends(get_video_service)):
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Preset '{name}' not found")
     return {"deleted": name}
+
+
+@router.get("/comfy-status/{task_id}")
+def get_comfy_video_status(task_id: str):
+    """Poll a ComfyUI Kling video Celery task (poll_comfy_video_task)."""
+    result = celery_app.AsyncResult(task_id)
+    state = result.state
+    meta = result.info or {}
+    if isinstance(meta, Exception):
+        meta = {"error": str(meta)}
+    return {
+        "task_id": task_id,
+        "state": state,
+        "progress": meta.get("progress", 0) if isinstance(meta, dict) else 0,
+        "result": meta if state in ("SUCCESS", "FAILURE") else None,
+    }

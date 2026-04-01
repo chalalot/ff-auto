@@ -14,11 +14,24 @@ export interface KlingPreset {
   settings: KlingSettings
 }
 
+export interface ComfyKlingSettings {
+  model_name: string    // ComfyUI model names: "kling-v2-5-turbo", "kling-v2-5", "kling-v2-0-turbo", "kling-v2-0", "kling-v1-6-turbo", "kling-v1-6"
+  mode: string          // "std" | "pro"
+  duration: string      // "5" | "10"
+  aspect_ratio: string  // "9:16" | "16:9" | "1:1"
+  cfg_scale: number
+  negative_prompt: string
+}
+
+export type VideoBackend = 'api' | 'comfy'
+
 export interface VideoGenerateRequest {
   image_path: string
   prompt?: string
   kling_settings: KlingSettings
   batch_id?: string
+  backend?: VideoBackend
+  comfy_settings?: ComfyKlingSettings
 }
 
 export interface VideoBatchItem {
@@ -30,6 +43,8 @@ export interface VideoBatchItem {
 export interface VideoBatchRequest {
   items: VideoBatchItem[]
   kling_settings: KlingSettings
+  backend?: VideoBackend
+  comfy_settings?: ComfyKlingSettings
 }
 
 export interface VideoItem {

@@ -1,0 +1,45 @@
+{
+  "38": {
+    "inputs": {
+      "filename_prefix": "video/ComfyUI",
+      "format": "auto",
+      "codec": "auto",
+      "video": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "Save Video"
+    }
+  },
+  "40": {
+    "inputs": {
+      "image": "api_kling_i2v_input_image.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "45": {
+    "inputs": {
+      "prompt": "",
+      "negative_prompt": "wrinkles, nasolabial folds, smile lines, aging, old face, harsh shadows on face, textured skin, rough skin, pores, ugly, deformed, cartoon, illustration, 3d render, slow motion, frozen, morphing, distorted hands, text, watermark, blur, low quality, rushed action, timelapse",
+      "model_name": "kling-v2-5-turbo",
+      "cfg_scale": 0.5,
+      "mode": "std",
+      "aspect_ratio": "9:16",
+      "duration": "5",
+      "start_frame": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "KlingImage2VideoNode",
+    "_meta": {
+      "title": "Kling Image(First Frame) to Video"
+    }
+  }
+}

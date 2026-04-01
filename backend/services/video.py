@@ -80,6 +80,51 @@ class VideoService:
         logger.info(f"[VideoService] Queued Kling task {task_id} for {image_path}")
         return task_id
 
+    def queue_video_comfy(
+        self,
+        image_path: str,
+        prompt: Optional[str],
+        comfy_settings: "ComfyKlingSettings",
+        batch_id: Optional[str] = None,
+    ) -> str:
+        """
+        Submit a video job to ComfyUI via kling.json workflow and dispatch a
+        Celery polling task. Returns the Celery task ID (not the ComfyUI prompt_id).
+        """
+        import asyncio
+        from backend.third_parties.comfyui_client import ComfyUIClient
+
+        client = ComfyUIClient()
+        prompt_id = asyncio.run(
+            client.generate_video_comfy(
+                image_path=image_path,
+                prompt=prompt or "",
+                negative_prompt=comfy_settings.negative_prompt,
+                model_name=comfy_settings.model_name,
+                cfg_scale=comfy_settings.cfg_scale,
+                mode=comfy_settings.mode,
+                aspect_ratio=comfy_settings.aspect_ratio,
+                duration=comfy_settings.duration,
+            )
+        )
+
+        # Log to DB so it appears in history
+        self.storage.log_execution(
+            execution_id=prompt_id,
+            prompt=prompt or "",
+            source_image_path=image_path,
+            batch_id=batch_id,
+            filename_id="comfy",
+        )
+        logger.info(f"[VideoService] Queued ComfyUI Kling job {prompt_id} for {image_path}")
+
+        # Dispatch a Celery task to poll and download when ready
+        from backend.tasks import poll_comfy_video_task
+        celery_task = poll_comfy_video_task.apply_async(
+            args=[prompt_id, image_path, batch_id],
+        )
+        return celery_task.id
+
     # ------------------------------------------------------------------
     # Status polling
     # ------------------------------------------------------------------
