@@ -172,16 +172,6 @@ def get_video_thumbnail(
     return Response(content=data, media_type="image/jpeg")
 
 
-@router.get("/{filename}")
-def stream_video(filename: str):
-    """Stream or download a video file."""
-    video_dir = Path(GlobalConfig.VIDEO_DIR)
-    video_path = video_dir / filename
-    if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Video not found")
-    return FileResponse(str(video_path), media_type="video/mp4", filename=filename)
-
-
 # ------------------------------------------------------------------
 # Merge
 # ------------------------------------------------------------------
@@ -306,3 +296,13 @@ def get_comfy_video_status(task_id: str):
         "progress": meta.get("progress", 0) if isinstance(meta, dict) else 0,
         "result": meta if state in ("SUCCESS", "FAILURE") else None,
     }
+
+
+@router.get("/{filename}")
+def stream_video(filename: str):
+    """Stream or download a video file."""
+    video_dir = Path(GlobalConfig.VIDEO_DIR)
+    video_path = video_dir / filename
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(str(video_path), media_type="video/mp4", filename=filename)

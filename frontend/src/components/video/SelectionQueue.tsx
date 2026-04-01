@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Trash2, ChevronUp, ChevronDown } from 'lucide-react'
-import { workspaceApi } from '@/api/workspace'
+import { galleryApi } from '@/api/gallery'
 
 interface QueueItem {
   image_path: string
@@ -31,7 +31,8 @@ export const SelectionQueue: React.FC<SelectionQueueProps> = ({ items, onUpdate,
     <div className="space-y-3">
       {items.map((item, idx) => {
         const filename = item.image_path.split('/').pop() ?? item.image_path
-        const thumbUrl = workspaceApi.getRefImageThumbnailUrl(filename)
+        const status = item.image_path.includes('/approved/') ? 'approved' : 'pending'
+        const thumbUrl = galleryApi.getThumbnailUrl(filename, status)
         return (
           <div key={`${item.image_path}-${idx}`} className="rounded-lg border p-3 space-y-2">
             <div className="flex gap-3">

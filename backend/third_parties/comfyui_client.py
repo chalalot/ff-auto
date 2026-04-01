@@ -481,13 +481,19 @@ class ComfyUIClient:
         with open(kling_workflow_path, "r") as f:
             workflow = json.load(f)
 
-        # Upload the source image and get the server-side filename
-        uploaded_name = await self.upload_image(image_path)
-        logger.info(f"[generate_video_comfy] Uploaded image as: {uploaded_name}")
+        # Embed source image as base64 directly in the workflow (no separate upload call,
+        # same single-request pattern as generate_image)
+        import base64
+        ext = os.path.splitext(image_path)[1].lower()
+        mime = "image/png" if ext == ".png" else "image/jpeg"
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("utf-8")
+        image_data_uri = f"data:{mime};base64,{b64}"
+        logger.info(f"[generate_video_comfy] Embedding image inline ({len(b64)} b64 chars)")
 
-        # Patch LoadImage node (node 40) with the uploaded filename
+        # Patch LoadImage node (node 40) with the inline base64 image
         if "40" in workflow:
-            workflow["40"]["inputs"]["image"] = uploaded_name
+            workflow["40"]["inputs"]["image"] = image_data_uri
 
         # Patch KlingImage2VideoNode (node 45) with user params
         if "45" in workflow:
