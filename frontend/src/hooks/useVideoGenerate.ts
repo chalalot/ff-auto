@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { videoApi } from '@/api/video'
-import type { KlingSettings, VideoBatchItem, VideoBatchRequest } from '@/types/video'
+import type { KlingSettings, VideoBatchRequest } from '@/types/video'
 
 export function useVideoGenerate() {
   const qc = useQueryClient()
