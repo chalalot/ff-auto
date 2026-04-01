@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 COPY prompts/ ./prompts/
 COPY workflow.json ./workflow.json
+COPY kling.json ./kling.json
 
 # Directories that will be bind-mounted in production;
 # create them so the app starts cleanly without mounts too.
