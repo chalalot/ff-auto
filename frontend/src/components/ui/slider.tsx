@@ -11,8 +11,9 @@ export const Slider = React.forwardRef<
     step?: number
     onValueChange?: (value: number[]) => void
     className?: string
+    disabled?: boolean
   }
->(({ value, min = 0, max = 100, step = 1, onValueChange, className }, ref) => (
+>(({ value, min = 0, max = 100, step = 1, onValueChange, className, disabled }, ref) => (
   <input
     ref={ref}
     type="range"
@@ -20,6 +21,7 @@ export const Slider = React.forwardRef<
     max={max}
     step={step}
     value={value?.[0]}
+    disabled={disabled}
     onChange={(e) => onValueChange?.([parseFloat(e.target.value)])}
     className={cn('w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary', className)}
   />

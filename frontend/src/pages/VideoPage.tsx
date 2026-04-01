@@ -37,7 +37,6 @@ export const VideoPage: React.FC = () => {
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [queueItems, setQueueItems] = useState<QueueItem[]>([])
   const [klingSettings, setKlingSettings] = useState<KlingSettings>(DEFAULT_KLING_SETTINGS)
-  const [storyboardResults, setStoryboardResults] = useState<StoryboardResult[]>([])
   const [videoBackend, setVideoBackend] = useState<VideoBackend>('api')
   const [comfySettings, setComfySettings] = useState<ComfyKlingSettings>(DEFAULT_COMFY_KLING_SETTINGS)
 
@@ -81,7 +80,6 @@ export const VideoPage: React.FC = () => {
 
   // ---- Storyboard handler ----
   const handlePromptsGenerated = (results: StoryboardResult[]) => {
-    setStoryboardResults(results)
     // Merge generated prompts back into queue items (use first variation per image)
     setQueueItems(prev =>
       prev.map(item => {

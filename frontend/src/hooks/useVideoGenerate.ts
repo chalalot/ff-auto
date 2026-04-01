@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { videoApi } from '@/api/video'
-import type { KlingSettings, VideoBatchItem } from '@/types/video'
+import type { KlingSettings, VideoBatchItem, VideoBatchRequest } from '@/types/video'
 
 export function useVideoGenerate() {
   const qc = useQueryClient()
@@ -17,8 +17,7 @@ export function useVideoGenerate() {
 export function useVideoBatchGenerate() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { items: VideoBatchItem[]; kling_settings: KlingSettings }) =>
-      videoApi.generateBatch(body),
+    mutationFn: (body: VideoBatchRequest) => videoApi.generateBatch(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['videos'] }),
   })
 }

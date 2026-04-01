@@ -3,7 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { Image, Grid, Video, Activity, FileText, Settings } from 'lucide-react'
 
-const navItems = [
+const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; disabled?: boolean }[] = [
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
   { to: '/video', label: 'Video', icon: Video },

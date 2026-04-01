@@ -49,15 +49,6 @@ export const VideoLibrary: React.FC = () => {
     })
   }
 
-  const toggleSelect = (filename: string) => {
-    setSelectedFilenames(prev => {
-      const next = new Set(prev)
-      if (next.has(filename)) next.delete(filename)
-      else next.add(filename)
-      return next
-    })
-  }
-
   return (
     <div className="space-y-4">
       {/* Toolbar */}
