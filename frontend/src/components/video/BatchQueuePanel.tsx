@@ -26,6 +26,7 @@ const STATUS_BADGE: Record<string, 'default' | 'secondary' | 'destructive' | 'ou
   completed: 'outline',
   succeed: 'outline',
   failed: 'destructive',
+  error: 'destructive',
 }
 
 const TaskCard: React.FC<{ taskId: string; label: string; backend: VideoBackend }> = ({ taskId, label, backend }) => {
@@ -40,7 +41,7 @@ const TaskCard: React.FC<{ taskId: string; label: string; backend: VideoBackend 
         <p className="text-sm truncate">{label}</p>
         <Badge variant={variant} className="text-xs shrink-0 capitalize">{status}</Badge>
       </div>
-      {(status === 'pending' || status === 'processing' || !['completed', 'succeed', 'failed'].includes(status)) && (
+      {(status === 'pending' || status === 'processing' || !['completed', 'succeed', 'failed', 'error'].includes(status)) && (
         <Progress value={progress} className="h-1.5" />
       )}
       {(status === 'completed' || status === 'succeed') && data?.video_url && (
@@ -52,6 +53,9 @@ const TaskCard: React.FC<{ taskId: string; label: string; backend: VideoBackend 
         >
           View video
         </a>
+      )}
+      {(status === 'failed' || status === 'error') && data?.error_message && (
+        <p className="text-xs text-destructive break-words">{data.error_message}</p>
       )}
     </div>
   )

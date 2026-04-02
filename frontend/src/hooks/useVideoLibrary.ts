@@ -6,6 +6,13 @@ export function useVideoList(page = 1, perPage = 20) {
   return useQuery({
     queryKey: ['videos', page, perPage],
     queryFn: () => videoApi.listVideos({ page, per_page: perPage }),
+    refetchInterval: (query) => {
+      const items = query.state.data?.items || []
+      const hasPending = items.some((item) => 
+        ['pending', 'processing', 'submitted'].includes(item.status)
+      )
+      return hasPending ? 5000 : false
+    },
   })
 }
 

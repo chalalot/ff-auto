@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class KlingSettings(BaseModel):
-    model_name: str = "kling-v1.6"
+    model_name: str = "kling-v1-6"
     mode: str = "std"  # "std" or "pro"
     duration: str = "5"  # "5" or "10"
     aspect_ratio: str = "16:9"
@@ -68,6 +68,7 @@ class VideoStatusResponse(BaseModel):
     video_url: Optional[str] = None
     local_path: Optional[str] = None
     duration: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class VideoItem(BaseModel):

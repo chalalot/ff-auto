@@ -19,7 +19,7 @@ import { ComfyKlingSettingsPanel, DEFAULT_COMFY_KLING_SETTINGS } from '@/compone
 import type { KlingSettings, StoryboardResult, ComfyKlingSettings, VideoBackend } from '@/types/video'
 
 const DEFAULT_KLING_SETTINGS: KlingSettings = {
-  model_name: 'kling-v1.6',
+  model_name: 'kling-v1-6',
   mode: 'std',
   duration: '5',
   aspect_ratio: '16:9',

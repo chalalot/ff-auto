@@ -12,7 +12,7 @@ export function useVideoStatus(taskId: string | null, backend: VideoBackend = 'a
     enabled: !!taskId && enabled,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      if (status === 'completed' || status === 'succeed' || status === 'failed') return false
+      if (status === 'completed' || status === 'succeed' || status === 'failed' || status === 'error') return false
       return 5000
     },
   })

@@ -78,6 +78,10 @@ class VideoService:
         )
 
         logger.info(f"[VideoService] Queued Kling task {task_id} for {image_path}")
+
+        from backend.tasks import poll_kling_video_task
+        poll_kling_video_task.apply_async(args=[task_id])
+
         return task_id
 
     def queue_video_comfy(
@@ -135,11 +139,12 @@ class VideoService:
             result = self.kling_client.get_video_status(task_id)
         except Exception as e:
             logger.error(f"[VideoService] get_video_status failed for {task_id}: {e}")
-            return VideoStatusResponse(task_id=task_id, status="error")
+            return VideoStatusResponse(task_id=task_id, status="error", error_message=str(e))
 
         kling_status = result.get("task_status", "unknown")
         video_url = result.get("video_url")
         duration = result.get("duration")
+        error_message = result.get("error_message")
 
         local_path = None
 
@@ -170,6 +175,7 @@ class VideoService:
             video_url=video_url,
             local_path=local_path,
             duration=str(duration) if duration is not None else None,
+            error_message=error_message,
         )
 
     # ------------------------------------------------------------------

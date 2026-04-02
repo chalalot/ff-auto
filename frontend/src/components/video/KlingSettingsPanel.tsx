@@ -31,9 +31,9 @@ export const KlingSettingsPanel: React.FC<KlingSettingsPanelProps> = ({ value, o
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="kling-v1.6">kling-v1.6</SelectItem>
-              <SelectItem value="kling-v2.0">kling-v2.0</SelectItem>
-              <SelectItem value="kling-v2.6">kling-v2.6</SelectItem>
+              <SelectItem value="kling-v1-6">kling-v1-6</SelectItem>
+              <SelectItem value="kling-v2-0">kling-v2-0</SelectItem>
+              <SelectItem value="kling-v2-6">kling-v2-6</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -108,7 +108,7 @@ export const KlingSettingsPanel: React.FC<KlingSettingsPanelProps> = ({ value, o
       </div>
 
       {/* Sound — only for kling-v2.6 */}
-      {value.model_name === 'kling-v2.6' && (
+      {value.model_name === 'kling-v2-6' && (
         <div className="space-y-1.5">
           <Label>Sound</Label>
           <Select value={value.sound ?? 'off'} onValueChange={v => set('sound', v)}>

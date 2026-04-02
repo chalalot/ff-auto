@@ -69,11 +69,12 @@ export interface VideoListResponse {
 
 export interface VideoStatusResponse {
   task_id: string
-  status: string   // "pending" | "processing" | "succeed" | "failed"
+  status: string   // "pending" | "processing" | "succeed" | "failed" | "error"
   progress: number
   video_url?: string
   local_path?: string
   duration?: string
+  error_message?: string
 }
 
 export interface VideoMergeRequest {

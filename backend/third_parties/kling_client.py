@@ -90,7 +90,7 @@ class KlingClient:
         self, 
         prompt: str, 
         image: str, 
-        model_name: str = "kling-v1.6", 
+        model_name: str = "kling-v1-6",
         negative_prompt: Optional[str] = None,
         duration: str = "5",
         aspect_ratio: str = "16:9",
@@ -108,7 +108,7 @@ class KlingClient:
         Args:
             prompt: Text prompt description.
             image: Source image (URL or local path).
-            model_name: Model version (e.g., "kling-v1.6", "kling-v2.0").
+            model_name: Model version (e.g., "kling-v1-6", "kling-v2-0").
             negative_prompt: What to avoid.
             duration: "5" or "10".
             aspect_ratio: "16:9", "9:16", "1:1", etc.
@@ -205,14 +205,16 @@ class KlingClient:
             task_data = data.get("data", {})
             status = task_data.get("task_status")
             result = {"task_status": status}
-            
+
             if status == "succeed":
                 videos = task_data.get("task_result", {}).get("videos", [])
                 if videos:
                     result["video_url"] = videos[0].get("url")
                     result["duration"] = videos[0].get("duration")
                     result["id"] = videos[0].get("id")
-            
+            elif status == "failed":
+                result["error_message"] = task_data.get("task_status_msg") or "Task failed"
+
             return result
             
         except Exception as e:
