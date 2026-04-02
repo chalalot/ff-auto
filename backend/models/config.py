@@ -21,17 +21,15 @@ class PresetConfig(BaseModel):
 
 
 class LastUsedConfig(BaseModel):
-    kol_persona: str = "Jennie"
-    workflow_choice: str = "Turbo"
-    vision_model_choice: str = "ChatGPT (gpt-4o)"
+    persona: str = ""
+    workflow_type: str = "turbo"
+    vision_model: str = "gpt-4o"
     clip_model_type: str = "sd3"
-    limit_choice: int = 10
-    variation_count: int = 1
-    strength_model: float = 0.8
-    width: str = "1024"
-    height: str = "1600"
+    variations: int = 1
+    strength: float = 0.8
+    width: int = 1024
+    height: int = 1600
     seed_strategy: str = "random"
     base_seed: int = 0
-    lora_name_override: str = ""
-    persona_config_select: str = "Jennie"
-    editor_type_select: str = "instagirl"
+    lora_name: str = ""
+    batch_limit: Optional[int] = None
