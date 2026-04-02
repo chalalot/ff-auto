@@ -1,46 +1,118 @@
-import React, { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import React, { useRef, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { galleryApi, type GalleryStatus } from '@/api/gallery'
-import { Loader2, Image as ImageIcon, CheckCircle } from 'lucide-react'
-import type { GalleryResponse } from '@/types'
+import { workspaceApi } from '@/api/workspace'
+import { Loader2, Image as ImageIcon, CheckCircle, Upload } from 'lucide-react'
+import type { GalleryResponse, RefImage } from '@/types'
 
 interface ImageSelectorProps {
   selected: string[]
   onToggle: (path: string) => void
 }
 
-const STATUS_TABS: { label: string; value: GalleryStatus }[] = [
+type TabStatus = GalleryStatus | 'uploads'
+
+const STATUS_TABS: { label: string; value: TabStatus }[] = [
   { label: 'Pending', value: 'pending' },
   { label: 'Approved', value: 'approved' },
+  { label: 'Uploads', value: 'uploads' },
 ]
 
 export const ImageSelector: React.FC<ImageSelectorProps> = ({ selected, onToggle }) => {
-  const [status, setStatus] = useState<GalleryStatus>('pending')
+  const [status, setStatus] = useState<TabStatus>('pending')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
 
-  const { data, isLoading } = useQuery<GalleryResponse>({
+  // Gallery query
+  const { data: galleryData, isLoading: isLoadingGallery } = useQuery<GalleryResponse>({
     queryKey: ['galleryImages', status],
-    queryFn: () => galleryApi.getImages({ status, per_page: 100 }),
+    queryFn: () => galleryApi.getImages({ status: status as GalleryStatus, per_page: 100 }),
+    enabled: status !== 'uploads',
   })
 
-  const images = data?.items ?? []
+  // Uploads query
+  const { data: uploadsData, isLoading: isLoadingUploads } = useQuery<RefImage[]>({
+    queryKey: ['refImages'],
+    queryFn: workspaceApi.getRefImages,
+    enabled: status === 'uploads',
+  })
+
+  const uploadMutation = useMutation({
+    mutationFn: (files: File[]) => workspaceApi.uploadRefImages(files),
+    onSuccess: (newImages) => {
+      queryClient.invalidateQueries({ queryKey: ['refImages'] })
+      // Auto-select newly uploaded images
+      newImages.forEach(img => {
+        if (!selected.includes(img.path)) {
+          onToggle(img.path)
+        }
+      })
+      // Switch to uploads tab to see them
+      setStatus('uploads')
+    },
+  })
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      uploadMutation.mutate(Array.from(e.target.files))
+    }
+    // Reset the input so the same files can be selected again if needed
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const isLoading = status === 'uploads' ? isLoadingUploads : isLoadingGallery
+  
+  // Normalize images list
+  const images = status === 'uploads' 
+    ? (uploadsData ?? [])
+    : (galleryData?.items ?? [])
 
   return (
     <div className="space-y-2">
-      {/* Status tabs */}
-      <div className="flex gap-1">
-        {STATUS_TABS.map(tab => (
+      {/* Header controls */}
+      <div className="flex items-center justify-between">
+        {/* Status tabs */}
+        <div className="flex gap-1">
+          {STATUS_TABS.map(tab => (
+            <button
+              key={tab.value}
+              onClick={() => setStatus(tab.value)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                status === tab.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Upload button */}
+        <div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
+            multiple
+            accept="image/*"
+          />
           <button
-            key={tab.value}
-            onClick={() => setStatus(tab.value)}
-            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
-              status === tab.value
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-accent'
-            }`}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+            className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50"
           >
-            {tab.label}
+            {uploadMutation.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Upload className="w-3 h-3" />
+            )}
+            Upload Image
           </button>
-        ))}
+        </div>
       </div>
 
       {isLoading ? (
@@ -56,10 +128,13 @@ export const ImageSelector: React.FC<ImageSelectorProps> = ({ selected, onToggle
         <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto pr-1">
           {images.map(img => {
             const isSelected = selected.includes(img.path)
-            const thumbUrl = galleryApi.getThumbnailUrl(img.filename, status)
+            const thumbUrl = status === 'uploads' 
+              ? workspaceApi.getRefImageThumbnailUrl(img.filename)
+              : galleryApi.getThumbnailUrl(img.filename, status as GalleryStatus)
+              
             return (
               <button
-                key={img.filename}
+                key={img.path} // Use path as key instead of filename to be safe
                 onClick={() => onToggle(img.path)}
                 className={`relative rounded-md overflow-hidden border-2 aspect-square transition-all focus:outline-none
                   ${isSelected ? 'border-primary shadow-md' : 'border-transparent hover:border-muted-foreground/40'}`}
