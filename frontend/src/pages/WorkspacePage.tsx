@@ -38,6 +38,7 @@ export const WorkspacePage: React.FC = () => {
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
+  const configInitializedRef = React.useRef(false)
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
   // Metadata captured at dispatch time so cards can show ref thumbnail + config info
   const [taskMeta, setTaskMeta] = useState<Record<string, { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }>>({})
@@ -46,7 +47,7 @@ export const WorkspacePage: React.FC = () => {
   const { data: visionModels = [] } = useVisionModels()
   const { data: clipModels = [] } = useClipModels()
   const { data: loraOptions = [] } = useLoraOptions()
-  const { data: lastUsed } = useLastUsed()
+  const { data: lastUsed, isSuccess: lastUsedLoaded } = useLastUsed()
   const { data: executions = [] } = useQuery({
     queryKey: ['workspace', 'executions'],
     queryFn: () => workspaceApi.getExecutions({ limit: 20 }),
@@ -57,25 +58,48 @@ export const WorkspacePage: React.FC = () => {
     queryFn: workspaceApi.getRefImages,
   })
 
-  // Load last used config on mount
+  // Load last used config on mount — runs once when query resolves
   React.useEffect(() => {
+    if (!lastUsedLoaded) return
     if (lastUsed) {
       setConfig(prev => ({
         ...prev,
         persona: lastUsed.persona || prev.persona,
         vision_model: lastUsed.vision_model || prev.vision_model,
         clip_model_type: lastUsed.clip_model_type || prev.clip_model_type,
-        variation_count: lastUsed.variations || prev.variation_count,
-        strength: lastUsed.strength || prev.strength,
-        lora_name: lastUsed.lora_name || prev.lora_name,
+        variation_count: lastUsed.variations ?? prev.variation_count,
+        strength: lastUsed.strength ?? prev.strength,
+        lora_name: lastUsed.lora_name ?? prev.lora_name,
         width: lastUsed.width || prev.width,
         height: lastUsed.height || prev.height,
         seed_strategy: lastUsed.seed_strategy || prev.seed_strategy,
-        base_seed: lastUsed.base_seed || prev.base_seed,
+        base_seed: lastUsed.base_seed ?? prev.base_seed,
         workflow_type: lastUsed.workflow_type || prev.workflow_type,
       }))
     }
-  }, [lastUsed])
+    configInitializedRef.current = true
+  }, [lastUsedLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save config whenever user changes it (debounced 600ms)
+  React.useEffect(() => {
+    if (!configInitializedRef.current) return
+    const timer = setTimeout(() => {
+      configApi.saveLastUsed({
+        persona: config.persona,
+        vision_model: config.vision_model,
+        clip_model_type: config.clip_model_type,
+        variations: config.variation_count,
+        strength: config.strength,
+        lora_name: config.lora_name,
+        width: config.width,
+        height: config.height,
+        seed_strategy: config.seed_strategy,
+        base_seed: config.base_seed,
+        workflow_type: config.workflow_type,
+      })
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [config])
 
   // Set first persona as default
   React.useEffect(() => {
@@ -106,19 +130,6 @@ export const WorkspacePage: React.FC = () => {
           next[id] = { refImagePath: paths[i], persona: configSnapshot.persona, config: configSnapshot }
         })
         return next
-      })
-      await configApi.saveLastUsed({
-        persona: config.persona,
-        vision_model: config.vision_model,
-        clip_model_type: config.clip_model_type,
-        variations: config.variation_count,
-        strength: config.strength,
-        lora_name: config.lora_name,
-        width: config.width,
-        height: config.height,
-        seed_strategy: config.seed_strategy,
-        base_seed: config.base_seed,
-        workflow_type: config.workflow_type,
       })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })

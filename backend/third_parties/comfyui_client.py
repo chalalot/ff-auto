@@ -184,6 +184,10 @@ class ComfyUIClient:
         if self.api_key:
             # Comfy Cloud uses X-API-Key or Authorization
             headers["X-API-Key"] = self.api_key
+            # Inject extra_data for Partner Nodes (like Kling) to authenticate
+            payload["extra_data"] = {
+                "api_key_comfy_org": self.api_key
+            }
             
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
