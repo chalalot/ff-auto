@@ -329,5 +329,5 @@ class VideoStoryboardWorkflow:
             "source_image": image_path,
             "persona": persona_name,
             "variations": parsed_variations,
-            "concepts_text": str(concept_task.output)
+            "concepts_text": concept_task.output.raw if concept_task.output else ""
         }
