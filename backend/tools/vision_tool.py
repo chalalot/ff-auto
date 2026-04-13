@@ -60,12 +60,22 @@ class VisionTool(BaseTool):
             api_key = GlobalConfig.GEMINI_API_KEY
             if not api_key:
                 return "Error: GEMINI_API_KEY not found in environment variables."
-            
+
+            # Map deprecated/bare model names to their current equivalents
+            _GEMINI_ALIASES = {
+                "gemini-1.5-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-flash": "gemini-1.5-flash-latest",
+                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+            }
+            resolved_model = _GEMINI_ALIASES.get(self.model_name, self.model_name)
+            if resolved_model != self.model_name:
+                logger.warning(f"[VisionTool] Model '{self.model_name}' is deprecated, using '{resolved_model}' instead")
+
             try:
                 from google import genai
                 client = genai.Client(api_key=api_key)
-                
-                logger.info(f"[VisionTool] Using Gemini API with model {self.model_name}")
+
+                logger.info(f"[VisionTool] Using Gemini API with model {resolved_model}")
                 
                 # Check file
                 if not os.path.exists(image_path):
@@ -75,9 +85,9 @@ class VisionTool(BaseTool):
                 logger.info("[VisionTool] Loading image for Gemini...")
                 img = PIL.Image.open(image_path)
                 
-                logger.info(f"[VisionTool] Sending request to Gemini ({self.model_name})...")
+                logger.info(f"[VisionTool] Sending request to Gemini ({resolved_model})...")
                 response = client.models.generate_content(
-                    model=self.model_name,
+                    model=resolved_model,
                     contents=[prompt, img]
                 )
                 return response.text

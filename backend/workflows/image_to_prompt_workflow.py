@@ -59,11 +59,19 @@ class ImageToPromptWorkflow:
             logger.info(f"Initialized cached Grok LLM ({vision_model}) for Agents")
         elif vision_model.lower().startswith("gemini"):
             from crewai import LLM
+            _GEMINI_ALIASES = {
+                "gemini-1.5-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-flash": "gemini-1.5-flash-latest",
+                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+            }
+            resolved = _GEMINI_ALIASES.get(vision_model, vision_model)
+            if resolved != vision_model:
+                logger.warning(f"Gemini model '{vision_model}' is deprecated, using '{resolved}'")
             llm = LLM(
-                model="gemini/" + vision_model,
+                model="gemini/" + resolved,
                 api_key=GlobalConfig.GEMINI_API_KEY
             )
-            logger.info(f"Initialized cached Gemini LLM ({vision_model}) for Agents")
+            logger.info(f"Initialized cached Gemini LLM ({resolved}) for Agents")
         else:
             llm = vision_model
             logger.info(f"Initialized cached default LLM ({vision_model}) for Agents")

@@ -61,11 +61,19 @@ class VideoStoryboardWorkflow:
                     del os.environ["OPENAI_API_BASE"]
 
         elif model_name.lower().startswith("gemini"):
+            _GEMINI_ALIASES = {
+                "gemini-1.5-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-flash": "gemini-1.5-flash-latest",
+                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+            }
+            resolved = _GEMINI_ALIASES.get(model_name, model_name)
+            if resolved != model_name:
+                print(f"[WARNING] Gemini model '{model_name}' is deprecated, using '{resolved}'")
             llm = LLM(
-                model="gemini/" + model_name,
+                model="gemini/" + resolved,
                 api_key=GlobalConfig.GEMINI_API_KEY
             )
-            print(f"Using Gemini LLM ({model_name}) for Agents")
+            print(f"Using Gemini LLM ({resolved}) for Agents")
             return llm
         
         else:
