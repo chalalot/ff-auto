@@ -234,6 +234,7 @@ async def async_process_image(
             download_execution_task.apply_async(
                 args=[execution_id, dest_image_path],
                 countdown=DOWNLOAD_POLL_INTERVAL,
+                queue="image",
             )
             successful_queues_for_image += 1
             execution_ids.append(execution_id)

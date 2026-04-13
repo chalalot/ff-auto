@@ -129,6 +129,7 @@ class ImageProcessingService:
                 "lora_name": lora_name,
                 "clip_model_type": clip_model_type,
             },
+            queue="image",
         )
         logger.info(f"Dispatched task {task.id} for {dest_path}")
         return task.id

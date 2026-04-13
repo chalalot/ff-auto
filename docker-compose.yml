@@ -41,13 +41,33 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    command: celery -A backend.celery_app worker -B --loglevel=info --concurrency=2
+    command: celery -A backend.celery_app worker -B --loglevel=info --concurrency=2 -Q image
     volumes:
       - ./Sorted:/app/Sorted
       - ./processed:/app/processed
       - ./results:/app/results
       - ./prompts:/app/prompts
       - ./image_logs.db:/app/image_logs.db
+      - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+    env_file:
+      - .env
+    environment:
+      - CELERY_BROKER_URL=redis://global-redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
+      - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+    networks:
+      - ff-shared-net
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  video_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: celery -A backend.celery_app worker --loglevel=info --concurrency=2 -Q video
+    volumes:
+      - ./raw_video:/app/raw_video
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
     env_file:
       - .env

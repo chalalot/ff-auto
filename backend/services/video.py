@@ -80,7 +80,7 @@ class VideoService:
         logger.info(f"[VideoService] Queued Kling task {task_id} for {image_path}")
 
         from backend.tasks import poll_kling_video_task
-        poll_kling_video_task.apply_async(args=[task_id])
+        poll_kling_video_task.apply_async(args=[task_id], queue="video")
 
         return task_id
 
@@ -126,6 +126,7 @@ class VideoService:
         from backend.tasks import poll_comfy_video_task
         celery_task = poll_comfy_video_task.apply_async(
             args=[prompt_id, image_path, batch_id],
+            queue="video",
         )
         return celery_task.id
 
