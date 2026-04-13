@@ -347,12 +347,12 @@ class ImageToPromptWorkflow:
         crew.kickoff()
 
         # Capture the descriptive output
-        descriptive_prompt = str(analyze_task.output)
+        descriptive_prompt = analyze_task.output.raw if analyze_task.output else ""
 
         # Collect generated prompts
         generated_prompts = []
         for task in generate_prompt_tasks:
-            generated_prompts.append(str(task.output))
+            generated_prompts.append(task.output.raw if task.output else "")
 
         logger.info(f"\n✅ Generated {len(generated_prompts)} Prompts.")
 
