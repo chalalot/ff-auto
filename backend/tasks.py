@@ -286,6 +286,35 @@ def analyze_music_task(self, audio_path: str):
     return {"vibe": result.get("vibe", ""), "lyrics": result.get("lyrics", ""), "analysis": str(result)}
 
 
+@celery_app.task(bind=True, name="backend.tasks.generate_storyboard_task")
+def generate_storyboard_task(
+    self,
+    image_paths: list,
+    persona: str,
+    vision_model: str,
+    variation_count: int,
+):
+    """Run VideoStoryboardWorkflow for a list of images and return combined results."""
+    from backend.services.video import VideoService
+
+    svc = VideoService()
+    results = []
+    total = len(image_paths)
+    for i, image_path in enumerate(image_paths):
+        self.update_state(
+            state="PROGRESS",
+            meta={"status": f"Processing image {i + 1}/{total}", "progress": int(100 * i / total)},
+        )
+        result = svc.generate_storyboard(
+            image_path=image_path,
+            persona=persona,
+            vision_model=vision_model,
+            variation_count=variation_count,
+        )
+        results.append(result)
+    return {"results": results}
+
+
 @celery_app.task(
     bind=True,
     name="backend.tasks.poll_comfy_video_task",

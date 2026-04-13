@@ -11,13 +11,20 @@ import type {
 
 export const videoApi = {
   // Storyboard
-  generateStoryboard: (body: {
+  dispatchStoryboard: (body: {
     image_paths: string[]
     vision_model?: string
     persona?: string
     variation_count?: number
   }) =>
-    apiClient.post<StoryboardResponse>('/video/storyboard', body).then(r => r.data),
+    apiClient.post<{ task_id: string }>('/video/storyboard', body).then(r => r.data),
+
+  getStoryboardStatus: (taskId: string) =>
+    apiClient
+      .get<{ task_id: string; state: string; progress: number; result: StoryboardResponse | null; error: string | null }>(
+        `/video/storyboard/${taskId}/status`
+      )
+      .then(r => r.data),
 
   // Generate
   generate: (body: {

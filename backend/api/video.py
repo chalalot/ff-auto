@@ -18,7 +18,6 @@ from backend.models.video import (
     MusicAnalysisRequest,
     MusicAnalysisResponse,
     StoryboardRequest,
-    StoryboardResponse,
     VideoBatchRequest,
     VideoBatchResponse,
     VideoGenerateRequest,
@@ -38,25 +37,38 @@ router = APIRouter()
 # Storyboard
 # ------------------------------------------------------------------
 
-@router.post("/storyboard", response_model=StoryboardResponse)
-def generate_storyboard(
-    body: StoryboardRequest,
-    svc: VideoService = Depends(get_video_service),
-):
-    """Generate storyboard prompts for one or more images."""
-    results = []
-    for image_path in body.image_paths:
-        try:
-            raw = svc.generate_storyboard(
-                image_path=image_path,
-                persona=body.persona,
-                vision_model=body.vision_model,
-                variation_count=body.variation_count,
-            )
-            results.append(raw)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Storyboard failed for {image_path}: {e}")
-    return {"results": results}
+@router.post("/storyboard")
+def generate_storyboard(body: StoryboardRequest):
+    """Dispatch storyboard generation to the video worker."""
+    from backend.tasks import generate_storyboard_task
+
+    task = generate_storyboard_task.apply_async(
+        kwargs={
+            "image_paths": body.image_paths,
+            "persona": body.persona,
+            "vision_model": body.vision_model,
+            "variation_count": body.variation_count,
+        },
+        queue="video",
+    )
+    return {"task_id": task.id}
+
+
+@router.get("/storyboard/{task_id}/status")
+def get_storyboard_status(task_id: str):
+    """Poll a storyboard Celery task for progress and result."""
+    result = celery_app.AsyncResult(task_id)
+    state = result.state
+    meta = result.info or {}
+    if isinstance(meta, Exception):
+        meta = {"error": str(meta)}
+    return {
+        "task_id": task_id,
+        "state": state,
+        "progress": meta.get("progress", 0) if isinstance(meta, dict) else 0,
+        "result": meta if state == "SUCCESS" else None,
+        "error": str(meta) if state == "FAILURE" else None,
+    }
 
 
 # ------------------------------------------------------------------
