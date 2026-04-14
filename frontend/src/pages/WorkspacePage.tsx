@@ -15,8 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X } from 'lucide-react'
-import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord } from '@/types'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText } from 'lucide-react'
+import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord, CaptionExportEntry } from '@/types'
 
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
@@ -335,6 +335,7 @@ export const WorkspacePage: React.FC = () => {
             <TabsTrigger value="library">Library ({library.length})</TabsTrigger>
             <TabsTrigger value="history">Execution History</TabsTrigger>
             <TabsTrigger value="tasks">Active Tasks ({activeTaskIds.length})</TabsTrigger>
+            <TabsTrigger value="caption-export">Caption Export</TabsTrigger>
           </TabsList>
 
           {/* Unified Library Tab */}
@@ -410,6 +411,11 @@ export const WorkspacePage: React.FC = () => {
                 ))
               )}
             </div>
+          </TabsContent>
+
+          {/* Caption Export Tab */}
+          <TabsContent value="caption-export" className="flex-1 overflow-auto px-4 pb-4">
+            <CaptionExportTab personas={personas} visionModels={visionModels} defaultConfig={config} />
           </TabsContent>
         </Tabs>
       </div>
@@ -652,6 +658,207 @@ const TaskCardDisplay: React.FC<{ task: TaskStatusResponse; taskId: string; meta
         </InfoModal>
       )}
     </>
+  )
+}
+
+// ------------------------------------------------------------------
+// Caption Export Tab
+// ------------------------------------------------------------------
+const CaptionExportTab: React.FC<{
+  personas: Array<{ name: string }>
+  visionModels: Array<{ value: string; label: string }>
+  defaultConfig: Omit<ProcessImageConfig, 'image_path'>
+}> = ({ personas, visionModels, defaultConfig }) => {
+  const [entries, setEntries] = useState<CaptionExportEntry[]>([])
+  const [persona, setPersona] = useState(defaultConfig.persona)
+  const [visionModel, setVisionModel] = useState(defaultConfig.vision_model)
+  const [uploading, setUploading] = useState(false)
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [started, setStarted] = useState(false)
+
+  // Sync persona default once it's loaded
+  React.useEffect(() => {
+    if (!persona && defaultConfig.persona) setPersona(defaultConfig.persona)
+  }, [defaultConfig.persona]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: task } = useTaskProgress(started ? taskId : null)
+  const isDone = task?.state === 'SUCCESS' || task?.state === 'FAILURE'
+
+  const handleUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    try {
+      const res = await workspaceApi.captionExportUpload(Array.from(files))
+      setEntries(prev => [...prev, ...res.entries])
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleRemove = (stem: string) => {
+    setEntries(prev => prev.filter(e => e.stem !== stem))
+  }
+
+  const handleStart = async () => {
+    if (entries.length === 0 || !persona) return
+    const res = await workspaceApi.captionExportStart({
+      image_entries: entries,
+      persona,
+      vision_model: visionModel,
+      workflow_type: 'turbo',
+    })
+    setTaskId(res.task_id)
+    setStarted(true)
+  }
+
+  const handleDownload = () => {
+    if (!taskId) return
+    const url = workspaceApi.getCaptionExportDownloadUrl(taskId)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `caption_export_${taskId.slice(0, 8)}.zip`
+    a.click()
+  }
+
+  const handleReset = () => {
+    setEntries([])
+    setTaskId(null)
+    setStarted(false)
+  }
+
+  return (
+    <div className="max-w-2xl space-y-5 py-2">
+      <div>
+        <h2 className="font-semibold mb-1">Caption Export</h2>
+        <p className="text-sm text-muted-foreground">
+          Upload images, run CrewAI captioning, then download a ZIP with each image paired with its generated prompt as a .txt file.
+        </p>
+      </div>
+
+      {/* Config */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Persona</Label>
+          <Select value={persona} onValueChange={setPersona}>
+            <SelectTrigger><SelectValue placeholder="Select persona" /></SelectTrigger>
+            <SelectContent>
+              {personas.map(p => (
+                <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Vision Model</Label>
+          <Select value={visionModel} onValueChange={setVisionModel}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {visionModels.map(m => (
+                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Upload zone — only shown before starting */}
+      {!started && (
+        <label
+          className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
+        >
+          <input
+            type="file"
+            className="hidden"
+            accept=".png,.jpg,.jpeg,.webp"
+            multiple
+            onChange={(e) => void handleUpload(e.target.files)}
+          />
+          {uploading
+            ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
+            : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
+          <p className="text-sm text-muted-foreground">
+            {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
+          </p>
+          <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
+        </label>
+      )}
+
+      {/* File list */}
+      {entries.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-muted-foreground mb-2">{entries.length} image{entries.length !== 1 ? 's' : ''} queued</p>
+          <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
+            {entries.map((entry) => (
+              <div key={entry.stem} className="flex items-center gap-2 px-3 py-2 text-sm">
+                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                <span className="flex-1 truncate font-mono text-xs">{entry.stem}{entry.original_ext}</span>
+                <span className="text-xs text-muted-foreground shrink-0">→ {entry.stem}.txt</span>
+                {!started && (
+                  <button
+                    className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors"
+                    onClick={() => handleRemove(entry.stem)}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Progress */}
+      {started && task && (
+        <Card className={task.state === 'FAILURE' ? 'border-destructive' : task.state === 'SUCCESS' ? 'border-green-500' : ''}>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm">{task.status_message || 'Processing...'}</p>
+              <Badge variant={task.state === 'SUCCESS' ? 'success' : task.state === 'FAILURE' ? 'destructive' : 'secondary'}>
+                {task.state}
+              </Badge>
+            </div>
+            {task.progress > 0 && (
+              <div className="space-y-1">
+                <Progress value={task.progress} className="h-2" />
+                <p className="text-xs text-right text-muted-foreground">{Math.round(task.progress)}%</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-3">
+        {!started ? (
+          <Button
+            onClick={() => void handleStart()}
+            disabled={entries.length === 0 || !persona || uploading}
+          >
+            <Play className="w-4 h-4 mr-2" />
+            Generate &amp; Export ({entries.length})
+          </Button>
+        ) : isDone ? (
+          <>
+            {task?.state === 'SUCCESS' && (
+              <Button onClick={handleDownload}>
+                <Download className="w-4 h-4 mr-2" />
+                Download ZIP
+              </Button>
+            )}
+            <Button variant="outline" onClick={handleReset}>
+              Start New Export
+            </Button>
+          </>
+        ) : (
+          <Button disabled>
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            Running...
+          </Button>
+        )}
+      </div>
+    </div>
   )
 }
 

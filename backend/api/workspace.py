@@ -1,9 +1,11 @@
 import asyncio
+import io
+import zipfile
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 
 from backend.api.deps import get_image_processing_service, get_image_logs_storage
@@ -16,6 +18,9 @@ from backend.models.workspace import (
     DispatchResponse,
     BatchDispatchResponse,
     ExecutionRecord,
+    CaptionExportEntry,
+    CaptionExportUploadResponse,
+    CaptionExportRequest,
 )
 from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
@@ -170,6 +175,83 @@ def list_executions(
 ):
     rows = storage.get_recent_executions(limit=limit)
     return rows
+
+
+# ------------------------------------------------------------------
+# Caption Export — run CrewAI, export ZIP of images + .txt prompts
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/upload", response_model=CaptionExportUploadResponse)
+async def caption_export_upload(
+    files: List[UploadFile] = File(...),
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+):
+    """Upload images for caption export. Saves to PROCESSED_DIR; returns stem mapping."""
+    entries = []
+    for f in files:
+        data = await f.read()
+        original_name = f.filename or "upload"
+        stem = Path(original_name).stem
+        ext = Path(original_name).suffix.lower() or ".jpg"
+        try:
+            saved_path = svc.save_ref_image(original_name, data)
+            entries.append(CaptionExportEntry(stem=stem, path=saved_path, original_ext=ext))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return CaptionExportUploadResponse(entries=entries)
+
+
+@router.post("/caption-export/start")
+def caption_export_start(body: CaptionExportRequest):
+    """Dispatch caption_export_task to run CrewAI on each uploaded image."""
+    from backend.celery_app import celery_app as _celery
+    task = _celery.send_task(
+        "backend.tasks.caption_export_task",
+        kwargs={
+            "image_entries": [e.model_dump() for e in body.image_entries],
+            "persona": body.persona,
+            "vision_model": body.vision_model,
+            "workflow_type": body.workflow_type,
+        },
+        queue="image",
+    )
+    return {"task_id": task.id}
+
+
+@router.get("/caption-export/{task_id}/download")
+def caption_export_download(task_id: str):
+    """Build and stream a ZIP of (image + .txt prompt) pairs once the task succeeds."""
+    from celery.result import AsyncResult
+    from backend.celery_app import celery_app as _celery
+
+    result = AsyncResult(task_id, app=_celery)
+    if result.state != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not ready (state: {result.state}). Wait for it to finish.",
+        )
+
+    data = result.result or {}
+    results = data.get("results", [])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in results:
+            stem = item.get("stem", "image")
+            ext = item.get("original_ext", ".jpg")
+            image_path = Path(item.get("path", ""))
+            prompt = item.get("prompt", "")
+
+            if image_path.exists():
+                zf.write(image_path, f"{stem}{ext}")
+            zf.writestr(f"{stem}.txt", prompt)
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="caption_export_{task_id[:8]}.zip"'},
+    )
 
 
 # ------------------------------------------------------------------

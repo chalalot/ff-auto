@@ -255,6 +255,65 @@ async def async_process_image(
     }
 
 
+@celery_app.task(bind=True, name="backend.tasks.caption_export_task")
+def caption_export_task(
+    self,
+    image_entries: list,  # [{stem, path, original_ext}]
+    persona: str,
+    vision_model: str,
+    workflow_type: str = "turbo",
+):
+    """Run CrewAI on each image and return prompts. Does NOT send to ComfyUI."""
+    workflow, _, _ = get_instances()
+    results = []
+    total = len(image_entries)
+
+    for i, entry in enumerate(image_entries):
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "status": f"🤖 Captioning {i + 1}/{total}: {entry['stem']}",
+                "progress": int(100 * i / total),
+            },
+        )
+        try:
+            result = asyncio.run(
+                workflow.process(
+                    image_path=entry["path"],
+                    persona_name=persona,
+                    workflow_type=workflow_type,
+                    vision_model=vision_model,
+                    variation_count=1,
+                )
+            )
+            prompts = result.get("generated_prompts", [result.get("generated_prompt", "")])
+            prompt = prompts[0] if prompts else ""
+            results.append({
+                "stem": entry["stem"],
+                "path": entry["path"],
+                "original_ext": entry["original_ext"],
+                "prompt": prompt,
+                "success": True,
+            })
+        except Exception as e:
+            logger.error(f"[caption_export_task] Failed for {entry['stem']}: {e}")
+            results.append({
+                "stem": entry["stem"],
+                "path": entry["path"],
+                "original_ext": entry["original_ext"],
+                "prompt": "",
+                "error": str(e),
+                "success": False,
+            })
+
+    succeeded = sum(1 for r in results if r["success"])
+    return {
+        "results": results,
+        "total": total,
+        "status": f"✅ Captioned {succeeded}/{total} images",
+    }
+
+
 @celery_app.task(bind=True, name="backend.tasks.merge_videos_task")
 def merge_videos_task(self, filenames: list, transition_type: str, transition_duration: float):
     """Merge multiple videos with transitions."""

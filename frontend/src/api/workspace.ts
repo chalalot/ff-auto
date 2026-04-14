@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { InputImage, RefImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord } from '@/types'
+import type { InputImage, RefImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord, CaptionExportEntry } from '@/types'
 
 export const workspaceApi = {
   getInputImages: () =>
@@ -44,4 +44,26 @@ export const workspaceApi = {
 
   deleteRefImage: (filename: string) =>
     apiClient.delete(`/workspace/ref-images/${encodeURIComponent(filename)}`).then(r => r.data),
+
+  // Caption Export
+  captionExportUpload: (files: File[]) => {
+    const form = new FormData()
+    files.forEach(f => form.append('files', f))
+    return apiClient.post<{ entries: CaptionExportEntry[] }>(
+      '/workspace/caption-export/upload',
+      form,
+      { headers: { 'Content-Type': undefined } },
+    ).then(r => r.data)
+  },
+
+  captionExportStart: (payload: {
+    image_entries: CaptionExportEntry[]
+    persona: string
+    vision_model: string
+    workflow_type: string
+  }) =>
+    apiClient.post<{ task_id: string }>('/workspace/caption-export/start', payload).then(r => r.data),
+
+  getCaptionExportDownloadUrl: (taskId: string) =>
+    `/api/workspace/caption-export/${taskId}/download`,
 }

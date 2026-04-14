@@ -74,6 +74,12 @@ export interface TaskStatusResponse {
   error?: string
 }
 
+export interface CaptionExportEntry {
+  stem: string          // original filename stem, e.g. "image_1"
+  path: string          // absolute path in PROCESSED_DIR
+  original_ext: string  // e.g. ".jpg"
+}
+
 export interface ExecutionRecord {
   id: number
   execution_id: string

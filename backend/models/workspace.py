@@ -83,3 +83,20 @@ class ExecutionRecord(BaseModel):
     result_image_path: Optional[str]
     status: str
     created_at: str
+
+
+class CaptionExportEntry(BaseModel):
+    stem: str          # original filename stem (e.g. "image_1")
+    path: str          # absolute path in PROCESSED_DIR
+    original_ext: str  # original file extension (e.g. ".jpg")
+
+
+class CaptionExportUploadResponse(BaseModel):
+    entries: List[CaptionExportEntry]
+
+
+class CaptionExportRequest(BaseModel):
+    image_entries: List[CaptionExportEntry]
+    persona: str
+    vision_model: str = "gpt-4o"
+    workflow_type: str = "turbo"
