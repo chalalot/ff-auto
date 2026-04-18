@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText } from 'lucide-react'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2 } from 'lucide-react'
 import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord, CaptionExportEntry } from '@/types'
 
 // Default config
@@ -676,6 +676,14 @@ const CaptionExportTab: React.FC<{
   const [taskId, setTaskId] = useState<string | null>(null)
   const [started, setStarted] = useState(false)
 
+  // Google Drive state
+  const [source, setSource] = useState<'local' | 'drive'>('local')
+  const [driveFolderUrl, setDriveFolderUrl] = useState('')
+  const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
+  const [driveFetching, setDriveFetching] = useState(false)
+  const [driveUploading, setDriveUploading] = useState(false)
+  const [driveUploadResult, setDriveUploadResult] = useState<string | null>(null) // filename
+
   // Sync persona default once it's loaded
   React.useEffect(() => {
     if (!persona && defaultConfig.persona) setPersona(defaultConfig.persona)
@@ -692,6 +700,35 @@ const CaptionExportTab: React.FC<{
       setEntries(prev => [...prev, ...res.entries])
     } finally {
       setUploading(false)
+    }
+  }
+
+  const handleDriveFetch = async () => {
+    if (!driveFolderUrl.trim()) return
+    setDriveFetching(true)
+    setEntries([])
+    try {
+      const res = await workspaceApi.captionExportGdriveFetch({
+        folder_url: driveFolderUrl.trim(),
+        max_dimension: driveMaxDimension,
+      })
+      setEntries(res.entries)
+    } finally {
+      setDriveFetching(false)
+    }
+  }
+
+  const handleDriveUpload = async () => {
+    if (!taskId || !driveFolderUrl.trim()) return
+    setDriveUploading(true)
+    try {
+      const res = await workspaceApi.captionExportGdriveUploadZip({
+        task_id: taskId,
+        folder_url: driveFolderUrl.trim(),
+      })
+      setDriveUploadResult(res.filename)
+    } finally {
+      setDriveUploading(false)
     }
   }
 
@@ -724,6 +761,7 @@ const CaptionExportTab: React.FC<{
     setEntries([])
     setTaskId(null)
     setStarted(false)
+    setDriveUploadResult(null)
   }
 
   return (
@@ -731,7 +769,7 @@ const CaptionExportTab: React.FC<{
       <div>
         <h2 className="font-semibold mb-1">Caption Export</h2>
         <p className="text-sm text-muted-foreground">
-          Upload images, run CrewAI captioning, then download a ZIP with each image paired with its generated prompt as a .txt file.
+          Load images, run CrewAI captioning, then download or upload a ZIP with each image paired with its generated prompt as a .txt file.
         </p>
       </div>
 
@@ -761,28 +799,93 @@ const CaptionExportTab: React.FC<{
         </div>
       </div>
 
-      {/* Upload zone — only shown before starting */}
+      {/* Source toggle — only shown before starting */}
       {!started && (
-        <label
-          className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
-        >
-          <input
-            type="file"
-            className="hidden"
-            accept=".png,.jpg,.jpeg,.webp"
-            multiple
-            onChange={(e) => void handleUpload(e.target.files)}
-          />
-          {uploading
-            ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
-            : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
-          <p className="text-sm text-muted-foreground">
-            {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
-          </p>
-          <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
-        </label>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setSource('local'); setEntries([]) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                source === 'local'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Local Upload
+            </button>
+            <button
+              onClick={() => { setSource('drive'); setEntries([]) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                source === 'drive'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <HardDrive className="w-3.5 h-3.5" />
+              Google Drive
+            </button>
+          </div>
+
+          {source === 'local' && (
+            <label
+              className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
+            >
+              <input
+                type="file"
+                className="hidden"
+                accept=".png,.jpg,.jpeg,.webp"
+                multiple
+                onChange={(e) => void handleUpload(e.target.files)}
+              />
+              {uploading
+                ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
+                : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
+              <p className="text-sm text-muted-foreground">
+                {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
+            </label>
+          )}
+
+          {source === 'drive' && (
+            <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
+              <div className="space-y-1.5">
+                <Label>Google Drive Folder URL</Label>
+                <p className="text-xs text-muted-foreground">
+                  Share the folder with the service account email, then paste the folder link here.
+                </p>
+                <Input
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  value={driveFolderUrl}
+                  onChange={e => setDriveFolderUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Downscale to (px, longest side)</Label>
+                <Input
+                  type="number"
+                  min={256}
+                  max={4096}
+                  value={driveMaxDimension}
+                  onChange={e => setDriveMaxDimension(Number(e.target.value))}
+                  className="w-32"
+                />
+              </div>
+              <Button
+                onClick={() => void handleDriveFetch()}
+                disabled={!driveFolderUrl.trim() || driveFetching}
+                size="sm"
+              >
+                {driveFetching
+                  ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Fetching...</>
+                  : <><HardDrive className="w-3.5 h-3.5 mr-1.5" />Fetch from Drive</>}
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* File list */}
@@ -829,12 +932,20 @@ const CaptionExportTab: React.FC<{
         </Card>
       )}
 
+      {/* Drive upload result */}
+      {driveUploadResult && (
+        <div className="flex items-center gap-2 text-sm text-green-600">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>Uploaded <span className="font-mono">{driveUploadResult}</span> to Google Drive</span>
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         {!started ? (
           <Button
             onClick={() => void handleStart()}
-            disabled={entries.length === 0 || !persona || uploading}
+            disabled={entries.length === 0 || !persona || uploading || driveFetching}
           >
             <Play className="w-4 h-4 mr-2" />
             Generate &amp; Export ({entries.length})
@@ -842,10 +953,23 @@ const CaptionExportTab: React.FC<{
         ) : isDone ? (
           <>
             {task?.state === 'SUCCESS' && (
-              <Button onClick={handleDownload}>
-                <Download className="w-4 h-4 mr-2" />
-                Download ZIP
-              </Button>
+              <>
+                <Button onClick={handleDownload}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download ZIP
+                </Button>
+                {source === 'drive' && !driveUploadResult && (
+                  <Button
+                    variant="outline"
+                    onClick={() => void handleDriveUpload()}
+                    disabled={driveUploading}
+                  >
+                    {driveUploading
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</>
+                      : <><HardDrive className="w-4 h-4 mr-2" />Upload ZIP to Drive</>}
+                  </Button>
+                )}
+              </>
             )}
             <Button variant="outline" onClick={handleReset}>
               Start New Export

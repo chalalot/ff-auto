@@ -21,6 +21,8 @@ from backend.models.workspace import (
     CaptionExportEntry,
     CaptionExportUploadResponse,
     CaptionExportRequest,
+    GDriveFetchRequest,
+    GDriveUploadZipRequest,
 )
 from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
@@ -252,6 +254,109 @@ def caption_export_download(task_id: str):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="caption_export_{task_id[:8]}.zip"'},
     )
+
+
+# ------------------------------------------------------------------
+# Caption Export — Google Drive integration
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/gdrive/fetch", response_model=CaptionExportUploadResponse)
+async def caption_export_gdrive_fetch(
+    body: GDriveFetchRequest,
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+):
+    """
+    Fetch images from a Google Drive folder, downscale with Pillow, save to
+    PROCESSED_DIR, and return entries in the same format as the upload endpoint.
+    """
+    import io as _io
+    from PIL import Image
+    from backend.third_parties import gdrive_client
+
+    try:
+        folder_id = gdrive_client.get_folder_id(body.folder_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        files = gdrive_client.list_images_in_folder(folder_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to list Drive folder: {e}")
+
+    if not files:
+        raise HTTPException(status_code=404, detail="No images found in the specified Drive folder")
+
+    entries = []
+    errors = []
+    for file in files:
+        try:
+            raw = gdrive_client.download_file(file["id"])
+            img = Image.open(_io.BytesIO(raw)).convert("RGB")
+            if body.max_dimension and max(img.size) > body.max_dimension:
+                img.thumbnail((body.max_dimension, body.max_dimension), Image.LANCZOS)
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            data = buf.getvalue()
+
+            stem = Path(file["name"]).stem
+            ext = ".jpg"
+            saved_path = svc.save_ref_image(f"{stem}{ext}", data)
+            entries.append(CaptionExportEntry(stem=stem, path=saved_path, original_ext=ext))
+        except Exception as e:
+            errors.append(f"{file['name']}: {e}")
+
+    if not entries:
+        detail = "Failed to process any images from Drive"
+        if errors:
+            detail += f". Errors: {'; '.join(errors[:3])}"
+        raise HTTPException(status_code=500, detail=detail)
+
+    return CaptionExportUploadResponse(entries=entries)
+
+
+@router.post("/caption-export/gdrive/upload-zip")
+def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
+    """
+    Build the ZIP (images + .txt prompts) from a completed caption task and
+    upload it to the specified Google Drive folder.
+    """
+    from celery.result import AsyncResult
+    from backend.celery_app import celery_app as _celery
+    from backend.third_parties import gdrive_client
+
+    result = AsyncResult(body.task_id, app=_celery)
+    if result.state != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not ready (state: {result.state}). Wait for it to finish.",
+        )
+
+    data = result.result or {}
+    results = data.get("results", [])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in results:
+            stem = item.get("stem", "image")
+            ext = item.get("original_ext", ".jpg")
+            image_path = Path(item.get("path", ""))
+            prompt = item.get("prompt", "")
+            if image_path.exists():
+                zf.write(image_path, f"{stem}{ext}")
+            zf.writestr(f"{stem}.txt", prompt)
+    zip_data = buf.getvalue()
+
+    try:
+        folder_id = gdrive_client.get_folder_id(body.folder_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        zip_filename = f"caption_export_{body.task_id[:8]}.zip"
+        file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
+        return {"file_id": file_id, "filename": zip_filename}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
 
 
 # ------------------------------------------------------------------

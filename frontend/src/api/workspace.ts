@@ -66,4 +66,17 @@ export const workspaceApi = {
 
   getCaptionExportDownloadUrl: (taskId: string) =>
     `/api/workspace/caption-export/${taskId}/download`,
+
+  // Google Drive integration
+  captionExportGdriveFetch: (payload: { folder_url: string; max_dimension: number }) =>
+    apiClient.post<{ entries: CaptionExportEntry[] }>(
+      '/workspace/caption-export/gdrive/fetch',
+      payload,
+    ).then(r => r.data),
+
+  captionExportGdriveUploadZip: (payload: { task_id: string; folder_url: string }) =>
+    apiClient.post<{ file_id: string; filename: string }>(
+      '/workspace/caption-export/gdrive/upload-zip',
+      payload,
+    ).then(r => r.data),
 }

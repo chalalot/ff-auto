@@ -4,7 +4,7 @@
 soulie-gcp-bucket.json
 *credentials*.json
 *service_account*.json
-
+ff-auto-drive.json
 # --- Databases ---
 *.db
 *.sqlite

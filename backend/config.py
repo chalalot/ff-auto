@@ -57,6 +57,9 @@ class GlobalConfig:
     KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY")
     KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY")
 
+    # Google Drive
+    GDRIVE_CREDENTIALS_PATH = os.getenv("GDRIVE_CREDENTIALS_PATH", "ff-auto-drive.json")
+
     # Google Cloud Storage
     GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "soulie-gcp-bucket")
     GCS_CREDENTIALS_PATH = os.getenv("GCS_CREDENTIALS_PATH", "soulie-gcp-bucket.json")

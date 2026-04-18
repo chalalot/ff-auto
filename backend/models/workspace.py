@@ -100,3 +100,13 @@ class CaptionExportRequest(BaseModel):
     persona: str
     vision_model: str = "gpt-4o"
     workflow_type: str = "turbo"
+
+
+class GDriveFetchRequest(BaseModel):
+    folder_url: str
+    max_dimension: int = 1024  # Pillow thumbnail max side in pixels
+
+
+class GDriveUploadZipRequest(BaseModel):
+    task_id: str
+    folder_url: str
