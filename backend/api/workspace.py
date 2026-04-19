@@ -23,6 +23,7 @@ from backend.models.workspace import (
     CaptionExportRequest,
     GDriveFetchRequest,
     GDriveUploadZipRequest,
+    RunpodSubmitRequest,
 )
 from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
@@ -357,6 +358,68 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
         return {"file_id": file_id, "filename": zip_filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
+
+
+# ------------------------------------------------------------------
+# Caption Export — RunPod LoRA training
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/runpod/submit")
+def caption_export_runpod_submit(body: RunpodSubmitRequest):
+    """Submit a LoRA training job to the RunPod serverless endpoint."""
+    import requests as _requests
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    endpoint_id = body.endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not endpoint_id:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"input": body.job_input.model_dump()}
+
+    try:
+        resp = _requests.post(url, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
+
+    result = resp.json()
+    return {"job_id": result["id"], "endpoint_id": endpoint_id}
+
+
+@router.get("/caption-export/runpod/status/{job_id}")
+def caption_export_runpod_status(job_id: str, endpoint_id: Optional[str] = None):
+    """Check the current status of a RunPod job (mirrors submit_runpod.py --check)."""
+    import requests as _requests
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not eid:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{eid}/status/{job_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        resp = _requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
+
+    return resp.json()
 
 
 # ------------------------------------------------------------------

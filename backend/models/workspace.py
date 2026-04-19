@@ -110,3 +110,17 @@ class GDriveFetchRequest(BaseModel):
 class GDriveUploadZipRequest(BaseModel):
     task_id: str
     folder_url: str
+
+
+class RunpodJobInput(BaseModel):
+    dataset_source: str
+    lora_name: str
+    steps: int = 2000
+    save_every: int = 500
+    sample_every: int = 500
+    sample_prompts: List[str] = []
+
+
+class RunpodSubmitRequest(BaseModel):
+    job_input: RunpodJobInput
+    endpoint_id: Optional[str] = None  # overrides RUNPOD_ENDPOINT_ID env var

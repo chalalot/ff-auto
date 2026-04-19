@@ -1,0 +1,17 @@
+{
+  "input": {
+    "dataset_source": "gdrive://1Av_jB0ahBG8Vfx8sBKvI8BEMeVd6HX4x",
+    "lora_name": "emi_v4",
+    "steps": 2000,
+    "save_every": 500,
+    "sample_every": 500,
+    "sample_prompts": [
+        "the girl in a coffee shop drinking a matcha latte",
+        "the girl going on a photoshoot, professional costume",
+        "the girl strolling on the street with style",
+        "the girl dancing in her bedroom, joyfully enjoying her dance",
+        "the girl posing aesthetically on the night street",
+        "the girl going out on a car by herself, sunny day"
+    ]
+  }
+}

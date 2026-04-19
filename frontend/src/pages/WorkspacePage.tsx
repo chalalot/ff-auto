@@ -15,7 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2 } from 'lucide-react'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
 import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord, CaptionExportEntry } from '@/types'
 
 // Default config
@@ -664,6 +665,25 @@ const TaskCardDisplay: React.FC<{ task: TaskStatusResponse; taskId: string; meta
 // ------------------------------------------------------------------
 // Caption Export Tab
 // ------------------------------------------------------------------
+
+interface LoraConfig {
+  dataset_source: string
+  lora_name: string
+  steps: number
+  save_every: number
+  sample_every: number
+  sample_prompts: string  // newline-separated in the textarea
+}
+
+const DEFAULT_LORA: LoraConfig = {
+  dataset_source: '',
+  lora_name: '',
+  steps: 2000,
+  save_every: 500,
+  sample_every: 500,
+  sample_prompts: '',
+}
+
 const CaptionExportTab: React.FC<{
   personas: Array<{ name: string }>
   visionModels: Array<{ value: string; label: string }>
@@ -682,12 +702,27 @@ const CaptionExportTab: React.FC<{
   const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
   const [driveFetching, setDriveFetching] = useState(false)
   const [driveUploading, setDriveUploading] = useState(false)
-  const [driveUploadResult, setDriveUploadResult] = useState<string | null>(null) // filename
+  const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string } | null>(null)
+
+  // LoRA / RunPod state
+  const [loraConfig, setLoraConfig] = useState<LoraConfig>(DEFAULT_LORA)
+  const [runpodJobId, setRunpodJobId] = useState<string | null>(null)
+  const [runpodEndpointId, setRunpodEndpointId] = useState<string | null>(null)
+  const [runpodSubmitting, setRunpodSubmitting] = useState(false)
+  const [runpodStatus, setRunpodStatus] = useState<{ status: string; output?: unknown } | null>(null)
+  const [runpodChecking, setRunpodChecking] = useState(false)
 
   // Sync persona default once it's loaded
   React.useEffect(() => {
     if (!persona && defaultConfig.persona) setPersona(defaultConfig.persona)
   }, [defaultConfig.persona]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-fill dataset_source when Drive upload completes
+  React.useEffect(() => {
+    if (driveUploadResult?.fileId) {
+      setLoraConfig(prev => ({ ...prev, dataset_source: `gdrive://${driveUploadResult.fileId}` }))
+    }
+  }, [driveUploadResult])
 
   const { data: task } = useTaskProgress(started ? taskId : null)
   const isDone = task?.state === 'SUCCESS' || task?.state === 'FAILURE'
@@ -726,9 +761,41 @@ const CaptionExportTab: React.FC<{
         task_id: taskId,
         folder_url: driveFolderUrl.trim(),
       })
-      setDriveUploadResult(res.filename)
+      setDriveUploadResult({ filename: res.filename, fileId: res.file_id })
     } finally {
       setDriveUploading(false)
+    }
+  }
+
+  const handleRunpodSubmit = async () => {
+    if (!loraConfig.dataset_source || !loraConfig.lora_name) return
+    setRunpodSubmitting(true)
+    setRunpodStatus(null)
+    try {
+      const res = await workspaceApi.runpodSubmit({
+        job_input: {
+          ...loraConfig,
+          sample_prompts: loraConfig.sample_prompts
+            .split('\n')
+            .map(s => s.trim())
+            .filter(Boolean),
+        },
+      })
+      setRunpodJobId(res.job_id)
+      setRunpodEndpointId(res.endpoint_id)
+    } finally {
+      setRunpodSubmitting(false)
+    }
+  }
+
+  const handleRunpodCheckStatus = async () => {
+    if (!runpodJobId) return
+    setRunpodChecking(true)
+    try {
+      const res = await workspaceApi.runpodStatus(runpodJobId, runpodEndpointId ?? undefined)
+      setRunpodStatus(res)
+    } finally {
+      setRunpodChecking(false)
     }
   }
 
@@ -762,14 +829,23 @@ const CaptionExportTab: React.FC<{
     setTaskId(null)
     setStarted(false)
     setDriveUploadResult(null)
+    setLoraConfig(DEFAULT_LORA)
+    setRunpodJobId(null)
+    setRunpodEndpointId(null)
+    setRunpodStatus(null)
   }
+
+  const runpodStatusColor =
+    runpodStatus?.status === 'COMPLETED' ? 'text-green-600' :
+    runpodStatus?.status === 'FAILED' || runpodStatus?.status === 'TIMED_OUT' ? 'text-destructive' :
+    'text-muted-foreground'
 
   return (
     <div className="max-w-2xl space-y-5 py-2">
       <div>
         <h2 className="font-semibold mb-1">Caption Export</h2>
         <p className="text-sm text-muted-foreground">
-          Load images, run CrewAI captioning, then download or upload a ZIP with each image paired with its generated prompt as a .txt file.
+          Load images, run CrewAI captioning, download or upload a ZIP, then kick off LoRA training on RunPod.
         </p>
       </div>
 
@@ -855,7 +931,7 @@ const CaptionExportTab: React.FC<{
               <div className="space-y-1.5">
                 <Label>Google Drive Folder URL</Label>
                 <p className="text-xs text-muted-foreground">
-                  Share the folder with the service account email, then paste the folder link here.
+                  Paste the Drive folder link — images will be downloaded and downscaled automatically.
                 </p>
                 <Input
                   placeholder="https://drive.google.com/drive/folders/..."
@@ -932,15 +1008,7 @@ const CaptionExportTab: React.FC<{
         </Card>
       )}
 
-      {/* Drive upload result */}
-      {driveUploadResult && (
-        <div className="flex items-center gap-2 text-sm text-green-600">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>Uploaded <span className="font-mono">{driveUploadResult}</span> to Google Drive</span>
-        </div>
-      )}
-
-      {/* Actions */}
+      {/* Actions row */}
       <div className="flex items-center gap-3 flex-wrap">
         {!started ? (
           <Button
@@ -982,6 +1050,142 @@ const CaptionExportTab: React.FC<{
           </Button>
         )}
       </div>
+
+      {/* Drive upload confirmation */}
+      {driveUploadResult && (
+        <div className="flex items-center gap-2 text-sm text-green-600">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>
+            Uploaded <span className="font-mono">{driveUploadResult.filename}</span> to Google Drive
+          </span>
+        </div>
+      )}
+
+      {/* LoRA training config — unlocked after Drive upload */}
+      {driveUploadResult && (
+        <>
+          <Separator />
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-semibold text-sm mb-0.5">LoRA Training</h3>
+              <p className="text-xs text-muted-foreground">
+                Configure the training job and submit to RunPod. Dataset source is pre-filled from the uploaded ZIP.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Dataset Source</Label>
+                <Input
+                  value={loraConfig.dataset_source}
+                  onChange={e => setLoraConfig(p => ({ ...p, dataset_source: e.target.value }))}
+                  className="font-mono text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>LoRA Name</Label>
+                <Input
+                  placeholder="e.g. emi_v4"
+                  value={loraConfig.lora_name}
+                  onChange={e => setLoraConfig(p => ({ ...p, lora_name: e.target.value }))}
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Steps</Label>
+                  <Input
+                    type="number"
+                    min={100}
+                    step={100}
+                    value={loraConfig.steps}
+                    onChange={e => setLoraConfig(p => ({ ...p, steps: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Save Every</Label>
+                  <Input
+                    type="number"
+                    min={100}
+                    step={100}
+                    value={loraConfig.save_every}
+                    onChange={e => setLoraConfig(p => ({ ...p, save_every: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sample Every</Label>
+                  <Input
+                    type="number"
+                    min={100}
+                    step={100}
+                    value={loraConfig.sample_every}
+                    onChange={e => setLoraConfig(p => ({ ...p, sample_every: Number(e.target.value) }))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Sample Prompts <span className="text-muted-foreground font-normal">(one per line)</span></Label>
+                <Textarea
+                  rows={5}
+                  placeholder={"the girl in a coffee shop drinking a matcha latte\nthe girl going on a photoshoot, professional costume"}
+                  value={loraConfig.sample_prompts}
+                  onChange={e => setLoraConfig(p => ({ ...p, sample_prompts: e.target.value }))}
+                  className="font-mono text-xs resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Submit button */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <Button
+                onClick={() => void handleRunpodSubmit()}
+                disabled={!loraConfig.dataset_source || !loraConfig.lora_name || runpodSubmitting}
+              >
+                {runpodSubmitting
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>
+                  : <><Cpu className="w-4 h-4 mr-2" />Submit to RunPod</>}
+              </Button>
+
+              {runpodJobId && (
+                <Button
+                  variant="outline"
+                  onClick={() => void handleRunpodCheckStatus()}
+                  disabled={runpodChecking}
+                >
+                  {runpodChecking
+                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Checking...</>
+                    : <><RefreshCw className="w-4 h-4 mr-2" />Check Status</>}
+                </Button>
+              )}
+            </div>
+
+            {/* Job ID + status */}
+            {runpodJobId && (
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Job ID</span>
+                  <span className="font-mono">{runpodJobId}</span>
+                </div>
+                {runpodStatus && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Status</span>
+                      <span className={`font-medium ${runpodStatusColor}`}>{runpodStatus.status}</span>
+                    </div>
+                    {runpodStatus.output && (
+                      <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+                        {JSON.stringify(runpodStatus.output, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -60,6 +60,10 @@ class GlobalConfig:
     # Google Drive
     GDRIVE_CREDENTIALS_PATH = os.getenv("GDRIVE_CREDENTIALS_PATH", "ff-auto-drive.json")
 
+    # RunPod
+    RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")
+    RUNPOD_ENDPOINT_ID = os.getenv("RUNPOD_ENDPOINT_ID", "")
+
     # Google Cloud Storage
     GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "soulie-gcp-bucket")
     GCS_CREDENTIALS_PATH = os.getenv("GCS_CREDENTIALS_PATH", "soulie-gcp-bucket.json")
