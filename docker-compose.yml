@@ -15,6 +15,13 @@ services:
       - ./prompts:/app/prompts
       - ./image_logs.db:/app/image_logs.db
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+      # Archive: read-only mounts from other server environments
+      - /mnt/source/main-server/results:/app/archive/main-server/results:ro
+      - /mnt/source/main-server/processed:/app/archive/main-server/processed:ro
+      - /mnt/source/test-server/results:/app/archive/test-server/results:ro
+      - /mnt/source/test-server/processed:/app/archive/test-server/processed:ro
+      - /mnt/source/test-server-2/results:/app/archive/test-server-2/results:ro
+      - /mnt/source/test-server-2/processed:/app/archive/test-server-2/processed:ro
     env_file:
       - .env
     environment:

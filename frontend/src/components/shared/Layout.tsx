@@ -1,11 +1,12 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Settings, Archive } from 'lucide-react'
 
 const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; disabled?: boolean }[] = [
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
+  { to: '/archive', label: 'Archive', icon: Archive },
   { to: '/video', label: 'Video', icon: Video },
   { to: '/monitor', label: 'Monitor', icon: Activity },
   { to: '/prompts', label: 'Prompts', icon: FileText },

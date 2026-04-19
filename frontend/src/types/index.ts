@@ -129,6 +129,24 @@ export interface GalleryStats {
   }
 }
 
+// Archive types
+export interface ArchiveImage {
+  server: string
+  filename: string
+  thumbnail_url: string
+  created_at: number
+  date: string
+}
+
+export interface ArchiveListResponse {
+  servers: string[]
+  items: ArchiveImage[]
+  total: number
+  page: number
+  pages: number
+  per_page: number
+}
+
 // Monitor types
 export interface SystemHealth {
   cpu_percent: number

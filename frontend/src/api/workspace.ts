@@ -74,10 +74,10 @@ export const workspaceApi = {
       payload,
     ).then(r => r.data),
 
-  captionExportGdriveUploadZip: (payload: { task_id: string; folder_url: string }) =>
-    apiClient.post<{ file_id: string; filename: string }>(
+  captionExportGdriveUploadZip: (taskId: string) =>
+    apiClient.post<{ file_id: string; filename: string; public_url: string }>(
       '/workspace/caption-export/gdrive/upload-zip',
-      payload,
+      { task_id: taskId },
     ).then(r => r.data),
 
   // RunPod LoRA training
@@ -98,7 +98,7 @@ export const workspaceApi = {
     ).then(r => r.data),
 
   runpodStatus: (jobId: string, endpointId?: string) =>
-    apiClient.get<{ id: string; status: string; output?: unknown }>(
+    apiClient.get<{ id: string; status: string; output?: Record<string, unknown> | null }>(
       `/workspace/caption-export/runpod/status/${jobId}`,
       { params: endpointId ? { endpoint_id: endpointId } : undefined },
     ).then(r => r.data),

@@ -109,7 +109,6 @@ class GDriveFetchRequest(BaseModel):
 
 class GDriveUploadZipRequest(BaseModel):
     task_id: str
-    folder_url: str
 
 
 class RunpodJobInput(BaseModel):

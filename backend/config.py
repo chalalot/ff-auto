@@ -59,6 +59,11 @@ class GlobalConfig:
 
     # Google Drive
     GDRIVE_CREDENTIALS_PATH = os.getenv("GDRIVE_CREDENTIALS_PATH", "ff-auto-drive.json")
+    # Accept either a raw folder ID or a full Drive URL
+    _gdrive_upload_raw = os.getenv("GDRIVE_UPLOAD_FOLDER_ID", "")
+    import re as _re
+    _gdrive_match = _re.search(r"/folders/([a-zA-Z0-9_-]+)", _gdrive_upload_raw)
+    GDRIVE_UPLOAD_FOLDER_ID = _gdrive_match.group(1) if _gdrive_match else _gdrive_upload_raw
 
     # RunPod
     RUNPOD_API_KEY = os.getenv("RUNPOD_API_KEY", "")

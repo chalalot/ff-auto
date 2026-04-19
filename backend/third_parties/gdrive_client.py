@@ -134,3 +134,18 @@ def upload_file(filename: str, data: bytes, mime_type: str, folder_id: str) -> s
     )
     logger.info(f"[gdrive] Uploaded {filename} → file ID {created['id']}")
     return created["id"]
+
+
+def make_file_public(file_id: str) -> str:
+    """
+    Grant anyone-with-the-link read access to a Drive file.
+    Returns the public shareable URL.
+    """
+    service = _get_service()
+    service.permissions().create(
+        fileId=file_id,
+        body={"type": "anyone", "role": "reader"},
+    ).execute()
+    public_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+    logger.info(f"[gdrive] Made {file_id} public → {public_url}")
+    return public_url

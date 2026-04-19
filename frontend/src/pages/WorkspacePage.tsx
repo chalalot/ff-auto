@@ -702,14 +702,14 @@ const CaptionExportTab: React.FC<{
   const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
   const [driveFetching, setDriveFetching] = useState(false)
   const [driveUploading, setDriveUploading] = useState(false)
-  const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string } | null>(null)
+  const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string; publicUrl: string } | null>(null)
 
   // LoRA / RunPod state
   const [loraConfig, setLoraConfig] = useState<LoraConfig>(DEFAULT_LORA)
   const [runpodJobId, setRunpodJobId] = useState<string | null>(null)
   const [runpodEndpointId, setRunpodEndpointId] = useState<string | null>(null)
   const [runpodSubmitting, setRunpodSubmitting] = useState(false)
-  const [runpodStatus, setRunpodStatus] = useState<{ status: string; output?: unknown } | null>(null)
+  const [runpodStatus, setRunpodStatus] = useState<{ status: string; output?: Record<string, unknown> | null } | null>(null)
   const [runpodChecking, setRunpodChecking] = useState(false)
 
   // Sync persona default once it's loaded
@@ -754,14 +754,11 @@ const CaptionExportTab: React.FC<{
   }
 
   const handleDriveUpload = async () => {
-    if (!taskId || !driveFolderUrl.trim()) return
+    if (!taskId) return
     setDriveUploading(true)
     try {
-      const res = await workspaceApi.captionExportGdriveUploadZip({
-        task_id: taskId,
-        folder_url: driveFolderUrl.trim(),
-      })
-      setDriveUploadResult({ filename: res.filename, fileId: res.file_id })
+      const res = await workspaceApi.captionExportGdriveUploadZip(taskId)
+      setDriveUploadResult({ filename: res.filename, fileId: res.file_id, publicUrl: res.public_url })
     } finally {
       setDriveUploading(false)
     }
@@ -1026,7 +1023,7 @@ const CaptionExportTab: React.FC<{
                   <Download className="w-4 h-4 mr-2" />
                   Download ZIP
                 </Button>
-                {source === 'drive' && !driveUploadResult && (
+                {!driveUploadResult && (
                   <Button
                     variant="outline"
                     onClick={() => void handleDriveUpload()}
@@ -1053,11 +1050,19 @@ const CaptionExportTab: React.FC<{
 
       {/* Drive upload confirmation */}
       {driveUploadResult && (
-        <div className="flex items-center gap-2 text-sm text-green-600">
-          <CheckCircle2 className="w-4 h-4 shrink-0" />
-          <span>
-            Uploaded <span className="font-mono">{driveUploadResult.filename}</span> to Google Drive
-          </span>
+        <div className="space-y-1 text-sm">
+          <div className="flex items-center gap-2 text-green-600">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Uploaded <span className="font-mono">{driveUploadResult.filename}</span> to Google Drive (public)</span>
+          </div>
+          <a
+            href={driveUploadResult.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground ml-6 block truncate"
+          >
+            {driveUploadResult.publicUrl}
+          </a>
         </div>
       )}
 

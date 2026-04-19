@@ -33,3 +33,11 @@ from backend.services.video import VideoService
 @lru_cache
 def get_video_service() -> VideoService:
     return VideoService()
+
+
+from backend.services.archive import ArchiveService
+
+
+@lru_cache
+def get_archive_service() -> ArchiveService:
+    return ArchiveService()

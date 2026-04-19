@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import workspace, gallery, config_routes, monitor, video as video_module
+from backend.api import workspace, gallery, config_routes, monitor, video as video_module, archive as archive_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
@@ -41,6 +41,7 @@ app.include_router(gallery.router, prefix="/api/gallery", tags=["gallery"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["config"])
 app.include_router(monitor.router, prefix="/api/monitor", tags=["monitor"])
 app.include_router(video_module.router, prefix="/api/video", tags=["video"])
+app.include_router(archive_module.router, prefix="/api/archive", tags=["archive"])
 
 
 @app.get("/health")

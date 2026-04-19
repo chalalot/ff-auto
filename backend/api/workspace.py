@@ -318,12 +318,17 @@ async def caption_export_gdrive_fetch(
 @router.post("/caption-export/gdrive/upload-zip")
 def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
     """
-    Build the ZIP (images + .txt prompts) from a completed caption task and
-    upload it to the specified Google Drive folder.
+    Build the ZIP (images + .txt prompts) from a completed caption task, upload it
+    to the configured GDRIVE_UPLOAD_FOLDER_ID, and make it publicly readable.
     """
     from celery.result import AsyncResult
     from backend.celery_app import celery_app as _celery
     from backend.third_parties import gdrive_client
+    from backend.config import GlobalConfig
+
+    folder_id = GlobalConfig.GDRIVE_UPLOAD_FOLDER_ID
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="GDRIVE_UPLOAD_FOLDER_ID is not set in .env")
 
     result = AsyncResult(body.task_id, app=_celery)
     if result.state != "SUCCESS":
@@ -348,14 +353,10 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
     zip_data = buf.getvalue()
 
     try:
-        folder_id = gdrive_client.get_folder_id(body.folder_url)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    try:
         zip_filename = f"caption_export_{body.task_id[:8]}.zip"
         file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
-        return {"file_id": file_id, "filename": zip_filename}
+        public_url = gdrive_client.make_file_public(file_id)
+        return {"file_id": file_id, "filename": zip_filename, "public_url": public_url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
 
