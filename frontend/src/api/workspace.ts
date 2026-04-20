@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { InputImage, RefImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord, CaptionExportEntry } from '@/types'
+import type { InputImage, RefImage, ProcessImageConfig, TaskStatusResponse, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
 export const workspaceApi = {
   getInputImages: () =>
@@ -19,6 +19,9 @@ export const workspaceApi = {
 
   getTaskStatus: (taskId: string) =>
     apiClient.get<TaskStatusResponse>(`/workspace/task/${taskId}/status`).then(r => r.data),
+
+  getActiveTasks: () =>
+    apiClient.get<ActiveTask[]>('/workspace/active-tasks').then(r => r.data),
 
   getExecutions: (params?: { limit?: number; status?: string }) =>
     apiClient.get<ExecutionRecord[]>('/workspace/executions', { params }).then(r => r.data),

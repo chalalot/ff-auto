@@ -17,6 +17,7 @@ from backend.models.workspace import (
     TaskStatusResponse,
     DispatchResponse,
     BatchDispatchResponse,
+    ActiveTask,
     ExecutionRecord,
     CaptionExportEntry,
     CaptionExportUploadResponse,
@@ -166,6 +167,16 @@ def ref_image_full(filename: str, svc: ImageProcessingService = Depends(get_imag
     return Response(content=data, media_type=media_type)
 
 
+@router.get("/active-tasks")
+def list_active_tasks(svc: ImageProcessingService = Depends(get_image_processing_service)):
+    """
+    Returns all currently running tasks across all users.
+    Registered in Redis on dispatch; pruned when a terminal state is detected.
+    Poll this every 5s from any client to show a shared live view.
+    """
+    return svc.get_active_tasks()
+
+
 @router.get("/task/{task_id}/status", response_model=TaskStatusResponse)
 def task_status(task_id: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
     return svc.get_task_status(task_id)
@@ -207,7 +218,11 @@ async def caption_export_upload(
 @router.post("/caption-export/start")
 def caption_export_start(body: CaptionExportRequest):
     """Dispatch caption_export_task to run CrewAI on each uploaded image."""
+    import json as _json
+    import time as _time
     from backend.celery_app import celery_app as _celery
+    from backend.services.image_processing import _redis_client, _ACTIVE_TASKS_SET, _TASK_META_PREFIX, _TASK_META_TTL
+
     task = _celery.send_task(
         "backend.tasks.caption_export_task",
         kwargs={
@@ -218,6 +233,21 @@ def caption_export_start(body: CaptionExportRequest):
         },
         queue="image",
     )
+
+    # Register in Redis so any session/user can track this task
+    try:
+        r = _redis_client()
+        meta = _json.dumps({
+            "task_type": "caption_export",
+            "persona": body.persona,
+            "image_count": len(body.image_entries),
+            "dispatched_at": _time.time(),
+        })
+        r.sadd(_ACTIVE_TASKS_SET, task.id)
+        r.setex(_TASK_META_PREFIX + task.id, _TASK_META_TTL, meta)
+    except Exception as exc:
+        logger.warning(f"Could not register caption export task {task.id} in Redis: {exc}")
+
     return {"task_id": task.id}
 
 

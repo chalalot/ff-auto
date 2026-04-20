@@ -123,3 +123,15 @@ class RunpodJobInput(BaseModel):
 class RunpodSubmitRequest(BaseModel):
     job_input: RunpodJobInput
     endpoint_id: Optional[str] = None  # overrides RUNPOD_ENDPOINT_ID env var
+
+
+class ActiveTask(BaseModel):
+    task_id: str
+    state: str
+    status_message: str = ""
+    progress: float = 0
+    image_path: Optional[str] = None
+    persona: str = ""
+    dispatched_at: Optional[float] = None
+    task_type: str = "image_process"   # "image_process" | "caption_export"
+    image_count: Optional[int] = None  # for caption_export tasks

@@ -4,6 +4,7 @@ import { workspaceApi } from '@/api/workspace'
 import { configApi } from '@/api/config'
 import { usePersonas, useVisionModels, useClipModels, useLoraOptions, useLastUsed } from '@/hooks/usePersonas'
 import { useTaskProgress } from '@/hooks/useTaskProgress'
+import { useActiveTasks } from '@/hooks/useActiveTasks'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +18,7 @@ import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow } from 'date-fns'
 import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
-import type { ProcessImageConfig, TaskStatusResponse, RefImage, ExecutionRecord, CaptionExportEntry } from '@/types'
+import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
@@ -40,9 +41,8 @@ export const WorkspacePage: React.FC = () => {
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
   const configInitializedRef = React.useRef(false)
-  const [activeTaskIds, setActiveTaskIds] = useState<string[]>([])
-  // Metadata captured at dispatch time so cards can show ref thumbnail + config info
-  const [taskMeta, setTaskMeta] = useState<Record<string, { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }>>({})
+
+  const { data: activeTasks = [] } = useActiveTasks()
 
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
@@ -123,15 +123,10 @@ export const WorkspacePage: React.FC = () => {
       }
       return { taskIds, paths, configSnapshot: { ...config } }
     },
-    onSuccess: async ({ taskIds, paths, configSnapshot }) => {
-      setActiveTaskIds(prev => [...prev, ...taskIds])
-      setTaskMeta(prev => {
-        const next = { ...prev }
-        taskIds.forEach((id, i) => {
-          next[id] = { refImagePath: paths[i], persona: configSnapshot.persona, config: configSnapshot }
-        })
-        return next
-      })
+    onSuccess: async () => {
+      // Immediately refresh the global active-tasks list so this session and
+      // all other open sessions see the new tasks right away.
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'active-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
     },
@@ -335,7 +330,7 @@ export const WorkspacePage: React.FC = () => {
           <TabsList className="mx-4 mt-4 w-fit">
             <TabsTrigger value="library">Library ({library.length})</TabsTrigger>
             <TabsTrigger value="history">Execution History</TabsTrigger>
-            <TabsTrigger value="tasks">Active Tasks ({activeTaskIds.length})</TabsTrigger>
+            <TabsTrigger value="tasks">Active Tasks ({activeTasks.length})</TabsTrigger>
             <TabsTrigger value="caption-export">Caption Export</TabsTrigger>
           </TabsList>
 
@@ -395,20 +390,18 @@ export const WorkspacePage: React.FC = () => {
             </div>
           </TabsContent>
 
-          {/* Active Tasks Tab */}
+          {/* Active Tasks Tab — shows all running tasks for all users */}
           <TabsContent value="tasks" className="flex-1 overflow-auto px-4 pb-4">
             <div className="space-y-3">
-              {activeTaskIds.length === 0 ? (
+              {activeTasks.length === 0 ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <Zap className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No active tasks</p>
+                  <p className="text-xs mt-1">Refreshes every 5 seconds</p>
                 </div>
               ) : (
-                activeTaskIds.map(taskId => (
-                  <TaskCard key={taskId} taskId={taskId} meta={taskMeta[taskId]} onDone={() => {
-                    setActiveTaskIds(prev => prev.filter(id => id !== taskId))
-                    queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
-                  }} />
+                activeTasks.map(task => (
+                  <GlobalTaskCard key={task.task_id} task={task} />
                 ))
               )}
             </div>
@@ -416,7 +409,7 @@ export const WorkspacePage: React.FC = () => {
 
           {/* Caption Export Tab */}
           <TabsContent value="caption-export" className="flex-1 overflow-auto px-4 pb-4">
-            <CaptionExportTab personas={personas} visionModels={visionModels} defaultConfig={config} />
+            <CaptionExportTab personas={personas} visionModels={visionModels} defaultConfig={config} activeTasks={activeTasks} />
           </TabsContent>
         </Tabs>
       </div>
@@ -549,116 +542,66 @@ const InfoModal: React.FC<{ title: string; onClose: () => void; children: React.
 )
 
 // ------------------------------------------------------------------
-// Task progress card component
+// Global task card — shows a task from the shared Redis registry.
+// Adds live 1s polling on top of the 5s global refresh.
 // ------------------------------------------------------------------
-type TaskMeta = { refImagePath?: string; persona: string; config: Omit<ProcessImageConfig, 'image_path'> }
+const GlobalTaskCard: React.FC<{ task: ActiveTask }> = ({ task }) => {
+  const { data: live } = useTaskProgress(task.task_id)
 
-const TaskCard: React.FC<{ taskId: string; meta?: TaskMeta; onDone: () => void }> = ({ taskId, meta, onDone }) => {
-  const { data: task } = useTaskProgress(taskId)
+  const state = live?.state ?? task.state
+  const statusMessage = live?.status_message ?? task.status_message
+  const progress = live?.progress ?? task.progress
+  const isCaptionExport = task.task_type === 'caption_export'
+  const refFilename = isCaptionExport ? null : refFilenameFromPath(task.image_path)
 
-  React.useEffect(() => {
-    if (task?.state === 'SUCCESS' || task?.state === 'FAILURE') {
-      const timer = setTimeout(onDone, 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [task?.state, onDone])
-
-  if (!task) return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="font-mono text-xs">{taskId}</span>
+  return (
+    <Card className={state === 'FAILURE' ? 'border-destructive' : state === 'SUCCESS' ? 'border-green-500' : ''}>
+      <CardContent className="p-3 flex gap-3">
+        {refFilename ? (
+          <div className="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-muted border">
+            <img
+              src={workspaceApi.getRefImageThumbnailUrl(refFilename)}
+              alt="ref"
+              className="w-full h-full object-cover"
+            />
+          </div>
+        ) : isCaptionExport ? (
+          <div className="shrink-0 w-12 h-12 rounded-md bg-muted border flex items-center justify-center">
+            <FileText className="w-5 h-5 text-muted-foreground/60" />
+          </div>
+        ) : null}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-xs text-muted-foreground truncate">{task.task_id}</span>
+            <div className="flex items-center gap-1 shrink-0">
+              {isCaptionExport && (
+                <Badge variant="outline" className="text-xs">caption export</Badge>
+              )}
+              {task.persona && (
+                <Badge variant="outline" className="text-xs">{task.persona}</Badge>
+              )}
+              <Badge variant={
+                state === 'SUCCESS' ? 'success' :
+                state === 'FAILURE' ? 'destructive' :
+                'secondary'
+              }>
+                {state}
+              </Badge>
+            </div>
+          </div>
+          {isCaptionExport && task.image_count != null && (
+            <p className="text-xs text-muted-foreground">{task.image_count} images</p>
+          )}
+          <p className="text-sm">{statusMessage}</p>
+          {progress > 0 && (
+            <div className="space-y-1">
+              <Progress value={progress} className="h-2" />
+              <p className="text-xs text-right text-muted-foreground">{Math.round(progress)}%</p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
-  )
-
-  return <TaskCardDisplay task={task} taskId={taskId} meta={meta} />
-}
-
-const TaskCardDisplay: React.FC<{ task: TaskStatusResponse; taskId: string; meta?: TaskMeta }> = ({ task, taskId, meta }) => {
-  const [showInfo, setShowInfo] = useState(false)
-  const refFilename = refFilenameFromPath(meta?.refImagePath)
-
-  return (
-    <>
-      <Card className={task.state === 'FAILURE' ? 'border-destructive' : task.state === 'SUCCESS' ? 'border-success' : ''}>
-        <CardContent className="p-3 flex gap-3">
-          {/* Ref image thumbnail */}
-          {refFilename && (
-            <div className="shrink-0 w-12 h-12 rounded-md overflow-hidden bg-muted border">
-              <img
-                src={workspaceApi.getRefImageThumbnailUrl(refFilename)}
-                alt="ref"
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
-          <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-xs text-muted-foreground truncate">{taskId}</span>
-              <div className="flex items-center gap-1 shrink-0">
-                {meta && (
-                  <button
-                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-                    onClick={() => setShowInfo(true)}
-                    title="Show dispatch info"
-                  >
-                    <Info className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <Badge variant={
-                  task.state === 'SUCCESS' ? 'success' :
-                  task.state === 'FAILURE' ? 'destructive' :
-                  'secondary'
-                }>
-                  {task.state}
-                </Badge>
-              </div>
-            </div>
-            <p className="text-sm">{task.status_message}</p>
-            {task.progress !== undefined && task.progress > 0 && (
-              <div className="space-y-1">
-                <Progress value={task.progress} className="h-2" />
-                <p className="text-xs text-right text-muted-foreground">{Math.round(task.progress)}%</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {showInfo && meta && (
-        <InfoModal title="Dispatch config" onClose={() => setShowInfo(false)}>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-            {Object.entries({
-              Persona: meta.persona,
-              Workflow: meta.config.workflow_type,
-              'Vision model': meta.config.vision_model,
-              'CLIP model': meta.config.clip_model_type,
-              Variations: meta.config.variation_count,
-              Strength: meta.config.strength,
-              'Seed strategy': meta.config.seed_strategy,
-              ...(meta.config.seed_strategy === 'fixed' ? { 'Base seed': meta.config.base_seed } : {}),
-              Width: meta.config.width,
-              Height: meta.config.height,
-              LoRA: meta.config.lora_name || '—',
-            }).map(([k, v]) => (
-              <React.Fragment key={k}>
-                <span className="text-muted-foreground">{k}</span>
-                <span className="font-medium">{String(v)}</span>
-              </React.Fragment>
-            ))}
-          </div>
-          {meta.refImagePath && (
-            <div className="mt-3 pt-3 border-t">
-              <p className="text-xs text-muted-foreground mb-1">Ref image</p>
-              <p className="text-xs font-mono break-all">{meta.refImagePath}</p>
-            </div>
-          )}
-        </InfoModal>
-      )}
-    </>
   )
 }
 
@@ -688,13 +631,26 @@ const CaptionExportTab: React.FC<{
   personas: Array<{ name: string }>
   visionModels: Array<{ value: string; label: string }>
   defaultConfig: Omit<ProcessImageConfig, 'image_path'>
-}> = ({ personas, visionModels, defaultConfig }) => {
+  activeTasks: ActiveTask[]
+}> = ({ personas, visionModels, defaultConfig, activeTasks }) => {
   const [entries, setEntries] = useState<CaptionExportEntry[]>([])
   const [persona, setPersona] = useState(defaultConfig.persona)
   const [visionModel, setVisionModel] = useState(defaultConfig.vision_model)
   const [uploading, setUploading] = useState(false)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [started, setStarted] = useState(false)
+
+  // Restore any running caption export task when navigating back to this tab
+  const restoredRef = React.useRef(false)
+  React.useEffect(() => {
+    if (restoredRef.current || started) return
+    const running = activeTasks.find(t => t.task_type === 'caption_export')
+    if (running) {
+      setTaskId(running.task_id)
+      setStarted(true)
+      restoredRef.current = true
+    }
+  }, [activeTasks, started])
 
   // Google Drive state
   const [source, setSource] = useState<'local' | 'drive'>('local')

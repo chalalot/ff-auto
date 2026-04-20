@@ -5,6 +5,7 @@ Handles: input directory scanning, image preparation (copy+rename),
 Celery task dispatch, task status polling.
 """
 import os
+import json
 import shutil
 import uuid
 import time
@@ -13,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import redis as _redis
 from celery.result import AsyncResult
 
 from backend.config import GlobalConfig
@@ -21,6 +23,16 @@ from backend.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+# Redis keys for cross-user task visibility
+_ACTIVE_TASKS_SET = "ff_auto:active_tasks"   # Redis Set of task_ids
+_TASK_META_PREFIX = "ff_auto:task_meta:"     # Redis String (JSON) per task
+_TASK_META_TTL = 6 * 3600                    # 6 hours TTL
+
+
+def _redis_client() -> _redis.Redis:
+    url = celery_app.conf.broker_url
+    return _redis.from_url(url, decode_responses=True)
 
 
 class ImageProcessingService:
@@ -132,6 +144,20 @@ class ImageProcessingService:
             queue="image",
         )
         logger.info(f"Dispatched task {task.id} for {dest_path}")
+
+        # Register in Redis so all users can see this task
+        try:
+            r = _redis_client()
+            meta = json.dumps({
+                "image_path": dest_path,
+                "persona": persona,
+                "dispatched_at": time.time(),
+            })
+            r.sadd(_ACTIVE_TASKS_SET, task.id)
+            r.setex(_TASK_META_PREFIX + task.id, _TASK_META_TTL, meta)
+        except Exception as e:
+            logger.warning(f"Could not register task {task.id} in Redis: {e}")
+
         return task.id
 
     def dispatch_batch(self, image_paths: List[str], **kwargs) -> List[str]:
@@ -196,6 +222,52 @@ class ImageProcessingService:
                 "progress": info.get("progress", 0),
                 "result": None,
             }
+
+    def get_active_tasks(self) -> List[dict]:
+        """
+        Return all tasks currently registered in Redis (dispatched but not yet
+        completed). Automatically prunes tasks that have reached a terminal state.
+        Any user who calls this endpoint sees every running task, not just their own.
+        """
+        try:
+            r = _redis_client()
+            task_ids = r.smembers(_ACTIVE_TASKS_SET)
+        except Exception as e:
+            logger.error(f"Redis error fetching active tasks: {e}")
+            return []
+
+        tasks = []
+        for tid in task_ids:
+            try:
+                result = AsyncResult(tid, app=celery_app)
+                state = result.state
+
+                if state in ("SUCCESS", "FAILURE", "REVOKED"):
+                    # Prune from registry — task is done
+                    r.srem(_ACTIVE_TASKS_SET, tid)
+                    r.delete(_TASK_META_PREFIX + tid)
+                    continue
+
+                meta_raw = r.get(_TASK_META_PREFIX + tid)
+                meta = json.loads(meta_raw) if meta_raw else {}
+                info = result.info or {}
+
+                tasks.append({
+                    "task_id": tid,
+                    "state": state,
+                    "status_message": info.get("status", ""),
+                    "progress": info.get("progress", 0),
+                    "image_path": meta.get("image_path"),
+                    "persona": meta.get("persona", ""),
+                    "dispatched_at": meta.get("dispatched_at"),
+                    "task_type": meta.get("task_type", "image_process"),
+                    "image_count": meta.get("image_count"),
+                })
+            except Exception as e:
+                logger.error(f"Error reading task {tid}: {e}")
+
+        tasks.sort(key=lambda x: x.get("dispatched_at") or 0, reverse=True)
+        return tasks
 
     # ------------------------------------------------------------------
     # Reference image library (processed/ directory)

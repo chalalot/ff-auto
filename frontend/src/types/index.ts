@@ -91,6 +91,18 @@ export interface ExecutionRecord {
   created_at: string
 }
 
+export interface ActiveTask {
+  task_id: string
+  state: string
+  status_message: string
+  progress: number
+  image_path?: string
+  persona: string
+  dispatched_at?: number
+  task_type: string        // "image_process" | "caption_export"
+  image_count?: number
+}
+
 // Gallery types
 export interface GalleryImage {
   filename: string
