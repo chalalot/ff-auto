@@ -58,6 +58,15 @@ export const workspaceApi = {
       { headers: { 'Content-Type': undefined } },
     ).then(r => r.data)
   },
+  captionExportUploadOne: (file: File) => {
+    const form = new FormData()
+    form.append('files', file)
+    return apiClient.post<{ entries: CaptionExportEntry[] }>(
+      '/workspace/caption-export/upload',
+      form,
+      { headers: { 'Content-Type': undefined } },
+    ).then(r => r.data)
+  },
 
   captionExportStart: (payload: {
     image_entries: CaptionExportEntry[]

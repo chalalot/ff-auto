@@ -636,7 +636,7 @@ const CaptionExportTab: React.FC<{
   const [entries, setEntries] = useState<CaptionExportEntry[]>([])
   const [persona, setPersona] = useState(defaultConfig.persona)
   const [visionModel, setVisionModel] = useState(defaultConfig.vision_model)
-  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
   const [taskId, setTaskId] = useState<string | null>(null)
   const [started, setStarted] = useState(false)
 
@@ -684,14 +684,19 @@ const CaptionExportTab: React.FC<{
   const isDone = task?.state === 'SUCCESS' || task?.state === 'FAILURE'
 
   const handleUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return
-    setUploading(true)
-    try {
-      const res = await workspaceApi.captionExportUpload(Array.from(files))
-      setEntries(prev => [...prev, ...res.entries])
-    } finally {
-      setUploading(false)
+    if (!files || files.length === 0 || uploadProgress !== null) return
+    const arr = Array.from(files)
+    setUploadProgress({ current: 0, total: arr.length })
+    for (let i = 0; i < arr.length; i++) {
+      try {
+        const res = await workspaceApi.captionExportUploadOne(arr[i])
+        setEntries(prev => [...prev, ...res.entries])
+      } catch {
+        // skip failed file, continue with rest
+      }
+      setUploadProgress({ current: i + 1, total: arr.length })
     }
+    setUploadProgress(null)
   }
 
   const handleDriveFetch = async () => {
@@ -869,12 +874,22 @@ const CaptionExportTab: React.FC<{
                 multiple
                 onChange={(e) => void handleUpload(e.target.files)}
               />
-              {uploading
+              {uploadProgress
                 ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
                 : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
               <p className="text-sm text-muted-foreground">
-                {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
+                {uploadProgress
+                  ? `Uploading ${uploadProgress.current} / ${uploadProgress.total}...`
+                  : 'Drop images here or click to upload'}
               </p>
+              {uploadProgress && (
+                <div className="w-full mt-2 bg-muted rounded-full h-1.5">
+                  <div
+                    className="bg-primary h-1.5 rounded-full transition-all duration-200"
+                    style={{ width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%` }}
+                  />
+                </div>
+              )}
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
             </label>
           )}

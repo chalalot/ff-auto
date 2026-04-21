@@ -1,7 +1,31 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings, Archive } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2 } from 'lucide-react'
+import { useActiveTasks } from '@/hooks/useActiveTasks'
+import type { ActiveTask } from '@/types'
+
+const TERMINAL = new Set(['SUCCESS', 'FAILURE', 'REVOKED'])
+
+function getWorkerBanner(tasks: ActiveTask[]): { label: string; detail: string } | null {
+  const busy = tasks.filter(t => !TERMINAL.has(t.state))
+  if (busy.length === 0) return null
+
+  const captionTask = busy.find(t => t.task_type === 'caption_export')
+  const processTasks = busy.filter(t => t.task_type === 'image_process')
+
+  const parts: string[] = []
+  if (captionTask) {
+    const n = captionTask.image_count
+    parts.push(n ? `captioning ${n} image${n !== 1 ? 's' : ''}` : 'captioning images')
+  }
+  if (processTasks.length > 0) {
+    parts.push(`generating ${processTasks.length} image${processTasks.length !== 1 ? 's' : ''}`)
+  }
+
+  const primaryTask = captionTask ?? busy[0]
+  return { label: parts.join(' + '), detail: primaryTask.status_message || '' }
+}
 
 const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; disabled?: boolean }[] = [
   { to: '/workspace', label: 'Workspace', icon: Image },
@@ -13,6 +37,9 @@ const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSV
 ]
 
 export const Layout: React.FC = () => {
+  const { data: activeTasks = [] } = useActiveTasks()
+  const workerBanner = getWorkerBanner(activeTasks)
+
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
@@ -66,8 +93,25 @@ export const Layout: React.FC = () => {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
+      <main className="flex-1 flex flex-col min-h-0">
+        {workerBanner && (
+          <div className="flex items-center gap-2.5 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-400 text-sm shrink-0">
+            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            <span className="font-medium">Worker busy</span>
+            <span className="text-amber-600/50 dark:text-amber-400/50">—</span>
+            <span>{workerBanner.label}</span>
+            {workerBanner.detail && (
+              <>
+                <span className="text-amber-600/30 dark:text-amber-400/30">·</span>
+                <span className="text-amber-600/70 dark:text-amber-400/70 truncate">{workerBanner.detail}</span>
+              </>
+            )}
+            <span className="ml-auto text-xs text-amber-600/50 dark:text-amber-400/50 shrink-0">avoid starting new tasks</span>
+          </div>
+        )}
+        <div className="flex-1 overflow-auto">
+          <Outlet />
+        </div>
       </main>
     </div>
   )
