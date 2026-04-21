@@ -981,7 +981,7 @@ const CaptionExportTab: React.FC<{
         {!started ? (
           <Button
             onClick={() => void handleStart()}
-            disabled={entries.length === 0 || !persona || uploading || driveFetching}
+            disabled={entries.length === 0 || !persona || uploadProgress !== null || driveFetching}
           >
             <Play className="w-4 h-4 mr-2" />
             Generate &amp; Export ({entries.length})
