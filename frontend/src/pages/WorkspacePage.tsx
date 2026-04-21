@@ -633,14 +633,34 @@ const CaptionExportTab: React.FC<{
   defaultConfig: Omit<ProcessImageConfig, 'image_path'>
   activeTasks: ActiveTask[]
 }> = ({ personas, visionModels, defaultConfig, activeTasks }) => {
-  const [entries, setEntries] = useState<CaptionExportEntry[]>([])
+  const [entries, setEntries] = useState<CaptionExportEntry[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('ff:ce:entries') ?? 'null') ?? [] } catch { return [] }
+  })
   const [persona, setPersona] = useState(defaultConfig.persona)
   const [visionModel, setVisionModel] = useState(defaultConfig.vision_model)
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
-  const [taskId, setTaskId] = useState<string | null>(null)
-  const [started, setStarted] = useState(false)
+  const [taskId, setTaskId] = useState<string | null>(() => {
+    try { return sessionStorage.getItem('ff:ce:taskId') } catch { return null }
+  })
+  const [started, setStarted] = useState(() => {
+    try { return sessionStorage.getItem('ff:ce:started') === '1' } catch { return false }
+  })
 
-  // Restore any running caption export task when navigating back to this tab
+  // Persist session state so navigation away doesn't wipe the run
+  React.useEffect(() => {
+    try { sessionStorage.setItem('ff:ce:entries', JSON.stringify(entries)) } catch {}
+  }, [entries])
+  React.useEffect(() => {
+    try {
+      if (taskId) sessionStorage.setItem('ff:ce:taskId', taskId)
+      else sessionStorage.removeItem('ff:ce:taskId')
+    } catch {}
+  }, [taskId])
+  React.useEffect(() => {
+    try { sessionStorage.setItem('ff:ce:started', started ? '1' : '0') } catch {}
+  }, [started])
+
+  // Re-attach to a still-running task if session storage didn't have it (e.g. hard refresh)
   const restoredRef = React.useRef(false)
   React.useEffect(() => {
     if (restoredRef.current || started) return
@@ -791,6 +811,11 @@ const CaptionExportTab: React.FC<{
     setRunpodJobId(null)
     setRunpodEndpointId(null)
     setRunpodStatus(null)
+    try {
+      sessionStorage.removeItem('ff:ce:entries')
+      sessionStorage.removeItem('ff:ce:taskId')
+      sessionStorage.removeItem('ff:ce:started')
+    } catch {}
   }
 
   const runpodStatusColor =
