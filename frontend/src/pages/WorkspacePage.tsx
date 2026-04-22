@@ -487,7 +487,11 @@ const ImageLibrary: React.FC<{
           <div
             key={img.filename}
             className={`relative rounded-lg border-2 overflow-hidden transition-all
-              ${isSelected ? 'border-amber-500 shadow-md' : 'border-transparent hover:border-muted-foreground/30'}
+              ${isSelected
+                ? 'border-amber-500 shadow-md'
+                : img.is_used
+                  ? 'border-yellow-500/70 hover:border-yellow-500'
+                  : 'border-green-500/70 hover:border-green-500'}
               ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
           >
             <div
