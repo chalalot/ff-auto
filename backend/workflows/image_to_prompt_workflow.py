@@ -247,6 +247,8 @@ class ImageToPromptWorkflow:
             "i'm not able", "i am not able", "i apologize, but",
             "unfortunately, i cannot", "unfortunately i cannot",
         ]
+        if vision_result is None:
+            raise ValueError("Vision model returned None (empty response)")
         vision_lower = vision_result.strip().lower()
 
         if not vision_lower:
@@ -290,27 +292,15 @@ class ImageToPromptWorkflow:
              # Fallback defaults if config is empty
              available_hairstyles = ["long loose hair"] 
 
-        # Task 1: Analyst Review
-        # Pass the pre-computed vision description to the agent
-        analyze_task = Task(
-            description=f"Review the following visual analysis of the image and structure it for the prompt engineer:\n\n{vision_result}",
-            expected_output="A detailed textual description of the image's visual elements, covering body, outfit, pose, and background.",
-            agent=analyst
-        )
-
-        # Task 2: Generate Prompt(s)
+        # Generate Prompt(s)
         generate_prompt_tasks = []
-        
-        # Determine hair color for Turbo
+
         hair_color = persona_config.get("hair_color", "Honey-blonde")
-        
-        # Determine hairstyle options
+
         header = "  - You MUST choose ONE from this list explicitly (Do not invent others):"
-        
         hairstyle_list = "\n".join([f"  - {style}" for style in available_hairstyles])
         hairstyle_options = f"{header}\n{hairstyle_list}"
 
-        # Assemble template from three separate editable parts
         def _read_part(filename):
             path = os.path.join(template_dir, filename)
             try:
@@ -325,28 +315,19 @@ class ImageToPromptWorkflow:
             _read_part('turbo_example.txt')
         )
 
-        # Safe formatting
-        try:
-            base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
-        except KeyError:
-             base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
-        
+        base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+
         for i in range(variation_count):
-            # No explicit variation instruction; rely on LLM temperature for natural variance.
             task = Task(
-                description=base_instruction,
+                description=f"Based on this visual analysis of the reference image:\n\n{vision_result}\n\n{base_instruction}",
                 expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
                 agent=turbo_engineer,
-                context=[analyze_task]
             )
             generate_prompt_tasks.append(task)
 
-        # Run Crew
-        all_tasks = [analyze_task] + generate_prompt_tasks
-        
         crew = Crew(
-            agents=[analyst, turbo_engineer],
-            tasks=all_tasks,
+            agents=[turbo_engineer],
+            tasks=generate_prompt_tasks,
             process=Process.sequential,
             memory=False,
             verbose=self.verbose
@@ -354,24 +335,25 @@ class ImageToPromptWorkflow:
 
         crew.kickoff()
 
-        # Capture the descriptive output
-        descriptive_prompt = analyze_task.output.raw if analyze_task.output else ""
-
         # Collect generated prompts
         generated_prompts = []
         for task in generate_prompt_tasks:
+            if task.output:
+                logger.info(f"[TASK OUTPUT DEBUG] raw={repr(task.output.raw)}")
+                logger.info(f"[TASK OUTPUT DEBUG] pydantic={task.output.pydantic}")
+                logger.info(f"[TASK OUTPUT DEBUG] json_dict={task.output.json_dict}")
+                logger.info(f"[TASK OUTPUT DEBUG] agent={task.output.agent}")
             generated_prompts.append(task.output.raw if task.output else "")
 
         logger.info(f"\n✅ Generated {len(generated_prompts)} Prompts.")
 
-        # For backward compatibility, return the first prompt as 'generated_prompt'
         first_prompt = generated_prompts[0] if generated_prompts else ""
 
         return {
             "reference_image": image_path,
-            "generated_prompt": first_prompt, # Backward compatibility
-            "generated_prompts": generated_prompts, # New field
-            "descriptive_prompt": descriptive_prompt
+            "generated_prompt": first_prompt,
+            "generated_prompts": generated_prompts,
+            "descriptive_prompt": vision_result,
         }
 
 if __name__ == "__main__":
