@@ -15,8 +15,8 @@ import { Slider } from '@/components/ui/slider'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { formatDistanceToNow } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu } from 'lucide-react'
+import { formatDistanceToNow, format } from 'date-fns'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
@@ -153,7 +153,6 @@ export const WorkspacePage: React.FC = () => {
     })
   }
 
-  const selectAll = () => setSelectedPaths(new Set(library.map(i => i.path)))
   const clearSelection = () => setSelectedPaths(new Set())
 
   const deleteMutation = useMutation({
@@ -353,24 +352,15 @@ export const WorkspacePage: React.FC = () => {
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP</p>
             </label>
 
-            <div className="flex items-center gap-2 mb-3">
-              <Button variant="outline" size="sm" onClick={selectAll}>
-                <CheckSquare className="w-4 h-4 mr-2" />Select All
-              </Button>
-              <Button variant="outline" size="sm" onClick={clearSelection}>
-                <Square className="w-4 h-4 mr-2" />Clear
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => refetchLibrary()}>
-                <RefreshCw className="w-4 h-4 mr-2" />Refresh
-              </Button>
-            </div>
-
             <ImageLibrary
               images={library}
               selectedPaths={selectedPaths}
               onToggle={toggleImage}
               onDelete={(filename) => deleteMutation.mutate(filename)}
               deletingFilename={deleteMutation.isPending ? (deleteMutation.variables as string) : null}
+              onSelectAll={(paths) => setSelectedPaths(new Set(paths))}
+              onClearSelection={clearSelection}
+              onRefresh={() => refetchLibrary()}
             />
           </TabsContent>
 
@@ -420,15 +410,63 @@ export const WorkspacePage: React.FC = () => {
 // ------------------------------------------------------------------
 // Unified image library component
 // ------------------------------------------------------------------
+const PER_PAGE = 48
+
+type FilterStatus = 'all' | 'unused' | 'used'
+type SortBy = 'newest' | 'oldest' | 'name_asc' | 'name_desc'
+
 const ImageLibrary: React.FC<{
   images: RefImage[]
   selectedPaths: Set<string>
   onToggle: (path: string) => void
   onDelete: (filename: string) => void
   deletingFilename: string | null
-}> = ({ images, selectedPaths, onToggle, onDelete, deletingFilename }) => {
-  const unused = images.filter(i => !i.is_used)
-  const used = images.filter(i => i.is_used)
+  onSelectAll: (paths: string[]) => void
+  onClearSelection: () => void
+  onRefresh: () => void
+}> = ({ images, selectedPaths, onToggle, onDelete, deletingFilename, onSelectAll, onClearSelection, onRefresh }) => {
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all')
+  const [sortBy, setSortBy] = useState<SortBy>('newest')
+  const [groupByDay, setGroupByDay] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const filtered = React.useMemo(() => {
+    if (filterStatus === 'unused') return images.filter(i => !i.is_used)
+    if (filterStatus === 'used') return images.filter(i => i.is_used)
+    return images
+  }, [images, filterStatus])
+
+  const sorted = React.useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (sortBy === 'newest') return b.modified_at - a.modified_at
+      if (sortBy === 'oldest') return a.modified_at - b.modified_at
+      if (sortBy === 'name_asc') return a.filename.localeCompare(b.filename)
+      return b.filename.localeCompare(a.filename)
+    })
+  }, [filtered, sortBy])
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PER_PAGE))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginated = sorted.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE)
+
+  React.useEffect(() => { setCurrentPage(1) }, [filterStatus, sortBy, images.length])
+
+  const displayGroups = React.useMemo(() => {
+    if (!groupByDay) return [{ label: null as string | null, items: paginated }]
+    const groups: Record<string, RefImage[]> = {}
+    for (const img of paginated) {
+      const key = format(new Date(img.modified_at * 1000), 'yyyy-MM-dd')
+      if (!groups[key]) groups[key] = []
+      groups[key].push(img)
+    }
+    return Object.entries(groups).map(([key, items]) => ({
+      label: format(new Date(key + 'T00:00:00'), 'EEEE, MMMM d, yyyy'),
+      items,
+    }))
+  }, [paginated, groupByDay])
+
+  const unusedCount = images.filter(i => !i.is_used).length
+  const usedCount = images.filter(i => i.is_used).length
 
   if (images.length === 0) {
     return (
@@ -490,24 +528,115 @@ const ImageLibrary: React.FC<{
   )
 
   return (
-    <div className="space-y-6">
-      {unused.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-muted-foreground/40 inline-block" />
-            Unused ({unused.length})
-          </h3>
-          {renderGrid(unused)}
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => onSelectAll(sorted.map(i => i.path))}>
+          <CheckSquare className="w-4 h-4 mr-1.5" />Select All ({filtered.length})
+        </Button>
+        <Button variant="outline" size="sm" onClick={onClearSelection}>
+          <Square className="w-4 h-4 mr-1.5" />Clear
+        </Button>
+        <Button variant="outline" size="sm" onClick={onRefresh}>
+          <RefreshCw className="w-4 h-4 mr-1.5" />Refresh
+        </Button>
+
+        <div className="flex-1" />
+
+        {/* Filter */}
+        <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as FilterStatus)}>
+          <SelectTrigger className="h-8 w-[120px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All ({images.length})</SelectItem>
+            <SelectItem value="unused">Unused ({unusedCount})</SelectItem>
+            <SelectItem value="used">Used ({usedCount})</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Sort */}
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortBy)}>
+          <SelectTrigger className="h-8 w-[130px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="oldest">Oldest first</SelectItem>
+            <SelectItem value="name_asc">Name A→Z</SelectItem>
+            <SelectItem value="name_desc">Name Z→A</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Group by day toggle */}
+        <button
+          onClick={() => setGroupByDay(v => !v)}
+          className={`flex items-center gap-1.5 h-8 px-2.5 rounded-md text-xs font-medium border transition-colors ${
+            groupByDay
+              ? 'bg-primary/10 border-primary/30 text-primary'
+              : 'bg-background border-border text-muted-foreground hover:text-foreground'
+          }`}
+          title="Group by day"
+        >
+          <CalendarDays className="w-3.5 h-3.5" />
+          By Day
+        </button>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <ImageIcon className="w-10 h-10 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No images match the current filter</p>
         </div>
-      )}
-      {used.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium text-muted-foreground mb-3 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-            Used ({used.length})
-          </h3>
-          {renderGrid(used)}
-        </div>
+      ) : (
+        <>
+          {/* Summary */}
+          <p className="text-xs text-muted-foreground">
+            {filtered.length !== images.length
+              ? `${filtered.length} of ${images.length} images`
+              : `${images.length} images`}
+            {totalPages > 1 && ` — page ${safePage} of ${totalPages}`}
+          </p>
+
+          {/* Image groups */}
+          <div className="space-y-6">
+            {displayGroups.map(({ label, items }) => (
+              <div key={label ?? 'all'}>
+                {label && (
+                  <h3 className="text-xs font-medium text-muted-foreground mb-3 flex items-center gap-2">
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    {label}
+                    <span className="opacity-60">({items.length})</span>
+                  </h3>
+                )}
+                {renderGrid(items)}
+              </div>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 pt-2 pb-4">
+              <Button
+                variant="outline" size="sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-xs text-muted-foreground min-w-[90px] text-center">
+                Page {safePage} of {totalPages}
+              </span>
+              <Button
+                variant="outline" size="sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
