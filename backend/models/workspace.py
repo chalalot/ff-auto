@@ -26,7 +26,6 @@ class ProcessImageRequest(BaseModel):
     persona: str
     workflow_type: str = "turbo"
     vision_model: str = "gpt-4o"
-    agent_model: Optional[str] = None  # LLM for prompt-writing agent; defaults to vision_model if unset
     variation_count: int = Field(default=1, ge=1, le=5)
     strength: float = Field(default=0.8, ge=0.0, le=2.0)
     seed_strategy: str = "random"
@@ -43,7 +42,6 @@ class ProcessBatchRequest(BaseModel):
     persona: str
     workflow_type: str = "turbo"
     vision_model: str = "gpt-4o"
-    agent_model: Optional[str] = None  # LLM for prompt-writing agent; defaults to vision_model if unset
     variation_count: int = Field(default=1, ge=1, le=5)
     strength: float = Field(default=0.8, ge=0.0, le=2.0)
     seed_strategy: str = "random"
@@ -101,7 +99,6 @@ class CaptionExportRequest(BaseModel):
     image_entries: List[CaptionExportEntry]
     persona: str
     vision_model: str = "gpt-4o"
-    agent_model: Optional[str] = None
     workflow_type: str = "turbo"
 
 

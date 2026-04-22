@@ -118,7 +118,6 @@ def process_image_task(
     height,
     lora_name,
     clip_model_type="sd3",
-    agent_model=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -129,7 +128,6 @@ def process_image_task(
                 persona=persona,
                 workflow_type=workflow_type,
                 vision_model=vision_model,
-                agent_model=agent_model,
                 variation_count=variation_count,
                 strength_model=strength_model,
                 seed_strategy=seed_strategy,
@@ -148,8 +146,7 @@ def process_image_task(
 
 async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
-    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type, task,
-    agent_model=None,
+    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type, task
 ):
     workflow, client, storage = get_instances()
 
@@ -165,7 +162,6 @@ async def async_process_image(
             persona_name=persona,
             workflow_type=workflow_type,
             vision_model=vision_model,
-            agent_model=agent_model,
             variation_count=variation_count,
         )
     except Exception as e:
