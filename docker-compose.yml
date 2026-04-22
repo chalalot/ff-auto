@@ -15,6 +15,7 @@ services:
       - ./prompts:/app/prompts
       - ./image_logs.db:/app/image_logs.db
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+      - ./ff-auto-drive.json:/app/ff-auto-drive.json:ro
       # Archive: read-only mounts from other server environments
       - /mnt/source/main-server/results:/app/archive/main-server/results:ro
       - /mnt/source/main-server/processed:/app/archive/main-server/processed:ro
@@ -56,6 +57,7 @@ services:
       - ./prompts:/app/prompts
       - ./image_logs.db:/app/image_logs.db
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
+      - ./ff-auto-drive.json:/app/ff-auto-drive.json:ro
     env_file:
       - .env
     environment:
