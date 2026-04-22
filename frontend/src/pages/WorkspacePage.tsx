@@ -978,9 +978,6 @@ const CaptionExportTab: React.FC<{
     setStarted(false)
     setDriveUploadResult(null)
     setLoraConfig(DEFAULT_LORA)
-    setRunpodJobId(null)
-    setRunpodEndpointId(null)
-    setRunpodStatus(null)
     try {
       sessionStorage.removeItem('ff:ce:entries')
       sessionStorage.removeItem('ff:ce:taskId')
