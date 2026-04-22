@@ -169,7 +169,7 @@ class ImageToPromptWorkflow:
             llm=llm
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1, clip_model_type: str = "sd3") -> Dict[str, Any]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", agent_model: str = None, variation_count: int = 1, clip_model_type: str = "sd3") -> Dict[str, Any]:
         """
         Run the workflow for a single image.
         
@@ -267,24 +267,15 @@ class ImageToPromptWorkflow:
 
         # --- CREW SETUP ---
         
-        # Get cached LLM
-        llm = self._get_llm(vision_model)
+        # vision_model = model for the vision tool (direct SDK call)
+        # agent_model  = model for the CrewAI prompt-writing agent (defaults to vision_model)
+        resolved_agent_model = agent_model or vision_model
+        agent_llm = self._get_llm(resolved_agent_model)
 
-        # Initialize or get cached Agents
-        analyst_key = f"analyst_{template_dir}_{vision_model}"
-        if analyst_key not in self._cached_agents:
-            self._cached_agents[analyst_key] = self._create_analyst(template_dir, llm)
-        analyst = self._cached_agents[analyst_key]
-        
-        turbo_key = f"turbo_{template_dir}_{vision_model}"
+        turbo_key = f"turbo_{template_dir}_{resolved_agent_model}"
         if turbo_key not in self._cached_agents:
-            self._cached_agents[turbo_key] = self._create_turbo_engineer(template_dir, llm)
+            self._cached_agents[turbo_key] = self._create_turbo_engineer(template_dir, agent_llm)
         turbo_engineer = self._cached_agents[turbo_key]
-        
-        engineer_key = f"engineer_{vision_model}"
-        if engineer_key not in self._cached_agents:
-            self._cached_agents[engineer_key] = self._create_engineer(llm)
-        engineer = self._cached_agents[engineer_key]
 
         # Get Hairstyle Config
         available_hairstyles = persona_config.get("hairstyles", [])
