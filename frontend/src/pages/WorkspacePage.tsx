@@ -810,6 +810,7 @@ const CaptionExportTab: React.FC<{
   const [driveFolderUrl, setDriveFolderUrl] = useState('')
   const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
   const [driveFetching, setDriveFetching] = useState(false)
+  const [driveFetchError, setDriveFetchError] = useState<string | null>(null)
   const [driveUploading, setDriveUploading] = useState(false)
   const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string; publicUrl: string } | null>(null)
 
@@ -855,6 +856,7 @@ const CaptionExportTab: React.FC<{
   const handleDriveFetch = async () => {
     if (!driveFolderUrl.trim()) return
     setDriveFetching(true)
+    setDriveFetchError(null)
     setEntries([])
     try {
       const res = await workspaceApi.captionExportGdriveFetch({
@@ -862,6 +864,11 @@ const CaptionExportTab: React.FC<{
         max_dimension: driveMaxDimension,
       })
       setEntries(res.entries)
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err instanceof Error ? err.message : 'Failed to fetch from Drive')
+      setDriveFetchError(detail)
     } finally {
       setDriveFetching(false)
     }
@@ -1085,6 +1092,9 @@ const CaptionExportTab: React.FC<{
                   ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Fetching...</>
                   : <><HardDrive className="w-3.5 h-3.5 mr-1.5" />Fetch from Drive</>}
               </Button>
+              {driveFetchError && (
+                <p className="text-xs text-destructive mt-1">{driveFetchError}</p>
+              )}
             </div>
           )}
         </div>
