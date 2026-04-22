@@ -399,8 +399,6 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
 def caption_export_runpod_jobs(
     db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
 ):
-    """List all RunPod training jobs from the database."""
-    from backend.database.runpod_jobs_storage import RunpodJobsStorage
     return db.list_jobs()
 
 
@@ -413,7 +411,6 @@ def caption_export_runpod_submit(
     import requests as _requests
     from datetime import datetime
     from backend.config import GlobalConfig
-    from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
     api_key = GlobalConfig.RUNPOD_API_KEY
     endpoint_id = body.endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
@@ -458,7 +455,6 @@ def caption_export_runpod_status(
     """Check the current status of a RunPod job and update the DB record."""
     import requests as _requests
     from backend.config import GlobalConfig
-    from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
     api_key = GlobalConfig.RUNPOD_API_KEY
     eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID

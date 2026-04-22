@@ -805,7 +805,7 @@ const CaptionExportTab: React.FC<{
   React.useEffect(() => {
     workspaceApi.runpodJobs()
       .then(jobs => setRunpodJobs(jobs))
-      .catch(() => {})
+      .catch(err => console.error('Failed to load RunPod job history:', err))
       .finally(() => setRunpodJobsLoaded(true))
   }, [])
 
@@ -919,11 +919,15 @@ const CaptionExportTab: React.FC<{
     }
     try {
       const res = await workspaceApi.runpodSubmit({ job_input })
-      // Reload the full list from DB so submitted_at and all fields come from the server
-      const jobs = await workspaceApi.runpodJobs()
-      setRunpodJobs(jobs)
-      // Suppress unused-var lint — res used for side-effect confirmation
-      void res
+      setRunpodJobs(prev => [{
+        job_id: res.job_id,
+        endpoint_id: res.endpoint_id,
+        lora_name: loraConfig.lora_name,
+        submitted_at: new Date().toISOString(),
+        job_input: job_input as Record<string, unknown>,
+        status: null,
+        output: null,
+      }, ...prev])
     } finally {
       setRunpodSubmitting(false)
     }
@@ -932,9 +936,12 @@ const CaptionExportTab: React.FC<{
   const handleRunpodCheckStatus = async (jobId: string, endpointId: string) => {
     setCheckingJobId(jobId)
     try {
-      await workspaceApi.runpodStatus(jobId, endpointId)
-      const jobs = await workspaceApi.runpodJobs()
-      setRunpodJobs(jobs)
+      const data = await workspaceApi.runpodStatus(jobId, endpointId)
+      setRunpodJobs(prev => prev.map(j =>
+        j.job_id === jobId
+          ? { ...j, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null }
+          : j
+      ))
     } finally {
       setCheckingJobId(null)
     }
@@ -1374,9 +1381,7 @@ const RunpodJobCard: React.FC<{
           </Button>
         </div>
       </div>
-      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-        <span className="truncate">{job.job_id}</span>
-      </div>
+      <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
       {job.output && (
         <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-32">
           {JSON.stringify(job.output, null, 2)}
