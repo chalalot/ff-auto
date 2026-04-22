@@ -751,6 +751,16 @@ interface LoraConfig {
   sample_prompts: string  // newline-separated in the textarea
 }
 
+interface RunpodJobEntry {
+  job_id: string
+  endpoint_id: string
+  lora_name: string
+  submitted_at: string  // ISO string
+  job_input: Record<string, unknown>
+  status: string | null
+  output: Record<string, unknown> | null
+}
+
 const DEFAULT_LORA: LoraConfig = {
   dataset_source: '',
   lora_name: '',
@@ -792,6 +802,12 @@ const CaptionExportTab: React.FC<{
   React.useEffect(() => {
     try { sessionStorage.setItem('ff:ce:started', started ? '1' : '0') } catch {}
   }, [started])
+  React.useEffect(() => {
+    workspaceApi.runpodJobs()
+      .then(jobs => setRunpodJobs(jobs))
+      .catch(() => {})
+      .finally(() => setRunpodJobsLoaded(true))
+  }, [])
 
   // Re-attach to a still-running task if session storage didn't have it (e.g. hard refresh)
   const restoredRef = React.useRef(false)
@@ -817,11 +833,10 @@ const CaptionExportTab: React.FC<{
 
   // LoRA / RunPod state
   const [loraConfig, setLoraConfig] = useState<LoraConfig>(DEFAULT_LORA)
-  const [runpodJobId, setRunpodJobId] = useState<string | null>(null)
-  const [runpodEndpointId, setRunpodEndpointId] = useState<string | null>(null)
+  const [runpodJobs, setRunpodJobs] = useState<RunpodJobEntry[]>([])
+  const [runpodJobsLoaded, setRunpodJobsLoaded] = useState(false)
   const [runpodSubmitting, setRunpodSubmitting] = useState(false)
-  const [runpodStatus, setRunpodStatus] = useState<{ status: string; output?: Record<string, unknown> | null } | null>(null)
-  const [runpodChecking, setRunpodChecking] = useState(false)
+  const [checkingJobId, setCheckingJobId] = useState<string | null>(null)
 
   // Sync persona default once it's loaded
   React.useEffect(() => {
@@ -895,32 +910,33 @@ const CaptionExportTab: React.FC<{
   const handleRunpodSubmit = async () => {
     if (!loraConfig.dataset_source || !loraConfig.lora_name) return
     setRunpodSubmitting(true)
-    setRunpodStatus(null)
+    const job_input = {
+      ...loraConfig,
+      sample_prompts: loraConfig.sample_prompts
+        .split('\n')
+        .map(s => s.trim())
+        .filter(Boolean),
+    }
     try {
-      const res = await workspaceApi.runpodSubmit({
-        job_input: {
-          ...loraConfig,
-          sample_prompts: loraConfig.sample_prompts
-            .split('\n')
-            .map(s => s.trim())
-            .filter(Boolean),
-        },
-      })
-      setRunpodJobId(res.job_id)
-      setRunpodEndpointId(res.endpoint_id)
+      const res = await workspaceApi.runpodSubmit({ job_input })
+      // Reload the full list from DB so submitted_at and all fields come from the server
+      const jobs = await workspaceApi.runpodJobs()
+      setRunpodJobs(jobs)
+      // Suppress unused-var lint — res used for side-effect confirmation
+      void res
     } finally {
       setRunpodSubmitting(false)
     }
   }
 
-  const handleRunpodCheckStatus = async () => {
-    if (!runpodJobId) return
-    setRunpodChecking(true)
+  const handleRunpodCheckStatus = async (jobId: string, endpointId: string) => {
+    setCheckingJobId(jobId)
     try {
-      const res = await workspaceApi.runpodStatus(runpodJobId, runpodEndpointId ?? undefined)
-      setRunpodStatus(res)
+      await workspaceApi.runpodStatus(jobId, endpointId)
+      const jobs = await workspaceApi.runpodJobs()
+      setRunpodJobs(jobs)
     } finally {
-      setRunpodChecking(false)
+      setCheckingJobId(null)
     }
   }
 
@@ -965,9 +981,9 @@ const CaptionExportTab: React.FC<{
     } catch {}
   }
 
-  const runpodStatusColor =
-    runpodStatus?.status === 'COMPLETED' ? 'text-green-600' :
-    runpodStatus?.status === 'FAILED' || runpodStatus?.status === 'TIMED_OUT' ? 'text-destructive' :
+  const runpodStatusColor = (status: string | null) =>
+    status === 'COMPLETED' ? 'text-green-600' :
+    status === 'FAILED' || status === 'TIMED_OUT' ? 'text-destructive' :
     'text-muted-foreground'
 
   return (
@@ -1217,22 +1233,22 @@ const CaptionExportTab: React.FC<{
         </div>
       )}
 
-      {/* LoRA training config — unlocked after Drive upload */}
-      {driveUploadResult && (
-        <>
-          <Separator />
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-sm mb-0.5">LoRA Training</h3>
-              <p className="text-xs text-muted-foreground">
-                Configure the training job and submit to RunPod. Dataset source is pre-filled from the uploaded ZIP.
-              </p>
-            </div>
+      {/* LoRA training config */}
+      <>
+        <Separator />
+        <div className="space-y-4">
+          <div>
+            <h3 className="font-semibold text-sm mb-0.5">LoRA Training</h3>
+            <p className="text-xs text-muted-foreground">
+              Configure and submit a training job to RunPod. Paste a Drive file ID or URL as the dataset source.
+            </p>
+          </div>
 
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Dataset Source</Label>
                 <Input
+                  placeholder="gdrive://<fileId> or Drive file ID"
                   value={loraConfig.dataset_source}
                   onChange={e => setLoraConfig(p => ({ ...p, dataset_source: e.target.value }))}
                   className="font-mono text-xs"
@@ -1294,53 +1310,88 @@ const CaptionExportTab: React.FC<{
             </div>
 
             {/* Submit button */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button
-                onClick={() => void handleRunpodSubmit()}
-                disabled={!loraConfig.dataset_source || !loraConfig.lora_name || runpodSubmitting}
-              >
-                {runpodSubmitting
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>
-                  : <><Cpu className="w-4 h-4 mr-2" />Submit to RunPod</>}
-              </Button>
+            <Button
+              onClick={() => void handleRunpodSubmit()}
+              disabled={!loraConfig.dataset_source || !loraConfig.lora_name || runpodSubmitting}
+            >
+              {runpodSubmitting
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Submitting...</>
+                : <><Cpu className="w-4 h-4 mr-2" />Submit to RunPod</>}
+            </Button>
 
-              {runpodJobId && (
-                <Button
-                  variant="outline"
-                  onClick={() => void handleRunpodCheckStatus()}
-                  disabled={runpodChecking}
-                >
-                  {runpodChecking
-                    ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Checking...</>
-                    : <><RefreshCw className="w-4 h-4 mr-2" />Check Status</>}
-                </Button>
-              )}
-            </div>
-
-            {/* Job ID + status */}
-            {runpodJobId && (
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">Job ID</span>
-                  <span className="font-mono">{runpodJobId}</span>
+            {/* Job history */}
+            {!runpodJobsLoaded && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="w-3 h-3 animate-spin" />Loading job history...
+              </p>
+            )}
+            {runpodJobsLoaded && runpodJobs.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Training Jobs</p>
+                <div className="space-y-2">
+                  {runpodJobs.map(job => (
+                    <RunpodJobCard
+                      key={job.job_id}
+                      job={job}
+                      checking={checkingJobId === job.job_id}
+                      onCheck={() => void handleRunpodCheckStatus(job.job_id, job.endpoint_id)}
+                      statusColor={runpodStatusColor(job.status)}
+                    />
+                  ))}
                 </div>
-                {runpodStatus && (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Status</span>
-                      <span className={`font-medium ${runpodStatusColor}`}>{runpodStatus.status}</span>
-                    </div>
-                    {runpodStatus.output && (
-                      <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
-                        {JSON.stringify(runpodStatus.output, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                )}
               </div>
             )}
-          </div>
-        </>
+        </div>
+      </>
+    </div>
+  )
+}
+
+const RunpodJobCard: React.FC<{
+  job: RunpodJobEntry
+  checking: boolean
+  onCheck: () => void
+  statusColor: string
+}> = ({ job, checking, onCheck, statusColor }) => {
+  const [showJson, setShowJson] = useState(false)
+  return (
+    <div className="border rounded-lg p-3 space-y-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-medium truncate">{job.lora_name}</span>
+          <span className="text-xs text-muted-foreground shrink-0">
+            {new Date(job.submitted_at).toLocaleString()}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {job.status && (
+            <span className={`text-xs font-medium ${statusColor}`}>{job.status}</span>
+          )}
+          <Button size="sm" variant="outline" onClick={onCheck} disabled={checking}>
+            {checking
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <RefreshCw className="w-3.5 h-3.5" />}
+          </Button>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+        <span className="truncate">{job.job_id}</span>
+      </div>
+      {job.output && (
+        <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-32">
+          {JSON.stringify(job.output, null, 2)}
+        </pre>
+      )}
+      <button
+        className="text-xs text-muted-foreground hover:text-foreground"
+        onClick={() => setShowJson(v => !v)}
+      >
+        {showJson ? 'Hide' : 'Show'} training config
+      </button>
+      {showJson && (
+        <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
+          {JSON.stringify(job.job_input, null, 2)}
+        </pre>
       )}
     </div>
   )

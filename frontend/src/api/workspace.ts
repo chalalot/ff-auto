@@ -93,6 +93,17 @@ export const workspaceApi = {
     ).then(r => r.data),
 
   // RunPod LoRA training
+  runpodJobs: () =>
+    apiClient.get<Array<{
+      job_id: string
+      endpoint_id: string
+      lora_name: string
+      submitted_at: string
+      job_input: Record<string, unknown>
+      status: string | null
+      output: Record<string, unknown> | null
+    }>>('/workspace/caption-export/runpod/jobs').then(r => r.data),
+
   runpodSubmit: (payload: {
     job_input: {
       dataset_source: string

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 
-from backend.api.deps import get_image_processing_service, get_image_logs_storage
+from backend.api.deps import get_image_processing_service, get_image_logs_storage, get_runpod_jobs_storage
 from backend.models.workspace import (
     InputImage,
     RefImage,
@@ -395,11 +395,25 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
 # Caption Export — RunPod LoRA training
 # ------------------------------------------------------------------
 
+@router.get("/caption-export/runpod/jobs")
+def caption_export_runpod_jobs(
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """List all RunPod training jobs from the database."""
+    from backend.database.runpod_jobs_storage import RunpodJobsStorage
+    return db.list_jobs()
+
+
 @router.post("/caption-export/runpod/submit")
-def caption_export_runpod_submit(body: RunpodSubmitRequest):
-    """Submit a LoRA training job to the RunPod serverless endpoint."""
+def caption_export_runpod_submit(
+    body: RunpodSubmitRequest,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Submit a LoRA training job to the RunPod serverless endpoint and persist it."""
     import requests as _requests
+    from datetime import datetime
     from backend.config import GlobalConfig
+    from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
     api_key = GlobalConfig.RUNPOD_API_KEY
     endpoint_id = body.endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
@@ -422,14 +436,29 @@ def caption_export_runpod_submit(body: RunpodSubmitRequest):
         raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
 
     result = resp.json()
-    return {"job_id": result["id"], "endpoint_id": endpoint_id}
+    job_id = result["id"]
+
+    db.insert(
+        job_id=job_id,
+        endpoint_id=endpoint_id,
+        lora_name=body.job_input.lora_name,
+        submitted_at=datetime.utcnow().isoformat(),
+        job_input=body.job_input.model_dump(),
+    )
+
+    return {"job_id": job_id, "endpoint_id": endpoint_id}
 
 
 @router.get("/caption-export/runpod/status/{job_id}")
-def caption_export_runpod_status(job_id: str, endpoint_id: Optional[str] = None):
-    """Check the current status of a RunPod job (mirrors submit_runpod.py --check)."""
+def caption_export_runpod_status(
+    job_id: str,
+    endpoint_id: Optional[str] = None,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Check the current status of a RunPod job and update the DB record."""
     import requests as _requests
     from backend.config import GlobalConfig
+    from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
     api_key = GlobalConfig.RUNPOD_API_KEY
     eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
@@ -450,7 +479,13 @@ def caption_export_runpod_status(job_id: str, endpoint_id: Optional[str] = None)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
 
-    return resp.json()
+    data = resp.json()
+    db.update_status(
+        job_id=job_id,
+        status=data.get("status", ""),
+        output=data.get("output"),
+    )
+    return data
 
 
 # ------------------------------------------------------------------

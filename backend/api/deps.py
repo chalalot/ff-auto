@@ -41,3 +41,11 @@ from backend.services.archive import ArchiveService
 @lru_cache
 def get_archive_service() -> ArchiveService:
     return ArchiveService()
+
+
+from backend.database.runpod_jobs_storage import RunpodJobsStorage
+
+
+@lru_cache
+def get_runpod_jobs_storage() -> RunpodJobsStorage:
+    return RunpodJobsStorage()
