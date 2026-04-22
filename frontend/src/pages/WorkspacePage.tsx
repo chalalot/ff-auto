@@ -812,6 +812,7 @@ const CaptionExportTab: React.FC<{
   const [driveFetching, setDriveFetching] = useState(false)
   const [driveFetchError, setDriveFetchError] = useState<string | null>(null)
   const [driveUploading, setDriveUploading] = useState(false)
+  const [driveUploadError, setDriveUploadError] = useState<string | null>(null)
   const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string; publicUrl: string } | null>(null)
 
   // LoRA / RunPod state
@@ -877,9 +878,15 @@ const CaptionExportTab: React.FC<{
   const handleDriveUpload = async () => {
     if (!taskId) return
     setDriveUploading(true)
+    setDriveUploadError(null)
     try {
       const res = await workspaceApi.captionExportGdriveUploadZip(taskId)
       setDriveUploadResult({ filename: res.filename, fileId: res.file_id, publicUrl: res.public_url })
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err instanceof Error ? err.message : 'Failed to upload to Drive')
+      setDriveUploadError(detail)
     } finally {
       setDriveUploading(false)
     }
@@ -1163,15 +1170,20 @@ const CaptionExportTab: React.FC<{
                   Download ZIP
                 </Button>
                 {!driveUploadResult && (
-                  <Button
-                    variant="outline"
-                    onClick={() => void handleDriveUpload()}
-                    disabled={driveUploading}
-                  >
-                    {driveUploading
-                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</>
-                      : <><HardDrive className="w-4 h-4 mr-2" />Upload ZIP to Drive</>}
-                  </Button>
+                  <div className="flex flex-col gap-1">
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleDriveUpload()}
+                      disabled={driveUploading}
+                    >
+                      {driveUploading
+                        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading...</>
+                        : <><HardDrive className="w-4 h-4 mr-2" />Upload ZIP to Drive</>}
+                    </Button>
+                    {driveUploadError && (
+                      <p className="text-xs text-destructive">{driveUploadError}</p>
+                    )}
+                  </div>
                 )}
               </>
             )}
