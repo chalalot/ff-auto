@@ -91,6 +91,8 @@ def list_images_in_folder(folder_id: str) -> list[dict]:
                 fields="nextPageToken, files(id, name, mimeType, size)",
                 pageToken=page_token,
                 orderBy="name",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
             )
             .execute()
         )
@@ -129,7 +131,7 @@ def upload_file(filename: str, data: bytes, mime_type: str, folder_id: str) -> s
     media = MediaIoBaseUpload(io.BytesIO(data), mimetype=mime_type, resumable=True)
     created = (
         service.files()
-        .create(body=file_metadata, media_body=media, fields="id, name")
+        .create(body=file_metadata, media_body=media, fields="id, name", supportsAllDrives=True)
         .execute()
     )
     logger.info(f"[gdrive] Uploaded {filename} → file ID {created['id']}")
@@ -145,6 +147,7 @@ def make_file_public(file_id: str) -> str:
     service.permissions().create(
         fileId=file_id,
         body={"type": "anyone", "role": "reader"},
+        supportsAllDrives=True,
     ).execute()
     public_url = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
     logger.info(f"[gdrive] Made {file_id} public → {public_url}")
