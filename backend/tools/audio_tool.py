@@ -21,7 +21,7 @@ class AudioTool(BaseTool):
         "It takes an audio file path and a prompt, and returns a text description."
     )
     args_schema: Type[BaseModel] = AudioToolInput
-    model_name: str = "gemini-3-flash-preview"
+    model_name: str = "gemini-2.5-pro"
 
     def _run(self, audio_path: str, prompt: str) -> str:
         logger.info(f"[AudioTool] _run called. Path: {audio_path}, Prompt: {prompt}")

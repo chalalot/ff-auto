@@ -973,7 +973,7 @@ import { z } from 'zod'
 
 const configSchema = z.object({
   persona: z.string().min(1, 'Persona is required'),
-  visionModel: z.enum(['gpt-4o', 'grok-4-1-fast-non-reasoning', 'gemini-3-flash-preview']),
+  visionModel: z.enum(['gpt-4o', 'grok-4-1-fast-non-reasoning', 'gemini-2.5-pro']),
   clipModel: z.string().min(1),
   batchLimit: z.number().min(1).max(1000),
   variations: z.number().min(1).max(5),

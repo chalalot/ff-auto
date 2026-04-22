@@ -170,7 +170,7 @@ class ConfigService:
         return [
             {"label": "ChatGPT (gpt-4o)", "value": "gpt-4o"},
             {"label": "Grok (grok-4-1-fast-non-reasoning)", "value": "grok-4-1-fast-non-reasoning"},
-            {"label": "Gemini 3 Flash (gemini-3-flash-preview)", "value": "gemini-3-flash-preview"},
+            {"label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro"},
         ]
 
     def get_clip_model_types(self) -> List[str]:

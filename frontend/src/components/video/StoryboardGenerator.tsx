@@ -17,7 +17,7 @@ import type { StoryboardResult } from '@/types/video'
 const VISION_MODELS = [
   { value: 'gpt-4o', label: 'GPT-4o' },
   { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ]
 
 interface StoryboardGeneratorProps {

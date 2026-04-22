@@ -263,3 +263,19 @@ Interactive API docs: `http://localhost:8000/docs`
 | Step 10 | Data migration & cutover from old Streamlit stack |
 | Phase 4 | Video App (deferred) |
 | Phase 5 | Monitor App (deferred) |
+
+---
+
+## Changelog
+
+### 2026-04-21
+
+**Caption Export — per-file upload with progress bar**
+- `frontend/src/api/workspace.ts`: added `captionExportUploadOne(file)` that posts one file at a time instead of batching all files into a single request
+- `frontend/src/pages/WorkspacePage.tsx`: replaced `uploading: boolean` with `uploadProgress: { current, total } | null`; `handleUpload` now loops files sequentially and updates the counter after each; the drop zone shows `Uploading 3 / 12...` and a filling progress bar; "Generate & Export" button disabled while uploading
+
+**Caption Export — session persistence across navigation**
+- `frontend/src/pages/WorkspacePage.tsx`: `entries`, `taskId`, and `started` now initialise from `sessionStorage` (lazy initialisers) and write back on every change; `handleReset` clears the keys; navigating to another page and returning restores the full image list and task state; existing `activeTasks` re-attach logic retained as fallback for hard refreshes
+
+**Global worker-busy banner**
+- `frontend/src/components/shared/Layout.tsx`: calls `useActiveTasks()` at layout level (reuses existing 5 s poll); `getWorkerBanner()` filters non-terminal tasks and builds a human-readable label (`"captioning 12 images"`, `"generating 3 images"`, or both); an amber banner with a spinner and live `status_message` detail renders above the scrollable content area on every page; disappears automatically when all tasks finish
