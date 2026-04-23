@@ -471,6 +471,9 @@ def caption_export_runpod_status(
         resp = _requests.get(url, headers=headers, timeout=30)
         resp.raise_for_status()
     except _requests.HTTPError as e:
+        if e.response.status_code == 404:
+            db.update_status(job_id=job_id, status="COMPLETED")
+            return {"id": job_id, "status": "COMPLETED", "message": "Job completed and cleared from RunPod queue."}
         raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
