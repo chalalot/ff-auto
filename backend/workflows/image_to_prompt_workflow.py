@@ -315,7 +315,11 @@ class ImageToPromptWorkflow:
             _read_part('turbo_example.txt')
         )
 
-        base_instruction = turbo_template.format(hair_color=hair_color, hairstyle_options=hairstyle_options)
+        class _SafeDict(dict):
+            def __missing__(self, key):
+                return '{' + key + '}'
+
+        base_instruction = turbo_template.format_map(_SafeDict(hair_color=hair_color, hairstyle_options=hairstyle_options))
 
         for i in range(variation_count):
             task = Task(

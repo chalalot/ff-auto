@@ -9,6 +9,7 @@ any folders it needs to read from or write to (share the folder with the SA emai
 import io
 import re
 import logging
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -25,6 +26,7 @@ DRIVE_IMAGE_MIMETYPES = {
 }
 
 
+@lru_cache(maxsize=1)
 def _get_credentials():
     from google.oauth2 import service_account
     from backend.config import GlobalConfig
@@ -42,6 +44,7 @@ def _get_credentials():
     )
 
 
+@lru_cache(maxsize=1)
 def _get_service():
     from googleapiclient.discovery import build
 
@@ -63,7 +66,6 @@ def get_folder_id(url_or_id: str) -> str:
     match = re.search(r"/folders/([a-zA-Z0-9_-]+)", url_or_id)
     if match:
         return match.group(1)
-    # Fallback: treat the whole string as an ID (no slashes, looks like a Drive ID)
     if "/" not in url_or_id and len(url_or_id) > 10:
         return url_or_id
     raise ValueError(
@@ -110,7 +112,7 @@ def download_file(file_id: str) -> bytes:
     from googleapiclient.http import MediaIoBaseDownload
 
     service = _get_service()
-    request = service.files().get_media(fileId=file_id)
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     buf = io.BytesIO()
     downloader = MediaIoBaseDownload(buf, request)
     done = False
