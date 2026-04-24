@@ -192,6 +192,7 @@ class ConfigService:
             "Macincesht__ff-loras__emi_v3.safetensors",
             "Macincesht__ff-loras__emi_v4.safetensors",
             "Macincesht__ff-loras__emi_v5.safetensors",
+            "Macincesht__ff-loras__emi_v6.safetensors",
             "khiemle__xz-comfy__roxie_v3.safetensors",
             "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
             "khiemle__xz-comfy__Sephera%20v7.safetensors",
