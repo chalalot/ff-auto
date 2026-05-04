@@ -25,6 +25,7 @@ from backend.models.workspace import (
     GDriveFetchRequest,
     GDriveUploadZipRequest,
     RunpodSubmitRequest,
+    ManualExportToDriveRequest,
 )
 from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
@@ -387,6 +388,46 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
         file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
         public_url = gdrive_client.make_file_public(file_id)
         return {"file_id": file_id, "filename": zip_filename, "public_url": public_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
+
+
+# ------------------------------------------------------------------
+# Caption Export — manual captions → ZIP → Drive
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/manual/export-to-drive")
+def caption_export_manual_to_drive(body: ManualExportToDriveRequest):
+    """Build ZIP from manually-supplied captions and upload to Google Drive."""
+    import time as _time
+    from backend.third_parties import gdrive_client
+    from backend.config import GlobalConfig
+
+    folder_id = GlobalConfig.GDRIVE_UPLOAD_FOLDER_ID
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="GDRIVE_UPLOAD_FOLDER_ID is not set in .env")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry in body.entries:
+            image_path = Path(entry.path)
+            caption = body.captions.get(entry.stem, "")
+            if image_path.exists():
+                zf.write(image_path, f"{entry.stem}{entry.original_ext}")
+            zf.writestr(f"{entry.stem}.txt", caption)
+    zip_data = buf.getvalue()
+
+    ts = int(_time.time())
+    zip_filename = f"manual_captions_{ts}.zip"
+    try:
+        file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
+        public_url = gdrive_client.make_file_public(file_id)
+        return {
+            "file_id": file_id,
+            "filename": zip_filename,
+            "folder_id": folder_id,
+            "public_url": public_url,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
 

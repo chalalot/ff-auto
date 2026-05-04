@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -123,6 +123,11 @@ class RunpodJobInput(BaseModel):
 class RunpodSubmitRequest(BaseModel):
     job_input: RunpodJobInput
     endpoint_id: Optional[str] = None  # overrides RUNPOD_ENDPOINT_ID env var
+
+
+class ManualExportToDriveRequest(BaseModel):
+    entries: List[CaptionExportEntry]
+    captions: Dict[str, str]  # stem → caption text
 
 
 class ActiveTask(BaseModel):

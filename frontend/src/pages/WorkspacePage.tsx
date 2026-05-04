@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow, format } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
@@ -822,7 +822,7 @@ const CaptionExportTab: React.FC<{
   }, [activeTasks, started])
 
   // Google Drive state
-  const [source, setSource] = useState<'local' | 'drive'>('local')
+  const [source, setSource] = useState<'local' | 'drive' | 'manual'>('local')
   const [driveFolderUrl, setDriveFolderUrl] = useState('')
   const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
   const [driveFetching, setDriveFetching] = useState(false)
@@ -830,6 +830,13 @@ const CaptionExportTab: React.FC<{
   const [driveUploading, setDriveUploading] = useState(false)
   const [driveUploadError, setDriveUploadError] = useState<string | null>(null)
   const [driveUploadResult, setDriveUploadResult] = useState<{ filename: string; fileId: string; publicUrl: string } | null>(null)
+
+  // Manual captions state
+  const [manualCaptions, setManualCaptions] = useState<Record<string, string>>({})
+  const [manualExporting, setManualExporting] = useState(false)
+  const [manualExportResult, setManualExportResult] = useState<{ fileId: string; folderId: string; filename: string; publicUrl: string } | null>(null)
+  const [manualExportError, setManualExportError] = useState<string | null>(null)
+  const [copiedFolderId, setCopiedFolderId] = useState(false)
 
   // LoRA / RunPod state
   const [loraConfig, setLoraConfig] = useState<LoraConfig>(DEFAULT_LORA)
@@ -849,6 +856,16 @@ const CaptionExportTab: React.FC<{
       setLoraConfig(prev => ({ ...prev, dataset_source: `gdrive://${driveUploadResult.fileId}` }))
     }
   }, [driveUploadResult])
+
+  // Init caption slots as new entries arrive in manual mode
+  React.useEffect(() => {
+    if (source !== 'manual') return
+    setManualCaptions(prev => {
+      const next = { ...prev }
+      entries.forEach(e => { if (!(e.stem in next)) next[e.stem] = '' })
+      return next
+    })
+  }, [entries, source])
 
   const { data: task } = useTaskProgress(started ? taskId : null)
   const isDone = task?.state === 'SUCCESS' || task?.state === 'FAILURE'
@@ -947,6 +964,29 @@ const CaptionExportTab: React.FC<{
     }
   }
 
+  const handleManualExport = async () => {
+    if (entries.length === 0) return
+    setManualExporting(true)
+    setManualExportError(null)
+    try {
+      const res = await workspaceApi.captionExportManualToDrive({ entries, captions: manualCaptions })
+      setManualExportResult({ fileId: res.file_id, folderId: res.folder_id, filename: res.filename, publicUrl: res.public_url })
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+        (err instanceof Error ? err.message : 'Export failed')
+      setManualExportError(detail)
+    } finally {
+      setManualExporting(false)
+    }
+  }
+
+  const handleCopyFolderId = async (id: string) => {
+    await navigator.clipboard.writeText(id)
+    setCopiedFolderId(true)
+    setTimeout(() => setCopiedFolderId(false), 1500)
+  }
+
   const handleRemove = (stem: string) => {
     setEntries(prev => prev.filter(e => e.stem !== stem))
   }
@@ -978,6 +1018,9 @@ const CaptionExportTab: React.FC<{
     setStarted(false)
     setDriveUploadResult(null)
     setLoraConfig(DEFAULT_LORA)
+    setManualCaptions({})
+    setManualExportResult(null)
+    setManualExportError(null)
     try {
       sessionStorage.removeItem('ff:ce:entries')
       sessionStorage.removeItem('ff:ce:taskId')
@@ -999,8 +1042,8 @@ const CaptionExportTab: React.FC<{
         </p>
       </div>
 
-      {/* Config */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Config — hidden in manual mode (no AI needed) */}
+      <div className={`grid grid-cols-2 gap-4${source === 'manual' ? ' hidden' : ''}`}>
         <div className="space-y-2">
           <Label>Persona</Label>
           <Select value={persona} onValueChange={setPersona}>
@@ -1050,6 +1093,17 @@ const CaptionExportTab: React.FC<{
             >
               <HardDrive className="w-3.5 h-3.5" />
               Google Drive
+            </button>
+            <button
+              onClick={() => { setSource('manual'); setEntries([]); setManualCaptions({}); setManualExportResult(null); setManualExportError(null) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                source === 'manual'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <PenLine className="w-3.5 h-3.5" />
+              Manual Captions
             </button>
           </div>
 
@@ -1124,11 +1178,81 @@ const CaptionExportTab: React.FC<{
               )}
             </div>
           )}
+
+          {source === 'manual' && (
+            <div className="space-y-4">
+              <label
+                className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
+              >
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".png,.jpg,.jpeg,.webp"
+                  multiple
+                  onChange={(e) => void handleUpload(e.target.files)}
+                />
+                {uploadProgress
+                  ? <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-2" />
+                  : <Upload className="w-6 h-6 text-muted-foreground mb-2" />}
+                <p className="text-sm text-muted-foreground">
+                  {uploadProgress
+                    ? `Uploading ${uploadProgress.current} / ${uploadProgress.total}...`
+                    : entries.length > 0 ? 'Drop more images to add' : 'Drop images here or click to upload'}
+                </p>
+                {uploadProgress && (
+                  <div className="w-full mt-2 bg-muted rounded-full h-1.5">
+                    <div
+                      className="bg-primary h-1.5 rounded-full transition-all duration-200"
+                      style={{ width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
+              </label>
+
+              {entries.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">{entries.length} image{entries.length !== 1 ? 's' : ''} — paste a caption for each</p>
+                  <div className="border rounded-lg divide-y max-h-[65vh] overflow-y-auto">
+                    {entries.map(entry => (
+                      <div key={entry.stem} className="flex gap-3 p-3 items-start">
+                        <img
+                          src={workspaceApi.getRefImageThumbnailUrl(entry.path.split('/').pop() ?? '')}
+                          alt={entry.stem}
+                          className="w-24 h-24 object-cover rounded shrink-0 bg-muted"
+                        />
+                        <div className="flex-1 space-y-1.5 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-mono text-muted-foreground truncate">{entry.stem}{entry.original_ext}</span>
+                            <button
+                              className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors"
+                              onClick={() => handleRemove(entry.stem)}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <Textarea
+                            rows={3}
+                            placeholder="Paste caption here..."
+                            value={manualCaptions[entry.stem] ?? ''}
+                            onChange={e => setManualCaptions(prev => ({ ...prev, [entry.stem]: e.target.value }))}
+                            className="text-xs resize-none"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
-      {/* File list */}
-      {entries.length > 0 && (
+      {/* File list — hidden in manual mode (editor is shown inline above) */}
+      {entries.length > 0 && source !== 'manual' && (
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground mb-2">{entries.length} image{entries.length !== 1 ? 's' : ''} queued</p>
           <div className="border rounded-lg divide-y max-h-64 overflow-y-auto">
@@ -1173,7 +1297,22 @@ const CaptionExportTab: React.FC<{
 
       {/* Actions row */}
       <div className="flex items-center gap-3 flex-wrap">
-        {!started ? (
+        {source === 'manual' ? (
+          <>
+            <Button
+              onClick={() => void handleManualExport()}
+              disabled={entries.length === 0 || manualExporting || uploadProgress !== null}
+            >
+              {manualExporting
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Exporting...</>
+                : <><HardDrive className="w-4 h-4 mr-2" />Export &amp; Upload to Drive ({entries.length})</>}
+            </Button>
+            {entries.length > 0 && (
+              <Button variant="outline" onClick={handleReset}>Reset</Button>
+            )}
+            {manualExportError && <p className="text-xs text-destructive w-full">{manualExportError}</p>}
+          </>
+        ) : !started ? (
           <Button
             onClick={() => void handleStart()}
             disabled={entries.length === 0 || !persona || uploadProgress !== null || driveFetching}
@@ -1218,6 +1357,37 @@ const CaptionExportTab: React.FC<{
           </Button>
         )}
       </div>
+
+      {/* Manual export result */}
+      {manualExportResult && (
+        <div className="space-y-2 text-sm p-3 border rounded-lg bg-muted/20">
+          <div className="flex items-center gap-2 text-green-600">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Uploaded <span className="font-mono">{manualExportResult.filename}</span> to Google Drive</span>
+          </div>
+          <div className="ml-6 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground shrink-0">Folder ID:</span>
+              <span className="font-mono text-xs truncate">{manualExportResult.folderId}</span>
+              <button
+                onClick={() => void handleCopyFolderId(manualExportResult.folderId)}
+                className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
+                title="Copy folder ID"
+              >
+                {copiedFolderId ? <CheckCircle2 className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+              </button>
+            </div>
+            <a
+              href={manualExportResult.publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground block truncate"
+            >
+              {manualExportResult.publicUrl}
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Drive upload confirmation */}
       {driveUploadResult && (

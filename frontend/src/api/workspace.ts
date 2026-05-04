@@ -125,4 +125,13 @@ export const workspaceApi = {
       `/workspace/caption-export/runpod/status/${jobId}`,
       { params: endpointId ? { endpoint_id: endpointId } : undefined },
     ).then(r => r.data),
+
+  captionExportManualToDrive: (payload: {
+    entries: CaptionExportEntry[]
+    captions: Record<string, string>
+  }) =>
+    apiClient.post<{ file_id: string; filename: string; folder_id: string; public_url: string }>(
+      '/workspace/caption-export/manual/export-to-drive',
+      payload,
+    ).then(r => r.data),
 }
