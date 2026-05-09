@@ -845,6 +845,27 @@ const CaptionExportTab: React.FC<{
   const [runpodSubmitting, setRunpodSubmitting] = useState(false)
   const [checkingJobId, setCheckingJobId] = useState<string | null>(null)
 
+  // Auto-refresh active jobs every 10s
+  const activeJobStatuses = new Set(['IN_QUEUE', 'IN_PROGRESS'])
+  const hasActiveJobs = runpodJobs.some(j => !j.status || activeJobStatuses.has(j.status))
+  React.useEffect(() => {
+    if (!hasActiveJobs) return
+    const timer = setInterval(async () => {
+      const active = runpodJobs.filter(j => !j.status || activeJobStatuses.has(j.status))
+      await Promise.all(active.map(async j => {
+        try {
+          const data = await workspaceApi.runpodStatus(j.job_id, j.endpoint_id)
+          setRunpodJobs(prev => prev.map(p =>
+            p.job_id === j.job_id
+              ? { ...p, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null }
+              : p
+          ))
+        } catch { /* ignore transient errors */ }
+      }))
+    }, 10_000)
+    return () => clearInterval(timer)
+  }, [hasActiveJobs, runpodJobs]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync persona default once it's loaded
   React.useEffect(() => {
     if (!persona && defaultConfig.persona) setPersona(defaultConfig.persona)
@@ -1521,6 +1542,21 @@ const CaptionExportTab: React.FC<{
   )
 }
 
+function extractLinks(output: Record<string, unknown>): Array<{ label: string; url: string }> {
+  const links: Array<{ label: string; url: string }> = []
+  const visit = (obj: unknown, prefix: string) => {
+    if (typeof obj === 'string' && (obj.startsWith('https://') || obj.startsWith('http://'))) {
+      links.push({ label: prefix, url: obj })
+    } else if (obj && typeof obj === 'object') {
+      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+        visit(v, prefix ? `${prefix}.${k}` : k)
+      }
+    }
+  }
+  visit(output, '')
+  return links
+}
+
 const RunpodJobCard: React.FC<{
   job: RunpodJobEntry
   checking: boolean
@@ -1528,6 +1564,10 @@ const RunpodJobCard: React.FC<{
   statusColor: string
 }> = ({ job, checking, onCheck, statusColor }) => {
   const [showJson, setShowJson] = useState(false)
+  const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
+  const isDone = job.status === 'COMPLETED'
+  const outputLinks = isDone && job.output ? extractLinks(job.output) : []
+
   return (
     <div className="border rounded-lg p-3 space-y-2 text-sm">
       <div className="flex items-center justify-between gap-2">
@@ -1539,7 +1579,10 @@ const RunpodJobCard: React.FC<{
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {job.status && (
-            <span className={`text-xs font-medium ${statusColor}`}>{job.status}</span>
+            <span className={`text-xs font-medium flex items-center gap-1 ${statusColor}`}>
+              {isActive && <Loader2 className="w-3 h-3 animate-spin" />}
+              {job.status}
+            </span>
           )}
           <Button size="sm" variant="outline" onClick={onCheck} disabled={checking}>
             {checking
@@ -1549,11 +1592,34 @@ const RunpodJobCard: React.FC<{
         </div>
       </div>
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
-      {job.output && (
+
+      {/* Links extracted from output when done */}
+      {outputLinks.length > 0 && (
+        <div className="space-y-1 border-t pt-2">
+          <p className="text-xs font-medium text-muted-foreground">Output links</p>
+          {outputLinks.map(({ label, url }) => (
+            <div key={label} className="flex items-center gap-1.5 min-w-0">
+              <span className="text-xs text-muted-foreground shrink-0">{label}:</span>
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:underline truncate"
+              >
+                {url}
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Raw output JSON when done but no links found */}
+      {isDone && job.output && outputLinks.length === 0 && (
         <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-32">
           {JSON.stringify(job.output, null, 2)}
         </pre>
       )}
+
       <button
         className="text-xs text-muted-foreground hover:text-foreground"
         onClick={() => setShowJson(v => !v)}
