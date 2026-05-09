@@ -1606,19 +1606,38 @@ const CaptionExportTab: React.FC<{
   )
 }
 
-function extractLinks(output: Record<string, unknown>): Array<{ label: string; url: string }> {
-  const links: Array<{ label: string; url: string }> = []
-  const visit = (obj: unknown, prefix: string) => {
+type RunpodOutputFile = { name: string; url: string }
+type RunpodSample = { step: number; idx: number; url: string }
+
+function parseRunpodOutput(output: Record<string, unknown>): {
+  files: RunpodOutputFile[]
+  samples: RunpodSample[]
+} {
+  const files: RunpodOutputFile[] = []
+  const samples: RunpodSample[] = []
+
+  const visit = (obj: unknown, keyPath: string) => {
     if (typeof obj === 'string' && (obj.startsWith('https://') || obj.startsWith('http://'))) {
-      links.push({ label: prefix, url: obj })
+      // filename = last segment of key path (split on / or .)
+      const name = keyPath.split(/[./]/).filter(Boolean).at(-1) ?? keyPath
+      // sample pattern: {timestamp}__{step}_{idx}.jpg
+      const m = name.match(/^\d+__(\d+)_(\d+)\.(jpg|png)$/i)
+      if (m) {
+        samples.push({ step: parseInt(m[1]), idx: parseInt(m[2]), url: obj })
+      } else {
+        files.push({ name, url: obj })
+      }
     } else if (obj && typeof obj === 'object') {
       for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-        visit(v, prefix ? `${prefix}.${k}` : k)
+        visit(v, keyPath ? `${keyPath}/${k}` : k)
       }
     }
   }
+
   visit(output, '')
-  return links
+  // sort samples by step then idx
+  samples.sort((a, b) => a.step - b.step || a.idx - b.idx)
+  return { files, samples }
 }
 
 const RunpodJobCard: React.FC<{
@@ -1630,7 +1649,16 @@ const RunpodJobCard: React.FC<{
   const [showJson, setShowJson] = useState(false)
   const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
   const isDone = job.status === 'COMPLETED'
-  const outputLinks = isDone && job.output ? extractLinks(job.output) : []
+  const { files: outputFiles, samples: outputSamples } = isDone && job.output
+    ? parseRunpodOutput(job.output)
+    : { files: [], samples: [] }
+
+  // group samples by step
+  const samplesByStep = outputSamples.reduce<Record<number, RunpodSample[]>>((acc, s) => {
+    ;(acc[s.step] ??= []).push(s)
+    return acc
+  }, {})
+  const sampleSteps = Object.keys(samplesByStep).map(Number).sort((a, b) => a - b)
 
   return (
     <div className="border rounded-lg p-3 space-y-2 text-sm">
@@ -1657,31 +1685,46 @@ const RunpodJobCard: React.FC<{
       </div>
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
 
-      {/* Links extracted from output when done */}
-      {outputLinks.length > 0 && (
-        <div className="space-y-1 border-t pt-2">
-          <p className="text-xs font-medium text-muted-foreground">Output links</p>
-          {outputLinks.map(({ label, url }) => (
-            <div key={label} className="flex items-center gap-1.5 min-w-0">
-              <span className="text-xs text-muted-foreground shrink-0">{label}:</span>
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:underline truncate"
-              >
-                {url}
-              </a>
-            </div>
+      {/* Output files */}
+      {outputFiles.length > 0 && (
+        <div className="border-t pt-2 space-y-1">
+          <p className="text-xs font-medium text-muted-foreground">Output files</p>
+          {outputFiles.map(({ name, url }) => (
+            <a
+              key={name}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted transition-colors group"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+              <span className="text-xs font-mono font-medium truncate">{name}</span>
+            </a>
           ))}
         </div>
       )}
 
-      {/* Raw output JSON when done but no links found */}
-      {isDone && job.output && outputLinks.length === 0 && (
-        <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-32">
-          {JSON.stringify(job.output, null, 2)}
-        </pre>
+      {/* Sample images grouped by step */}
+      {sampleSteps.length > 0 && (
+        <div className="border-t pt-2 space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Sample images</p>
+          {sampleSteps.map(step => (
+            <div key={step}>
+              <p className="text-xs text-muted-foreground mb-1">Step {step.toLocaleString()}</p>
+              <div className="flex flex-wrap gap-1">
+                {samplesByStep[step].map((s, i) => (
+                  <a key={i} href={s.url} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={s.url}
+                      alt={`step ${step} #${s.idx}`}
+                      className="w-16 h-16 object-cover rounded border hover:opacity-80 transition-opacity"
+                    />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       <button
