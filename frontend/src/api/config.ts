@@ -48,4 +48,7 @@ export const configApi = {
 
   getLoraOptions: () =>
     apiClient.get<string[]>('/config/lora-options').then(r => r.data),
+
+  addLoraOption: (name: string) =>
+    apiClient.post<string[]>('/config/lora-options', { name }).then(r => r.data),
 }

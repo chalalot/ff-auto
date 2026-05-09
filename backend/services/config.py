@@ -180,21 +180,48 @@ class ConfigService:
             "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image",
         ]
 
+    _BUILTIN_LORA_OPTIONS = [
+        "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
+        "khiemle__xz-comfy__jennie_turbo_outdoor_v1.safetensors",
+        "khiemle__xz-comfy__jennie_turbo_indoor_v1.safetensors",
+        "khiemle__xz-comfy__jennie_turbo_selfie_v2.safetensors",
+        "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
+        "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
+        "khiemle__xz-comfy__emi_turbo_v2.safetensors",
+        "Macincesht__ff-loras__emi_v3.safetensors",
+        "Macincesht__ff-loras__emi_v4.safetensors",
+        "Macincesht__ff-loras__emi_v5.safetensors",
+        "Macincesht__ff-loras__emi_v6.safetensors",
+        "Macincesht__ff-loras__emi_v7.safetensors",
+        "khiemle__xz-comfy__roxie_v3.safetensors",
+        "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
+        "khiemle__xz-comfy__Sephera%20v7.safetensors",
+    ]
+
+    @property
+    def _custom_loras_file(self) -> Path:
+        return self.prompts_dir / "lora_options_custom.json"
+
+    def _load_custom_loras(self) -> List[str]:
+        if not self._custom_loras_file.exists():
+            return []
+        try:
+            return json.loads(self._custom_loras_file.read_text())
+        except Exception:
+            return []
+
     def get_lora_options(self) -> List[str]:
-        return [
-            "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
-            "khiemle__xz-comfy__jennie_turbo_outdoor_v1.safetensors",
-            "khiemle__xz-comfy__jennie_turbo_indoor_v1.safetensors",
-            "khiemle__xz-comfy__jennie_turbo_selfie_v2.safetensors",
-            "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
-            "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
-            "khiemle__xz-comfy__emi_turbo_v2.safetensors",
-            "Macincesht__ff-loras__emi_v3.safetensors",
-            "Macincesht__ff-loras__emi_v4.safetensors",
-            "Macincesht__ff-loras__emi_v5.safetensors",
-            "Macincesht__ff-loras__emi_v6.safetensors",
-            "Macincesht__ff-loras__emi_v7.safetensors",
-            "khiemle__xz-comfy__roxie_v3.safetensors",
-            "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
-            "khiemle__xz-comfy__Sephera%20v7.safetensors",
-        ]
+        custom = self._load_custom_loras()
+        seen = set(self._BUILTIN_LORA_OPTIONS)
+        extras = [c for c in custom if c not in seen]
+        return self._BUILTIN_LORA_OPTIONS + extras
+
+    def add_lora_option(self, name: str) -> List[str]:
+        name = name.strip()
+        all_options = self.get_lora_options()
+        if name in all_options:
+            return all_options
+        custom = self._load_custom_loras()
+        custom.append(name)
+        self._custom_loras_file.write_text(json.dumps(custom, indent=2))
+        return self.get_lora_options()

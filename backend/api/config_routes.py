@@ -96,6 +96,15 @@ def lora_options(svc: ConfigService = Depends(get_config_service)):
     return svc.get_lora_options()
 
 
+class AddLoraOptionRequest(BaseModel):
+    name: str
+
+
+@router.post("/lora-options", response_model=List[str])
+def add_lora_option(body: AddLoraOptionRequest, svc: ConfigService = Depends(get_config_service)):
+    return svc.add_lora_option(body.name)
+
+
 @router.get("/persona-types", response_model=List[str])
 def persona_types(svc: ConfigService = Depends(get_config_service)):
     return svc.get_persona_types()

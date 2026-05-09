@@ -20,6 +20,11 @@ import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Cloc
 import { Textarea } from '@/components/ui/textarea'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
+// "owner__repo__name_v7.safetensors" → "name_v7"
+const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
+// "owner__repo__name_v7.safetensors" → "owner__repo"
+const loraPrefix = (name: string) => name.split('__').slice(0, -1).join('__')
+
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   persona: '',
@@ -48,6 +53,16 @@ export const WorkspacePage: React.FC = () => {
   const { data: visionModels = [] } = useVisionModels()
   const { data: clipModels = [] } = useClipModels()
   const { data: loraOptions = [] } = useLoraOptions()
+  const [addLoraOpen, setAddLoraOpen] = useState(false)
+  const [addLoraValue, setAddLoraValue] = useState('')
+  const addLoraMutation = useMutation({
+    mutationFn: (name: string) => configApi.addLoraOption(name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['config', 'lora-options'] })
+      setAddLoraOpen(false)
+      setAddLoraValue('')
+    },
+  })
   const { data: lastUsed, isSuccess: lastUsedLoaded } = useLastUsed()
   const { data: executions = [] } = useQuery({
     queryKey: ['workspace', 'executions'],
@@ -293,15 +308,64 @@ export const WorkspacePage: React.FC = () => {
 
           {/* LoRA */}
           <div className="space-y-2">
-            <Label>LoRA</Label>
+            <div className="flex items-center justify-between">
+              <Label>LoRA</Label>
+              <button
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setAddLoraValue(config.lora_name || '')
+                  setAddLoraOpen(v => !v)
+                }}
+              >
+                + add new
+              </button>
+            </div>
+            {addLoraOpen && (
+              <div className="space-y-1.5">
+                <Input
+                  className="font-mono text-xs"
+                  value={addLoraValue}
+                  onChange={e => setAddLoraValue(e.target.value)}
+                  placeholder="owner__repo__name.safetensors"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && addLoraValue.trim()) addLoraMutation.mutate(addLoraValue.trim())
+                    if (e.key === 'Escape') setAddLoraOpen(false)
+                  }}
+                  autoFocus
+                />
+                <div className="flex gap-1.5 justify-end">
+                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAddLoraOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={!addLoraValue.trim() || addLoraMutation.isPending}
+                    onClick={() => addLoraMutation.mutate(addLoraValue.trim())}
+                  >
+                    {addLoraMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
             <Select value={config.lora_name} onValueChange={(v) => setConfig(p => ({ ...p, lora_name: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select LoRA" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select LoRA">
+                  {config.lora_name ? loraShortLabel(config.lora_name) : undefined}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 {loraOptions.map(l => (
-                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                  <SelectItem key={l} value={l}>
+                    <span className="font-medium">{loraShortLabel(l)}</span>
+                    <span className="text-xs text-muted-foreground ml-1.5 font-mono">{loraPrefix(l)}</span>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {config.lora_name && (
+              <p className="text-xs text-muted-foreground font-mono break-all leading-relaxed">{config.lora_name}</p>
+            )}
           </div>
         </div>
       </aside>
