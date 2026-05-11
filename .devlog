@@ -1,0 +1,7 @@
+
+[2026-05-10 00:00] [FireFlower]
+why: caption export tab cần UX tốt hơn cho LoRA training — auto-refresh status, thêm lora mới nhanh, hiển thị output links rõ ràng
+did: (1) auto-poll RunPod job status mỗi 10s khi có job IN_QUEUE/IN_PROGRESS, spinner trên status badge; (2) thêm "+ add new" lora inline trong sidebar — pre-fill từ tên đang chọn, lưu vào lora_options_custom.json, invalidate React Query cache; (3) helper loraShortLabel/loraPrefix để hiển thị tên lora ngắn gọn trong dropdown, full name hiển thị bên dưới; (4) rewrite parseRunpodOutput — tách output thành files (config.yaml, .safetensors) và sample images nhóm theo step, files thành clickable download row, samples thành thumbnail grid 64×64
+result: không cần bấm refresh thủ công khi training, thêm lora version mới (emi_v7→v8) nhanh, output links không bị overflow và dễ nhận biết từng file
+---
+## reported [2026-05-10]

@@ -1618,8 +1618,8 @@ function parseRunpodOutput(output: Record<string, unknown>): {
 
   const visit = (obj: unknown, keyPath: string) => {
     if (typeof obj === 'string' && (obj.startsWith('https://') || obj.startsWith('http://'))) {
-      // filename = last segment of key path (split on / or .)
-      const name = keyPath.split(/[./]/).filter(Boolean).at(-1) ?? keyPath
+      // filename = last path segment only (split on / to preserve extensions like .safetensors)
+      const name = keyPath.split('/').filter(Boolean).at(-1) ?? keyPath
       // sample pattern: {timestamp}__{step}_{idx}.jpg
       const m = name.match(/^\d+__(\d+)_(\d+)\.(jpg|png)$/i)
       if (m) {
