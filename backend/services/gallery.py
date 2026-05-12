@@ -212,6 +212,17 @@ class GalleryService:
         if txt_src.exists():
             shutil.move(str(txt_src), str(dest_path.with_suffix(".txt")))
 
+        # Keep DB result_image_path in sync with the file's new location
+        try:
+            record = self.storage.get_execution_by_result_path(str(src_path))
+            if record:
+                self.storage.update_result_path(
+                    execution_id=record["execution_id"],
+                    result_image_path=str(dest_path),
+                )
+        except Exception as e:
+            logger.warning(f"Could not update DB path after move {src_path} → {dest_path}: {e}")
+
         return True
 
     def approve_images(self, filenames: List[str], rename_map: Dict[str, str] = {}) -> dict:
