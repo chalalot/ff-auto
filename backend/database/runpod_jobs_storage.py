@@ -73,7 +73,7 @@ class RunpodJobsStorage:
             conn.execute(
                 """
                 UPDATE runpod_jobs
-                SET status = ?, output = ?, updated_at = ?
+                SET status = ?, output = COALESCE(?, output), updated_at = ?
                 WHERE job_id = ?
                 """,
                 (status, json.dumps(output) if output is not None else None, datetime.utcnow().isoformat(), job_id),
