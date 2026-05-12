@@ -126,6 +126,12 @@ export const workspaceApi = {
       { params: endpointId ? { endpoint_id: endpointId } : undefined },
     ).then(r => r.data),
 
+  runpodUploadToHF: (payload: { file_url: string; lora_name: string }) =>
+    apiClient.post<{ repo_id: string; filename: string; url: string }>(
+      '/workspace/caption-export/runpod/upload-to-hf',
+      payload,
+    ).then(r => r.data),
+
   captionExportManualToDrive: (payload: {
     entries: CaptionExportEntry[]
     captions: Record<string, string>

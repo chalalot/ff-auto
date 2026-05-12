@@ -38,6 +38,9 @@ PyJWT
 # Database
 psycopg2-binary
 
+# Hugging Face
+huggingface_hub>=0.23.0
+
 # System monitoring
 psutil
 
