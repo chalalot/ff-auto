@@ -513,8 +513,15 @@ def caption_export_runpod_status(
         resp.raise_for_status()
     except _requests.HTTPError as e:
         if e.response.status_code == 404:
-            db.update_status(job_id=job_id, status="COMPLETED")
-            return {"id": job_id, "status": "COMPLETED", "message": "Job completed and cleared from RunPod queue."}
+            # Job cleared from RunPod history. If we already have output saved, keep COMPLETED.
+            # If output was never captured, mark EXPIRED so the user knows to rerun.
+            existing = db.get_job(job_id)
+            if existing and existing.get("output"):
+                status = "COMPLETED"
+            else:
+                status = "EXPIRED"
+            db.update_status(job_id=job_id, status=status)
+            return {"id": job_id, "status": status, "message": "Job cleared from RunPod queue."}
         raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
@@ -526,6 +533,73 @@ def caption_export_runpod_status(
         output=data.get("output"),
     )
     return data
+
+
+class HFUploadRequest(BaseModel):
+    file_url: str   # signed S3 URL to download from
+    lora_name: str  # e.g. "Macincesht__ff-loras__emi_v8.safetensors"
+
+
+@router.post("/caption-export/runpod/upload-to-hf")
+def caption_export_upload_to_hf(body: HFUploadRequest):
+    """Download a file from a signed S3 URL and push it to Hugging Face Hub."""
+    import re
+    import tempfile
+    import requests as _requests
+    from huggingface_hub import HfApi
+    from backend.config import GlobalConfig
+
+    hf_token = GlobalConfig.HF_TOKEN
+    if not hf_token:
+        raise HTTPException(status_code=400, detail="HF_TOKEN is not configured in .env")
+
+    # Parse "Owner__repo__filename.safetensors" → owner, repo, filename
+    parts = body.lora_name.split("__", 2)
+    if len(parts) == 3:
+        hf_owner, hf_repo, filename = parts
+    elif len(parts) == 2:
+        hf_owner, filename = parts
+        hf_repo = "ff-loras"
+    else:
+        filename = body.lora_name
+        raise HTTPException(status_code=400, detail="Cannot parse lora_name into owner/repo/file. Expected format: owner__repo__name.safetensors")
+
+    repo_id = f"{hf_owner}/{hf_repo}"
+
+    # Download the file from the signed URL
+    try:
+        dl = _requests.get(body.file_url, timeout=300, stream=True)
+        dl.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to download file from S3: {e}")
+
+    # Upload to HF Hub
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f"_{filename}", delete=False) as tmp:
+            for chunk in dl.iter_content(chunk_size=8 * 1024 * 1024):
+                tmp.write(chunk)
+            tmp_path = tmp.name
+
+        api = HfApi(token=hf_token)
+        api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=False)
+        api.upload_file(
+            path_or_fileobj=tmp_path,
+            path_in_repo=filename,
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message=f"Upload {filename}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Hugging Face upload failed: {e}")
+    finally:
+        import os
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    hf_url = f"https://huggingface.co/{repo_id}/blob/main/{filename}"
+    return {"repo_id": repo_id, "filename": filename, "url": hf_url}
 
 
 # ------------------------------------------------------------------

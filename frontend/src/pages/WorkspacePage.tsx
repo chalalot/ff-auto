@@ -1115,6 +1115,7 @@ const CaptionExportTab: React.FC<{
 
   const runpodStatusColor = (status: string | null) =>
     status === 'COMPLETED' ? 'text-green-600' :
+    status === 'EXPIRED' ? 'text-yellow-600' :
     status === 'FAILED' || status === 'TIMED_OUT' ? 'text-destructive' :
     'text-muted-foreground'
 
@@ -1647,11 +1648,27 @@ const RunpodJobCard: React.FC<{
   statusColor: string
 }> = ({ job, checking, onCheck, statusColor }) => {
   const [showJson, setShowJson] = useState(false)
+  const [hfUploading, setHfUploading] = useState<string | null>(null) // filename being uploaded
+  const [hfResults, setHfResults] = useState<Record<string, string>>({}) // filename → hf url
   const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
   const isDone = job.status === 'COMPLETED'
+  const isExpired = job.status === 'EXPIRED'
   const { files: outputFiles, samples: outputSamples } = isDone && job.output
     ? parseRunpodOutput(job.output)
     : { files: [], samples: [] }
+
+  const handleHfUpload = async (filename: string, fileUrl: string) => {
+    setHfUploading(filename)
+    try {
+      const res = await workspaceApi.runpodUploadToHF({ file_url: fileUrl, lora_name: job.lora_name })
+      setHfResults(prev => ({ ...prev, [filename]: res.url }))
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Upload failed'
+      alert(detail)
+    } finally {
+      setHfUploading(null)
+    }
+  }
 
   // group samples by step
   const samplesByStep = outputSamples.reduce<Record<number, RunpodSample[]>>((acc, s) => {
@@ -1685,22 +1702,51 @@ const RunpodJobCard: React.FC<{
       </div>
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
 
+      {isExpired && (
+        <p className="text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
+          Output expired before it was captured. Please resubmit the job.
+        </p>
+      )}
+
       {/* Output files */}
       {outputFiles.length > 0 && (
         <div className="border-t pt-2 space-y-1">
           <p className="text-xs font-medium text-muted-foreground">Output files</p>
-          {outputFiles.map(({ name, url }) => (
-            <a
-              key={name}
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted transition-colors group"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
-              <span className="text-xs font-mono font-medium truncate">{name}</span>
-            </a>
-          ))}
+          {outputFiles.map(({ name, url }) => {
+            const isSafetensors = name.endsWith('.safetensors')
+            const hfUrl = hfResults[name]
+            const uploading = hfUploading === name
+            return (
+              <div key={name} className="flex items-center gap-1.5 rounded px-2 py-1 hover:bg-muted transition-colors group">
+                <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 flex-1 min-w-0">
+                  <Download className="w-3.5 h-3.5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+                  <span className="text-xs font-mono font-medium truncate">{name}</span>
+                </a>
+                {isSafetensors && (
+                  hfUrl ? (
+                    <a
+                      href={hfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-orange-500 hover:underline shrink-0 font-medium"
+                    >
+                      HF ↗
+                    </a>
+                  ) : (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-orange-500 shrink-0 flex items-center gap-0.5 transition-colors"
+                      disabled={!!hfUploading}
+                      onClick={() => void handleHfUpload(name, url)}
+                    >
+                      {uploading
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : '↑ HF'}
+                    </button>
+                  )
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

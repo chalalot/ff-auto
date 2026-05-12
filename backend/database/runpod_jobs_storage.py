@@ -85,6 +85,22 @@ class RunpodJobsStorage:
         finally:
             conn.close()
 
+    def get_job(self, job_id: str) -> Optional[dict]:
+        conn = self._conn()
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT * FROM runpod_jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["job_input"] = json.loads(d["job_input"]) if d["job_input"] else {}
+            d["output"] = json.loads(d["output"]) if d["output"] else None
+            return d
+        finally:
+            conn.close()
+
     def list_jobs(self, limit: int = 100) -> list[dict]:
         conn = self._conn()
         conn.row_factory = sqlite3.Row
