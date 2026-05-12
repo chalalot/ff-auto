@@ -1049,6 +1049,24 @@ const CaptionExportTab: React.FC<{
     }
   }
 
+  const handleRunpodRetry = async (job: RunpodJobEntry) => {
+    try {
+      const res = await workspaceApi.runpodSubmit({ job_input: job.job_input })
+      setRunpodJobs(prev => [{
+        job_id: res.job_id,
+        endpoint_id: res.endpoint_id,
+        lora_name: job.lora_name,
+        submitted_at: new Date().toISOString(),
+        job_input: job.job_input,
+        status: null,
+        output: null,
+      }, ...prev])
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Retry failed'
+      alert(detail)
+    }
+  }
+
   const handleManualExport = async () => {
     if (entries.length === 0) return
     setManualExporting(true)
@@ -1595,6 +1613,7 @@ const CaptionExportTab: React.FC<{
                       job={job}
                       checking={checkingJobId === job.job_id}
                       onCheck={() => void handleRunpodCheckStatus(job.job_id, job.endpoint_id)}
+                      onRetry={() => void handleRunpodRetry(job)}
                       statusColor={runpodStatusColor(job.status)}
                     />
                   ))}
@@ -1645,8 +1664,9 @@ const RunpodJobCard: React.FC<{
   job: RunpodJobEntry
   checking: boolean
   onCheck: () => void
+  onRetry: () => void
   statusColor: string
-}> = ({ job, checking, onCheck, statusColor }) => {
+}> = ({ job, checking, onCheck, onRetry, statusColor }) => {
   const [showJson, setShowJson] = useState(false)
   const [hfUploading, setHfUploading] = useState<string | null>(null) // filename being uploaded
   const [hfResults, setHfResults] = useState<Record<string, string>>({}) // filename → hf url
@@ -1703,9 +1723,15 @@ const RunpodJobCard: React.FC<{
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
 
       {isExpired && (
-        <p className="text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
-          Output expired before it was captured. Please resubmit the job.
-        </p>
+        <div className="flex items-center justify-between gap-2 text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
+          <span>Output expired before it was captured.</span>
+          <button
+            className="font-medium underline underline-offset-2 hover:opacity-70 shrink-0"
+            onClick={onRetry}
+          >
+            Retry job
+          </button>
+        </div>
       )}
 
       {/* Output files */}
