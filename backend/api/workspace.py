@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 
 from backend.api.deps import get_image_processing_service, get_image_logs_storage, get_runpod_jobs_storage
 from backend.models.workspace import (
