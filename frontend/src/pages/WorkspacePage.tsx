@@ -825,6 +825,11 @@ interface RunpodJobEntry {
   output: Record<string, unknown> | null
 }
 
+type RunpodJobInput = Parameters<typeof workspaceApi.runpodSubmit>[0]['job_input']
+
+const RUNPOD_ACTIVE_STATUSES = new Set(['IN_QUEUE', 'IN_PROGRESS'])
+const RUNPOD_RETRYABLE_STATUSES = new Set(['EXPIRED', 'FAILED', 'TIMED_OUT', 'CANCELLED'])
+
 const DEFAULT_LORA: LoraConfig = {
   dataset_source: '',
   lora_name: '',
@@ -833,6 +838,19 @@ const DEFAULT_LORA: LoraConfig = {
   sample_every: 500,
   sample_prompts: '',
 }
+
+const normalizeRunpodJobInput = (input: Record<string, unknown>): RunpodJobInput => ({
+  dataset_source: String(input.dataset_source ?? ''),
+  lora_name: String(input.lora_name ?? ''),
+  steps: Number(input.steps ?? DEFAULT_LORA.steps),
+  save_every: Number(input.save_every ?? DEFAULT_LORA.save_every),
+  sample_every: Number(input.sample_every ?? DEFAULT_LORA.sample_every),
+  sample_prompts: Array.isArray(input.sample_prompts)
+    ? input.sample_prompts.map(String).filter(Boolean)
+    : typeof input.sample_prompts === 'string'
+      ? input.sample_prompts.split('\n').map(s => s.trim()).filter(Boolean)
+      : [],
+})
 
 const CaptionExportTab: React.FC<{
   personas: Array<{ name: string }>
@@ -855,16 +873,16 @@ const CaptionExportTab: React.FC<{
 
   // Persist session state so navigation away doesn't wipe the run
   React.useEffect(() => {
-    try { sessionStorage.setItem('ff:ce:entries', JSON.stringify(entries)) } catch {}
+    try { sessionStorage.setItem('ff:ce:entries', JSON.stringify(entries)) } catch { /* sessionStorage may be unavailable */ }
   }, [entries])
   React.useEffect(() => {
     try {
       if (taskId) sessionStorage.setItem('ff:ce:taskId', taskId)
       else sessionStorage.removeItem('ff:ce:taskId')
-    } catch {}
+    } catch { /* sessionStorage may be unavailable */ }
   }, [taskId])
   React.useEffect(() => {
-    try { sessionStorage.setItem('ff:ce:started', started ? '1' : '0') } catch {}
+    try { sessionStorage.setItem('ff:ce:started', started ? '1' : '0') } catch { /* sessionStorage may be unavailable */ }
   }, [started])
   React.useEffect(() => {
     workspaceApi.runpodJobs()
@@ -907,15 +925,13 @@ const CaptionExportTab: React.FC<{
   const [runpodJobs, setRunpodJobs] = useState<RunpodJobEntry[]>([])
   const [runpodJobsLoaded, setRunpodJobsLoaded] = useState(false)
   const [runpodSubmitting, setRunpodSubmitting] = useState(false)
-  const [checkingJobId, setCheckingJobId] = useState<string | null>(null)
 
   // Auto-refresh active jobs every 10s
-  const activeJobStatuses = new Set(['IN_QUEUE', 'IN_PROGRESS'])
-  const hasActiveJobs = runpodJobs.some(j => !j.status || activeJobStatuses.has(j.status))
+  const hasActiveJobs = runpodJobs.some(j => !j.status || RUNPOD_ACTIVE_STATUSES.has(j.status))
   React.useEffect(() => {
     if (!hasActiveJobs) return
     const timer = setInterval(async () => {
-      const active = runpodJobs.filter(j => !j.status || activeJobStatuses.has(j.status))
+      const active = runpodJobs.filter(j => !j.status || RUNPOD_ACTIVE_STATUSES.has(j.status))
       await Promise.all(active.map(async j => {
         try {
           const data = await workspaceApi.runpodStatus(j.job_id, j.endpoint_id)
@@ -924,11 +940,18 @@ const CaptionExportTab: React.FC<{
               ? { ...p, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null }
               : p
           ))
-        } catch { /* ignore transient errors */ }
+        } catch (err: unknown) {
+          const status = (err as { response?: { status?: number } })?.response?.status
+          if (status === 404) {
+            setRunpodJobs(prev => prev.map(p =>
+              p.job_id === j.job_id ? { ...p, status: 'EXPIRED', output: null } : p
+            ))
+          }
+        }
       }))
     }, 10_000)
     return () => clearInterval(timer)
-  }, [hasActiveJobs, runpodJobs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasActiveJobs, runpodJobs])
 
   // Sync persona default once it's loaded
   React.useEffect(() => {
@@ -1035,29 +1058,16 @@ const CaptionExportTab: React.FC<{
     }
   }
 
-  const handleRunpodCheckStatus = async (jobId: string, endpointId: string) => {
-    setCheckingJobId(jobId)
-    try {
-      const data = await workspaceApi.runpodStatus(jobId, endpointId)
-      setRunpodJobs(prev => prev.map(j =>
-        j.job_id === jobId
-          ? { ...j, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null }
-          : j
-      ))
-    } finally {
-      setCheckingJobId(null)
-    }
-  }
-
   const handleRunpodRetry = async (job: RunpodJobEntry) => {
     try {
-      const res = await workspaceApi.runpodSubmit({ job_input: job.job_input })
+      const jobInput = normalizeRunpodJobInput(job.job_input)
+      const res = await workspaceApi.runpodSubmit({ job_input: jobInput })
       setRunpodJobs(prev => [{
         job_id: res.job_id,
         endpoint_id: res.endpoint_id,
         lora_name: job.lora_name,
         submitted_at: new Date().toISOString(),
-        job_input: job.job_input,
+        job_input: jobInput,
         status: null,
         output: null,
       }, ...prev])
@@ -1128,7 +1138,7 @@ const CaptionExportTab: React.FC<{
       sessionStorage.removeItem('ff:ce:entries')
       sessionStorage.removeItem('ff:ce:taskId')
       sessionStorage.removeItem('ff:ce:started')
-    } catch {}
+    } catch { /* sessionStorage may be unavailable */ }
   }
 
   const runpodStatusColor = (status: string | null) =>
@@ -1611,8 +1621,6 @@ const CaptionExportTab: React.FC<{
                     <RunpodJobCard
                       key={job.job_id}
                       job={job}
-                      checking={checkingJobId === job.job_id}
-                      onCheck={() => void handleRunpodCheckStatus(job.job_id, job.endpoint_id)}
                       onRetry={() => void handleRunpodRetry(job)}
                       statusColor={runpodStatusColor(job.status)}
                     />
@@ -1662,17 +1670,15 @@ function parseRunpodOutput(output: Record<string, unknown>): {
 
 const RunpodJobCard: React.FC<{
   job: RunpodJobEntry
-  checking: boolean
-  onCheck: () => void
   onRetry: () => void
   statusColor: string
-}> = ({ job, checking, onCheck, onRetry, statusColor }) => {
+}> = ({ job, onRetry, statusColor }) => {
   const [showJson, setShowJson] = useState(false)
   const [hfUploading, setHfUploading] = useState<string | null>(null) // filename being uploaded
   const [hfResults, setHfResults] = useState<Record<string, string>>({}) // filename → hf url
   const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
   const isDone = job.status === 'COMPLETED'
-  const isExpired = job.status === 'EXPIRED'
+  const isRetryable = !!job.status && RUNPOD_RETRYABLE_STATUSES.has(job.status)
   const { files: outputFiles, samples: outputSamples } = isDone && job.output
     ? parseRunpodOutput(job.output)
     : { files: [], samples: [] }
@@ -1713,18 +1719,13 @@ const RunpodJobCard: React.FC<{
               {job.status}
             </span>
           )}
-          <Button size="sm" variant="outline" onClick={onCheck} disabled={checking}>
-            {checking
-              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              : <RefreshCw className="w-3.5 h-3.5" />}
-          </Button>
         </div>
       </div>
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
 
-      {isExpired && (
+      {isRetryable && (
         <div className="flex items-center justify-between gap-2 text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
-          <span>Output expired before it was captured.</span>
+          <span>{job.status === 'EXPIRED' ? 'Output expired before it was captured.' : `Job ended with status ${job.status}.`}</span>
           <button
             className="font-medium underline underline-offset-2 hover:opacity-70 shrink-0"
             onClick={onRetry}
