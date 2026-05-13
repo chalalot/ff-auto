@@ -5,3 +5,15 @@ did: (1) auto-poll RunPod job status mỗi 10s khi có job IN_QUEUE/IN_PROGRESS,
 result: không cần bấm refresh thủ công khi training, thêm lora version mới (emi_v7→v8) nhanh, output links không bị overflow và dễ nhận biết từng file
 ---
 ## reported [2026-05-10]
+
+[2026-05-13 00:00] [FireFlower]
+why: Caption Export tab thiếu 2 thứ: (1) không xem được instruction đang dùng để generate caption, (2) không có cách cancel hay xoá job LoRA training trên RunPod
+did: thêm GET /api/workspace/persona-instructions/{persona} trả về toàn bộ template files (analyst_task, turbo_framework, turbo_constraints, turbo_example, agent backstories); thêm button "View instructions" nhỏ cạnh Persona selector mở modal scrollable; thêm POST /cancel/{job_id} gọi RunPod cancel API rồi mark CANCELLED trong DB, DELETE /jobs/{job_id} xoá record local; RunpodJobCard có thêm Cancel button (chỉ hiện khi active) và Delete (trash icon) trên mọi job
+result: user xem được đúng instruction theo persona đang chọn; có thể cancel job đang chạy hoặc dọn dẹp history không cần vào DB tay
+---
+
+[2026-05-13 14:41] [FireFlower]
+why: sau khi manual export lên Drive, UI hiển thị "Folder ID" và copy sai giá trị (folderId thay vì fileId) — paste vào dataset source field bị lỗi; retry button trên job failed cũng không hiện error rõ khi status check thất bại; backend crash khi start do thiếu import
+did: (1) fix "Folder ID" → hiển thị đúng fileId dưới dạng gdrive://{fileId}, copy cũng copy đúng string này, pre-fill dataset_source cho manual export flow giống drive upload flow; (2) thêm check_error field vào RunpodJobEntry — khi auto-poll 404 mark EXPIRED, các lỗi khác hiển thị warning message inline thay vì silent fail; thêm extractRunpodError helper parse traceback/error/stderr từ output để hiện summary rõ ràng trên job card; (3) thêm missing `from pydantic import BaseModel` vào backend/api/workspace.py
+result: dataset source được fill đúng sau export, không còn paste nhầm folder ID; lỗi training job hiện rõ lý do (kể cả GDrive permission error với message hướng dẫn cụ thể); backend không còn crash khi start
+---

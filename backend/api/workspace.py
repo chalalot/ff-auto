@@ -647,7 +647,10 @@ def caption_export_upload_to_hf(body: HFUploadRequest):
     if not hf_token:
         raise HTTPException(status_code=400, detail="HF_TOKEN is not configured in .env")
 
-    # Parse "Owner__repo__filename.safetensors" → owner, repo, filename
+    # Parse lora_name into (owner, repo, filename):
+    #   owner__repo__name.safetensors  → explicit owner + repo
+    #   owner__name.safetensors        → explicit owner, repo = "ff-loras"
+    #   name.safetensors               → owner from HF token whoami, repo = "ff-loras"
     parts = body.lora_name.split("__", 2)
     if len(parts) == 3:
         hf_owner, hf_repo, filename = parts
@@ -655,8 +658,16 @@ def caption_export_upload_to_hf(body: HFUploadRequest):
         hf_owner, filename = parts
         hf_repo = "ff-loras"
     else:
+        try:
+            from huggingface_hub import HfApi as _HfApi
+            hf_owner = _HfApi(token=hf_token).whoami()["name"]
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"lora_name has no owner prefix and HF whoami failed: {e}. Use format: owner__name.safetensors")
+        hf_repo = "ff-loras"
         filename = body.lora_name
-        raise HTTPException(status_code=400, detail="Cannot parse lora_name into owner/repo/file. Expected format: owner__repo__name.safetensors")
+
+    if not filename.endswith(".safetensors"):
+        filename = f"{filename}.safetensors"
 
     repo_id = f"{hf_owner}/{hf_repo}"
 
