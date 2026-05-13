@@ -823,6 +823,7 @@ interface RunpodJobEntry {
   job_input: Record<string, unknown>
   status: string | null
   output: Record<string, unknown> | null
+  check_error?: string | null
 }
 
 type RunpodJobInput = Parameters<typeof workspaceApi.runpodSubmit>[0]['job_input']
@@ -937,14 +938,21 @@ const CaptionExportTab: React.FC<{
           const data = await workspaceApi.runpodStatus(j.job_id, j.endpoint_id)
           setRunpodJobs(prev => prev.map(p =>
             p.job_id === j.job_id
-              ? { ...p, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null }
+              ? { ...p, status: data.status ?? null, output: (data.output as Record<string, unknown> | null | undefined) ?? null, check_error: null }
               : p
           ))
         } catch (err: unknown) {
-          const status = (err as { response?: { status?: number } })?.response?.status
-          if (status === 404) {
+          const httpStatus = (err as { response?: { status?: number } })?.response?.status
+          if (httpStatus === 404) {
             setRunpodJobs(prev => prev.map(p =>
-              p.job_id === j.job_id ? { ...p, status: 'EXPIRED', output: null } : p
+              p.job_id === j.job_id ? { ...p, status: 'EXPIRED', output: null, check_error: null } : p
+            ))
+          } else {
+            const detail =
+              (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+              (err instanceof Error ? err.message : 'Status check failed')
+            setRunpodJobs(prev => prev.map(p =>
+              p.job_id === j.job_id ? { ...p, check_error: detail } : p
             ))
           }
         }
@@ -1668,6 +1676,43 @@ function parseRunpodOutput(output: Record<string, unknown>): {
   return { files, samples }
 }
 
+function extractRunpodError(output: Record<string, unknown> | null): { summary: string; detail: string } | null {
+  if (!output) return null
+
+  const detail =
+    typeof output.traceback === 'string' ? output.traceback :
+    typeof output.error === 'string' ? output.error :
+    typeof output.message === 'string' ? output.message :
+    typeof output.detail === 'string' ? output.detail :
+    typeof output.stderr === 'string' ? output.stderr :
+    typeof output.logs === 'string' ? output.logs :
+    JSON.stringify(output, null, 2)
+
+  if (!detail) return null
+
+  const lines = detail
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  const gdrivePermissionLine = lines.find(line => line.includes('Cannot retrieve the public link of the file'))
+  if (gdrivePermissionLine) {
+    return {
+      summary: 'Cannot retrieve the public Google Drive link. Check that the file is shared with anyone who has the link.',
+      detail,
+    }
+  }
+
+  const exceptionLine = [...lines]
+    .reverse()
+    .find(line => /(?:Error|Exception):/.test(line) && !line.startsWith('File '))
+
+  return {
+    summary: exceptionLine ?? lines[0] ?? 'Training job failed.',
+    detail,
+  }
+}
+
 const RunpodJobCard: React.FC<{
   job: RunpodJobEntry
   onRetry: () => void
@@ -1679,6 +1724,7 @@ const RunpodJobCard: React.FC<{
   const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
   const isDone = job.status === 'COMPLETED'
   const isRetryable = !!job.status && RUNPOD_RETRYABLE_STATUSES.has(job.status)
+  const jobError = extractRunpodError(job.output)
   const { files: outputFiles, samples: outputSamples } = isDone && job.output
     ? parseRunpodOutput(job.output)
     : { files: [], samples: [] }
@@ -1713,6 +1759,12 @@ const RunpodJobCard: React.FC<{
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 font-medium shrink-0"
+            onClick={onRetry}
+          >
+            Retry
+          </button>
           {job.status && (
             <span className={`text-xs font-medium flex items-center gap-1 ${statusColor}`}>
               {isActive && <Loader2 className="w-3 h-3 animate-spin" />}
@@ -1723,15 +1775,23 @@ const RunpodJobCard: React.FC<{
       </div>
       <span className="text-xs text-muted-foreground font-mono truncate block">{job.job_id}</span>
 
+      {job.check_error && (
+        <p className="text-xs text-yellow-700 dark:text-yellow-400">⚠ Status check failed: {job.check_error}</p>
+      )}
+
       {isRetryable && (
-        <div className="flex items-center justify-between gap-2 text-xs text-yellow-600 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
-          <span>{job.status === 'EXPIRED' ? 'Output expired before it was captured.' : `Job ended with status ${job.status}.`}</span>
-          <button
-            className="font-medium underline underline-offset-2 hover:opacity-70 shrink-0"
-            onClick={onRetry}
-          >
-            Retry job
-          </button>
+        <div className="space-y-2 text-xs text-yellow-700 bg-yellow-50 dark:bg-yellow-950/30 rounded px-2 py-1.5">
+          <span>
+            {jobError?.summary ?? (job.status === 'EXPIRED' ? 'Output expired before it was captured.' : `Job ended with status ${job.status}.`)}
+          </span>
+          {jobError && (
+            <details>
+              <summary className="cursor-pointer font-medium">Error details</summary>
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background/70 p-2 text-[11px] text-foreground">
+                {jobError.detail}
+              </pre>
+            </details>
+          )}
         </div>
       )}
 
