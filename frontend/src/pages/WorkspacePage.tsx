@@ -966,12 +966,17 @@ const CaptionExportTab: React.FC<{
     if (!persona && defaultConfig.persona) setPersona(defaultConfig.persona)
   }, [defaultConfig.persona]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pre-fill dataset_source when Drive upload completes
+  // Pre-fill dataset_source when Drive upload completes (either flow)
   React.useEffect(() => {
     if (driveUploadResult?.fileId) {
       setLoraConfig(prev => ({ ...prev, dataset_source: `gdrive://${driveUploadResult.fileId}` }))
     }
   }, [driveUploadResult])
+  React.useEffect(() => {
+    if (manualExportResult?.fileId) {
+      setLoraConfig(prev => ({ ...prev, dataset_source: `gdrive://${manualExportResult.fileId}` }))
+    }
+  }, [manualExportResult])
 
   // Init caption slots as new entries arrive in manual mode
   React.useEffect(() => {
@@ -1489,12 +1494,12 @@ const CaptionExportTab: React.FC<{
           </div>
           <div className="ml-6 space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground shrink-0">Folder ID:</span>
-              <span className="font-mono text-xs truncate">{manualExportResult.folderId}</span>
+              <span className="text-xs text-muted-foreground shrink-0">Dataset source:</span>
+              <span className="font-mono text-xs truncate">gdrive://{manualExportResult.fileId}</span>
               <button
-                onClick={() => void handleCopyFolderId(manualExportResult.folderId)}
+                onClick={() => void handleCopyFolderId(`gdrive://${manualExportResult.fileId}`)}
                 className="shrink-0 p-1 rounded hover:bg-muted transition-colors"
-                title="Copy folder ID"
+                title="Copy dataset source"
               >
                 {copiedFolderId ? <CheckCircle2 className="w-3 h-3 text-green-600" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
               </button>
