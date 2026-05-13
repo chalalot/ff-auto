@@ -101,6 +101,14 @@ class RunpodJobsStorage:
         finally:
             conn.close()
 
+    def delete_job(self, job_id: str) -> None:
+        conn = self._conn()
+        try:
+            conn.execute("DELETE FROM runpod_jobs WHERE job_id = ?", (job_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
     def list_jobs(self, limit: int = 100) -> list[dict]:
         conn = self._conn()
         conn.row_factory = sqlite3.Row

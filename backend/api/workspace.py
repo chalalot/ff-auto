@@ -9,7 +9,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
-from backend.api.deps import get_image_processing_service, get_image_logs_storage, get_runpod_jobs_storage
+from backend.api.deps import get_image_processing_service, get_image_logs_storage, get_runpod_jobs_storage, get_caption_exports_storage
 from backend.models.workspace import (
     InputImage,
     RefImage,
@@ -191,6 +191,40 @@ def list_executions(
 ):
     rows = storage.get_recent_executions(limit=limit)
     return rows
+
+
+# ------------------------------------------------------------------
+# Persona instructions — read template files for a given persona
+# ------------------------------------------------------------------
+
+@router.get("/persona-instructions/{persona_name}")
+def get_persona_instructions(persona_name: str):
+    from backend.workflows.config_manager import WorkflowConfigManager
+    from backend.config import GlobalConfig
+
+    cfg = WorkflowConfigManager()
+    persona_config = cfg.get_persona_config(persona_name)
+    persona_type = persona_config.get("type", "instagirl")
+
+    template_dir = Path(GlobalConfig.PROMPTS_DIR) / "templates" / persona_type
+    if not template_dir.exists():
+        template_dir = Path(GlobalConfig.PROMPTS_DIR) / "templates" / "instagirl"
+
+    def read(name: str) -> str:
+        try:
+            return (template_dir / name).read_text(encoding="utf-8")
+        except Exception:
+            return ""
+
+    return {
+        "persona_type": persona_type,
+        "analyst_task": read("analyst_task.txt"),
+        "analyst_agent": read("analyst_agent.txt"),
+        "turbo_agent": read("turbo_agent.txt"),
+        "turbo_framework": read("turbo_framework.txt"),
+        "turbo_constraints": read("turbo_constraints.txt"),
+        "turbo_example": read("turbo_example.txt"),
+    }
 
 
 # ------------------------------------------------------------------
@@ -398,7 +432,10 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
 # ------------------------------------------------------------------
 
 @router.post("/caption-export/manual/export-to-drive")
-def caption_export_manual_to_drive(body: ManualExportToDriveRequest):
+def caption_export_manual_to_drive(
+    body: ManualExportToDriveRequest,
+    db: "CaptionExportsStorage" = Depends(get_caption_exports_storage),
+):
     """Build ZIP from manually-supplied captions and upload to Google Drive."""
     import time as _time
     from backend.third_parties import gdrive_client
@@ -423,6 +460,12 @@ def caption_export_manual_to_drive(body: ManualExportToDriveRequest):
     try:
         file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
         public_url = gdrive_client.make_file_public(file_id)
+        db.insert(
+            file_id=file_id,
+            filename=zip_filename,
+            public_url=public_url,
+            image_count=len(body.entries),
+        )
         return {
             "file_id": file_id,
             "filename": zip_filename,
@@ -431,6 +474,13 @@ def caption_export_manual_to_drive(body: ManualExportToDriveRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
+
+
+@router.get("/caption-export/manual/exports")
+def caption_export_manual_list(
+    db: "CaptionExportsStorage" = Depends(get_caption_exports_storage),
+):
+    return db.list_exports()
 
 
 # ------------------------------------------------------------------
@@ -534,6 +584,49 @@ def caption_export_runpod_status(
         output=data.get("output"),
     )
     return data
+
+
+@router.post("/caption-export/runpod/cancel/{job_id}")
+def caption_export_runpod_cancel(
+    job_id: str,
+    endpoint_id: Optional[str] = None,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Send a cancel request to RunPod for an in-flight job, then mark it CANCELLED locally."""
+    import requests as _requests
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not eid:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{eid}/cancel/{job_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        resp = _requests.post(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        # 404 means job is already done — still mark cancelled locally
+        if e.response.status_code != 404:
+            raise HTTPException(status_code=502, detail=f"RunPod cancel error: {e.response.text}")
+
+    db.update_status(job_id, "CANCELLED")
+    return {"job_id": job_id, "status": "CANCELLED"}
+
+
+@router.delete("/caption-export/runpod/jobs/{job_id}")
+def caption_export_runpod_delete(
+    job_id: str,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Remove a job record from the local DB."""
+    db.delete_job(job_id)
+    return {"deleted": job_id}
 
 
 class HFUploadRequest(BaseModel):

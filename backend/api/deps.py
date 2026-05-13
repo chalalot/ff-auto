@@ -49,3 +49,11 @@ from backend.database.runpod_jobs_storage import RunpodJobsStorage
 @lru_cache
 def get_runpod_jobs_storage() -> RunpodJobsStorage:
     return RunpodJobsStorage()
+
+
+from backend.database.caption_exports_storage import CaptionExportsStorage
+
+
+@lru_cache
+def get_caption_exports_storage() -> CaptionExportsStorage:
+    return CaptionExportsStorage()

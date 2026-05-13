@@ -120,6 +120,16 @@ export const workspaceApi = {
       payload,
     ).then(r => r.data),
 
+  runpodCancel: (jobId: string, endpointId?: string) =>
+    apiClient.post<{ job_id: string; status: string }>(
+      `/workspace/caption-export/runpod/cancel/${jobId}`,
+      null,
+      { params: endpointId ? { endpoint_id: endpointId } : undefined }
+    ).then(r => r.data),
+
+  runpodDeleteJob: (jobId: string) =>
+    apiClient.delete(`/workspace/caption-export/runpod/jobs/${jobId}`).then(r => r.data),
+
   runpodStatus: (jobId: string, endpointId?: string) =>
     apiClient.get<{ id: string; status: string; output?: Record<string, unknown> | null }>(
       `/workspace/caption-export/runpod/status/${jobId}`,
@@ -140,4 +150,25 @@ export const workspaceApi = {
       '/workspace/caption-export/manual/export-to-drive',
       payload,
     ).then(r => r.data),
+
+  captionExportHistory: () =>
+    apiClient.get<Array<{
+      id: number
+      file_id: string
+      filename: string
+      public_url: string
+      image_count: number
+      exported_at: string
+    }>>('/workspace/caption-export/manual/exports').then(r => r.data),
+
+  getPersonaInstructions: (personaName: string) =>
+    apiClient.get<{
+      persona_type: string
+      analyst_task: string
+      analyst_agent: string
+      turbo_agent: string
+      turbo_framework: string
+      turbo_constraints: string
+      turbo_example: string
+    }>(`/workspace/persona-instructions/${encodeURIComponent(personaName)}`).then(r => r.data),
 }

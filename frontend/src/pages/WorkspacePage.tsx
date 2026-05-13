@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow, format } from 'date-fns'
-import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy } from 'lucide-react'
+import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy, ExternalLink, BookOpen } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
 
@@ -927,6 +927,18 @@ const CaptionExportTab: React.FC<{
   const [runpodJobsLoaded, setRunpodJobsLoaded] = useState(false)
   const [runpodSubmitting, setRunpodSubmitting] = useState(false)
 
+  // Caption export history
+  type ExportHistoryEntry = { id: number; file_id: string; filename: string; public_url: string; image_count: number; exported_at: string }
+  const [exportHistory, setExportHistory] = useState<ExportHistoryEntry[]>([])
+  const [exportHistoryLoaded, setExportHistoryLoaded] = useState(false)
+  const [copiedExportId, setCopiedExportId] = useState<number | null>(null)
+  React.useEffect(() => {
+    workspaceApi.captionExportHistory()
+      .then(data => setExportHistory(data))
+      .catch(err => console.error('Failed to load export history:', err))
+      .finally(() => setExportHistoryLoaded(true))
+  }, [])
+
   // Auto-refresh active jobs every 10s
   const hasActiveJobs = runpodJobs.some(j => !j.status || RUNPOD_ACTIVE_STATUSES.has(j.status))
   React.useEffect(() => {
@@ -990,6 +1002,14 @@ const CaptionExportTab: React.FC<{
 
   const { data: task } = useTaskProgress(started ? taskId : null)
   const isDone = task?.state === 'SUCCESS' || task?.state === 'FAILURE'
+
+  const [showInstructions, setShowInstructions] = useState(false)
+  const { data: instructions, isFetching: instructionsFetching } = useQuery({
+    queryKey: ['persona-instructions', persona],
+    queryFn: () => workspaceApi.getPersonaInstructions(persona),
+    enabled: showInstructions && !!persona,
+    staleTime: 60_000,
+  })
 
   const handleUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || uploadProgress !== null) return
@@ -1097,6 +1117,14 @@ const CaptionExportTab: React.FC<{
     try {
       const res = await workspaceApi.captionExportManualToDrive({ entries, captions: manualCaptions })
       setManualExportResult({ fileId: res.file_id, folderId: res.folder_id, filename: res.filename, publicUrl: res.public_url })
+      setExportHistory(prev => [{
+        id: Date.now(),
+        file_id: res.file_id,
+        filename: res.filename,
+        public_url: res.public_url,
+        image_count: entries.length,
+        exported_at: new Date().toISOString(),
+      }, ...prev])
     } catch (err: unknown) {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
@@ -1172,7 +1200,18 @@ const CaptionExportTab: React.FC<{
       {/* Config — hidden in manual mode (no AI needed) */}
       <div className={`grid grid-cols-2 gap-4${source === 'manual' ? ' hidden' : ''}`}>
         <div className="space-y-2">
-          <Label>Persona</Label>
+          <div className="flex items-center justify-between">
+            <Label>Persona</Label>
+            {persona && (
+              <button
+                onClick={() => setShowInstructions(true)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <BookOpen className="w-3 h-3" />
+                View instructions
+              </button>
+            )}
+          </div>
           <Select value={persona} onValueChange={setPersona}>
             <SelectTrigger><SelectValue placeholder="Select persona" /></SelectTrigger>
             <SelectContent>
@@ -1508,9 +1547,9 @@ const CaptionExportTab: React.FC<{
               href={manualExportResult.publicUrl}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground block truncate"
+              className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
             >
-              {manualExportResult.publicUrl}
+              View in Drive ↗
             </a>
           </div>
         </div>
@@ -1532,6 +1571,53 @@ const CaptionExportTab: React.FC<{
             {driveUploadResult.publicUrl}
           </a>
         </div>
+      )}
+
+      {/* Caption export history */}
+      {exportHistoryLoaded && exportHistory.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Past Exports</p>
+            <div className="space-y-1.5">
+              {exportHistory.map(entry => (
+                <div key={entry.id} className="border rounded-lg px-3 py-2 flex items-center gap-3 text-xs">
+                  <div className="flex-1 min-w-0 space-y-0.5">
+                    <span className="font-mono font-medium truncate block">{entry.filename}</span>
+                    <span className="text-muted-foreground">
+                      {entry.image_count} image{entry.image_count !== 1 ? 's' : ''} · {new Date(entry.exported_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <a
+                      href={entry.public_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                      title="View in Drive"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      className="p-1 rounded hover:bg-muted transition-colors"
+                      title="Copy dataset source"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(`gdrive://${entry.file_id}`)
+                        setCopiedExportId(entry.id)
+                        setLoraConfig(prev => ({ ...prev, dataset_source: `gdrive://${entry.file_id}` }))
+                        setTimeout(() => setCopiedExportId(null), 1500)
+                      }}
+                    >
+                      {copiedExportId === entry.id
+                        ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                        : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {/* LoRA training config */}
@@ -1635,6 +1721,8 @@ const CaptionExportTab: React.FC<{
                       key={job.job_id}
                       job={job}
                       onRetry={() => void handleRunpodRetry(job)}
+                      onCancel={() => setRunpodJobs(prev => prev.map(p => p.job_id === job.job_id ? { ...p, status: 'CANCELLED' } : p))}
+                      onDelete={() => setRunpodJobs(prev => prev.filter(p => p.job_id !== job.job_id))}
                       statusColor={runpodStatusColor(job.status)}
                     />
                   ))}
@@ -1643,6 +1731,54 @@ const CaptionExportTab: React.FC<{
             )}
         </div>
       </>
+
+      {/* Instructions modal */}
+      {showInstructions && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowInstructions(false)}>
+          <div
+            className="bg-background border rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-muted-foreground" />
+                <span className="font-semibold text-sm">
+                  Instructions — {persona}
+                  {instructions && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({instructions.persona_type})</span>}
+                </span>
+              </div>
+              <button onClick={() => setShowInstructions(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4 space-y-4 text-sm">
+              {instructionsFetching ? (
+                <div className="flex items-center justify-center py-8 text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />Loading...
+                </div>
+              ) : instructions ? (
+                <>
+                  {[
+                    { label: 'Step 1 — Vision Prompt (analyst_task.txt)', content: instructions.analyst_task },
+                    { label: 'Analyst Agent Backstory', content: instructions.analyst_agent },
+                    { label: 'Prompt Engineer Backstory', content: instructions.turbo_agent },
+                    { label: 'Step 2 — Framework (turbo_framework.txt)', content: instructions.turbo_framework },
+                    { label: 'Constraints (turbo_constraints.txt)', content: instructions.turbo_constraints },
+                    { label: 'Example Output (turbo_example.txt)', content: instructions.turbo_example },
+                  ].filter(s => s.content).map(section => (
+                    <div key={section.label}>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">{section.label}</p>
+                      <pre className="text-xs bg-muted rounded-lg p-3 whitespace-pre-wrap break-words font-mono leading-relaxed">{section.content}</pre>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-muted-foreground text-xs">No instructions found.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1721,14 +1857,44 @@ function extractRunpodError(output: Record<string, unknown> | null): { summary: 
 const RunpodJobCard: React.FC<{
   job: RunpodJobEntry
   onRetry: () => void
+  onCancel: () => void
+  onDelete: () => void
   statusColor: string
-}> = ({ job, onRetry, statusColor }) => {
+}> = ({ job, onRetry, onCancel, onDelete, statusColor }) => {
   const [showJson, setShowJson] = useState(false)
   const [hfUploading, setHfUploading] = useState<string | null>(null) // filename being uploaded
   const [hfResults, setHfResults] = useState<Record<string, string>>({}) // filename → hf url
+  const [cancelling, setCancelling] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const isActive = !job.status || job.status === 'IN_QUEUE' || job.status === 'IN_PROGRESS'
   const isDone = job.status === 'COMPLETED'
   const isRetryable = !!job.status && RUNPOD_RETRYABLE_STATUSES.has(job.status)
+
+  const handleCancel = async () => {
+    setCancelling(true)
+    try {
+      await workspaceApi.runpodCancel(job.job_id, job.endpoint_id)
+      onCancel()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Cancel failed'
+      alert(detail)
+    } finally {
+      setCancelling(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await workspaceApi.runpodDeleteJob(job.job_id)
+      onDelete()
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Delete failed'
+      alert(detail)
+    } finally {
+      setDeleting(false)
+    }
+  }
   const jobError = extractRunpodError(job.output)
   const { files: outputFiles, samples: outputSamples } = isDone && job.output
     ? parseRunpodOutput(job.output)
@@ -1764,11 +1930,29 @@ const RunpodJobCard: React.FC<{
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {isActive && (
+            <button
+              className="text-xs text-muted-foreground hover:text-destructive underline underline-offset-2 font-medium shrink-0 flex items-center gap-1"
+              onClick={() => void handleCancel()}
+              disabled={cancelling}
+            >
+              {cancelling ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              Cancel
+            </button>
+          )}
           <button
             className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 font-medium shrink-0"
             onClick={onRetry}
           >
             Retry
+          </button>
+          <button
+            className="text-xs text-muted-foreground hover:text-destructive shrink-0 flex items-center gap-0.5"
+            onClick={() => void handleDelete()}
+            disabled={deleting}
+            title="Remove from history"
+          >
+            {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
           </button>
           {job.status && (
             <span className={`text-xs font-medium flex items-center gap-1 ${statusColor}`}>
