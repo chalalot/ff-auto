@@ -703,8 +703,8 @@ def caption_export_upload_to_hf(body: HFUploadRequest):
         except Exception:
             pass
 
-    hf_url = f"https://huggingface.co/{repo_id}/blob/main/{filename}"
-    return {"repo_id": repo_id, "filename": filename, "url": hf_url}
+    download_url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    return {"repo_id": repo_id, "filename": filename, "url": download_url}
 
 
 # ------------------------------------------------------------------
