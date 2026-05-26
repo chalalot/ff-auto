@@ -17,3 +17,9 @@ why: sau khi manual export lên Drive, UI hiển thị "Folder ID" và copy sai 
 did: (1) fix "Folder ID" → hiển thị đúng fileId dưới dạng gdrive://{fileId}, copy cũng copy đúng string này, pre-fill dataset_source cho manual export flow giống drive upload flow; (2) thêm check_error field vào RunpodJobEntry — khi auto-poll 404 mark EXPIRED, các lỗi khác hiển thị warning message inline thay vì silent fail; thêm extractRunpodError helper parse traceback/error/stderr từ output để hiện summary rõ ràng trên job card; (3) thêm missing `from pydantic import BaseModel` vào backend/api/workspace.py
 result: dataset source được fill đúng sau export, không còn paste nhầm folder ID; lỗi training job hiện rõ lý do (kể cả GDrive permission error với message hướng dẫn cụ thể); backend không còn crash khi start
 ---
+
+[2026-05-26 16:40] [FireFlower]
+why: grok-4-1-fast-non-reasoning bị xAI retire từ 15/5/2026, worker crash với lỗi 400 "stop param not supported"; gemini-1.5-*-latest alias cũng bị deprecated
+did: đổi model grok sang grok-4.3, chuyển provider prefix từ openai/ sang xai/ để litellm dùng đúng supported params list (loại bỏ stop param), thêm drop_params=True, cập nhật gemini alias map từ gemini-1.5-* sang gemini-2.5-flash trong 3 file: services/config.py, tools/vision_tool.py, workflows/image_to_prompt_workflow.py, workflows/video_storyboard_workflow.py
+result: worker không còn crash với lỗi stop param, model name đúng với API hiện tại của xAI
+---

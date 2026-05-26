@@ -53,8 +53,7 @@ class ImageToPromptWorkflow:
             litellm.failure_callback = []
 
             llm = LLM(
-                model="openai/" + vision_model,
-                base_url="https://api.x.ai/v1",
+                model="xai/" + vision_model,
                 api_key=GlobalConfig.GROK_API_KEY
             )
             logger.info(f"Initialized cached Grok LLM ({vision_model}) for Agents")

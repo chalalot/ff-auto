@@ -4,7 +4,6 @@ from typing import Dict, List, Any
 from crewai import Agent, Task, Crew, Process, LLM
 from backend.tools.vision_tool import VisionTool
 from backend.config import GlobalConfig
-import os
 
 class VideoStoryboardWorkflow:
     """
@@ -32,34 +31,13 @@ class VideoStoryboardWorkflow:
             litellm.suppress_debug_info = True
             litellm.success_callback = []
             litellm.failure_callback = []
-            
-            # FORCE Environment Variables for LiteLLM
-            original_api_key = os.environ.get("OPENAI_API_KEY")
-            original_api_base = os.environ.get("OPENAI_API_BASE")
 
-            if GlobalConfig.GROK_API_KEY:
-                os.environ["OPENAI_API_KEY"] = GlobalConfig.GROK_API_KEY
-                os.environ["OPENAI_API_BASE"] = "https://api.x.ai/v1"
-            
-            try:
-                llm = LLM(
-                    model="openai/" + model_name,
-                    base_url="https://api.x.ai/v1",
-                    api_key=GlobalConfig.GROK_API_KEY
-                )
-                print(f"Using Grok LLM ({model_name}) for Agents")
-                return llm
-            finally:
-                # Restore original environment variables
-                if original_api_key:
-                    os.environ["OPENAI_API_KEY"] = original_api_key
-                elif "OPENAI_API_KEY" in os.environ:
-                    del os.environ["OPENAI_API_KEY"]
-                
-                if original_api_base:
-                    os.environ["OPENAI_API_BASE"] = original_api_base
-                elif "OPENAI_API_BASE" in os.environ:
-                    del os.environ["OPENAI_API_BASE"]
+            llm = LLM(
+                model="xai/" + model_name,
+                api_key=GlobalConfig.GROK_API_KEY
+            )
+            print(f"Using Grok LLM ({model_name}) for Agents")
+            return llm
 
         elif model_name.lower().startswith("gemini"):
             _GEMINI_ALIASES = {
