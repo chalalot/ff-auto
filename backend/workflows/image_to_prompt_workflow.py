@@ -36,21 +36,22 @@ class ImageToPromptWorkflow:
         if vision_model.lower().startswith("grok"):
             from crewai import LLM
             import litellm
-            
+
             litellm.telemetry = False
-            
+            litellm.drop_params = True  # Grok doesn't support 'stop' param
+
             # Conditionally enable deep litellm debugging if workflow is verbose
             if self.verbose:
                 litellm.set_verbose = True
                 litellm.turn_off_message_logging = False
                 litellm.suppress_debug_info = False
             else:
-                litellm.turn_off_message_logging = True 
+                litellm.turn_off_message_logging = True
                 litellm.suppress_debug_info = True
-                
+
             litellm.success_callback = []
             litellm.failure_callback = []
-            
+
             llm = LLM(
                 model="openai/" + vision_model,
                 base_url="https://api.x.ai/v1",
@@ -60,9 +61,9 @@ class ImageToPromptWorkflow:
         elif vision_model.lower().startswith("gemini"):
             from crewai import LLM
             _GEMINI_ALIASES = {
-                "gemini-1.5-pro": "gemini-1.5-pro-latest",
-                "gemini-1.5-flash": "gemini-1.5-flash-latest",
-                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-pro": "gemini-2.5-flash",
+                "gemini-1.5-flash": "gemini-2.5-flash",
+                "gemini-1.0-pro": "gemini-2.5-flash",
             }
             resolved = _GEMINI_ALIASES.get(vision_model, vision_model)
             if resolved != vision_model:
@@ -177,7 +178,7 @@ class ImageToPromptWorkflow:
             image_path: Path to local image file.
             persona_name: Name of the persona (e.g. "Jennie").
             workflow_type: Type of workflow ("turbo").
-            vision_model: The vision model to use ("gpt-4o" or "grok-4-1-fast-non-reasoning").
+            vision_model: The vision model to use ("gpt-4o" or "grok-4.3").
             variation_count: Number of prompt variations to generate (default: 1).
             
         Returns:

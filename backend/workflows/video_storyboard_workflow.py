@@ -27,6 +27,7 @@ class VideoStoryboardWorkflow:
             import litellm
             # DISABLE LiteLLM Telemetry & Callbacks
             litellm.telemetry = False
+            litellm.drop_params = True  # Grok doesn't support 'stop' param
             litellm.turn_off_message_logging = True
             litellm.suppress_debug_info = True
             litellm.success_callback = []
@@ -62,9 +63,9 @@ class VideoStoryboardWorkflow:
 
         elif model_name.lower().startswith("gemini"):
             _GEMINI_ALIASES = {
-                "gemini-1.5-pro": "gemini-1.5-pro-latest",
-                "gemini-1.5-flash": "gemini-1.5-flash-latest",
-                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-pro": "gemini-2.5-flash",
+                "gemini-1.5-flash": "gemini-2.5-flash",
+                "gemini-1.0-pro": "gemini-2.5-flash",
             }
             resolved = _GEMINI_ALIASES.get(model_name, model_name)
             if resolved != model_name:

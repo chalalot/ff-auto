@@ -169,7 +169,7 @@ class ConfigService:
     def get_vision_models(self) -> List[Dict[str, str]]:
         return [
             {"label": "ChatGPT (gpt-4o)", "value": "gpt-4o"},
-            {"label": "Grok (grok-4-1-fast-non-reasoning)", "value": "grok-4-1-fast-non-reasoning"},
+            {"label": "Grok (grok-4.3)", "value": "grok-4.3"},
             {"label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro"},
         ]
 

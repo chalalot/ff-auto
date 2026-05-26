@@ -63,9 +63,9 @@ class VisionTool(BaseTool):
 
             # Map deprecated/bare model names to their current equivalents
             _GEMINI_ALIASES = {
-                "gemini-1.5-pro": "gemini-1.5-pro-latest",
-                "gemini-1.5-flash": "gemini-1.5-flash-latest",
-                "gemini-1.0-pro": "gemini-1.5-pro-latest",
+                "gemini-1.5-pro": "gemini-2.5-flash",
+                "gemini-1.5-flash": "gemini-2.5-flash",
+                "gemini-1.0-pro": "gemini-2.5-flash",
             }
             resolved_model = _GEMINI_ALIASES.get(self.model_name, self.model_name)
             if resolved_model != self.model_name:
