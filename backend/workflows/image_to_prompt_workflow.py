@@ -169,7 +169,7 @@ class ImageToPromptWorkflow:
             llm=llm
         )
 
-    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1, clip_model_type: str = "sd3") -> Dict[str, Any]:
+    async def process(self, image_path: str, persona_name: str = "Jennie", workflow_type: str = "turbo", vision_model: str = "gpt-4o", variation_count: int = 1, clip_model_type: str = "qwen_image") -> Dict[str, Any]:
         """
         Run the workflow for a single image.
         
@@ -324,7 +324,7 @@ class ImageToPromptWorkflow:
         for i in range(variation_count):
             task = Task(
                 description=f"Based on this visual analysis of the reference image:\n\n{vision_result}\n\n{base_instruction}",
-                expected_output=f"A detailed paragraph describing the image (Variation {i+1})",
+                expected_output=f"A two-section Z-Image prompt with #Subject and #Environment headers (Variation {i+1})",
                 agent=turbo_engineer,
             )
             generate_prompt_tasks.append(task)
@@ -337,7 +337,7 @@ class ImageToPromptWorkflow:
             verbose=self.verbose
         )
 
-        crew.kickoff()
+        await crew.kickoff_async()
 
         # Collect generated prompts
         generated_prompts = []

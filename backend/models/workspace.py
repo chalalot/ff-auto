@@ -33,7 +33,7 @@ class ProcessImageRequest(BaseModel):
     width: int = 1024
     height: int = 1600
     lora_name: str = ""
-    clip_model_type: str = "sd3"
+    clip_model_type: str = "qwen_image"
 
 
 class ProcessBatchRequest(BaseModel):
@@ -49,7 +49,7 @@ class ProcessBatchRequest(BaseModel):
     width: int = 1024
     height: int = 1600
     lora_name: str = ""
-    clip_model_type: str = "sd3"
+    clip_model_type: str = "qwen_image"
 
 
 class TaskStatusResponse(BaseModel):

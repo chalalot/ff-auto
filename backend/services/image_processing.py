@@ -116,7 +116,7 @@ class ImageProcessingService:
         width: int = 1024,
         height: int = 1600,
         lora_name: str = "",
-        clip_model_type: str = "sd3",
+        clip_model_type: str = "qwen_image",
         prepare: bool = True,
     ) -> str:
         """

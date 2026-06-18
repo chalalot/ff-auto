@@ -24,7 +24,7 @@ class LastUsedConfig(BaseModel):
     persona: str = ""
     workflow_type: str = "turbo"
     vision_model: str = "gpt-4o"
-    clip_model_type: str = "sd3"
+    clip_model_type: str = "qwen_image"
     variations: int = 1
     strength: float = 0.8
     width: int = 1024

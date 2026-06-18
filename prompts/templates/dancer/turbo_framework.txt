@@ -1,0 +1,48 @@
+---
+
+## 2. OUTPUT FORMAT — STRICT PARAGRAPH CONTRACT
+
+You MUST output exactly **9 paragraphs** in the base case (FACE_VISIBLE). The count reduces to **7** when FACE_NOT_VISIBLE because Expression and Makeup are omitted.
+
+**Formatting rules:**
+- Each paragraph corresponds to ONE section in the required order.
+- Each paragraph separated by a blank line.
+- DO NOT merge sections. DO NOT write as one long paragraph.
+- DO NOT use numbering, headers, or bullet points in the output.
+- Each paragraph should be **30–60 tokens**.
+**Required paragraph order:**
+
+1. **TRIGGER + SUBJECT + CAMERA & FRAMING**
+2. **POSE & BODY DYNAMICS**
+3. **OUTFIT & ACCESSORIES**
+4. **HAIR**
+5. **EXPRESSION** *(conditional — FACE_VISIBLE only; OMIT for FACE_NOT_VISIBLE)*
+6. **MAKEUP** *(conditional — FACE_VISIBLE only; OMIT for FACE_NOT_VISIBLE)*
+7. **SKIN & PHOTO FINISH**
+8. **LIGHTING, COLOR GRADING & DEPTH OF FIELD**
+9. **BACKGROUND & ENVIRONMENT**
+
+**Resulting paragraph counts:**
+- FACE_VISIBLE → **9 paragraphs**
+- FACE_NOT_VISIBLE → **7 paragraphs** (skip Expression + Makeup)
+
+---
+
+## 2B. SUBJECT / ENVIRONMENT SPLIT
+
+Your final returned output MUST be split into exactly two sections with these headers:
+
+`#Subject`
+
+`#Environment`
+
+Rules:
+- `#Subject` contains persona identity, transient expression, pose/body dynamics, wardrobe/accessories, hair lock, skin/photo finish, and subject-side lighting integration.
+- `#Environment` contains camera distance/framing, point of view, lens/depth behavior, foreground/midground/background objects, material surfaces, scale anchors, and environmental lighting.
+- Do not duplicate the same full scene paragraph in both sections.
+- The old 9-paragraph order is used internally to decide what information belongs where; do not output those 9 paragraphs as the final answer.
+- The `#Subject` section must be one compact prompt block in quotation-friendly prose.
+- The `#Environment` section MUST be structurally broken down into specific spatial zones (Foreground, Midground, Background, Sky).
+- Each spatial zone MUST be written as its own separate paragraph in quotation-friendly prose.
+- In each paragraph, explicitly describe the dominant color tones alongside the elements.
+- No bullets, numbering, sub-headers, markdown tables, explanations, or analysis outside the two required headers.

@@ -79,7 +79,7 @@ class GlobalConfig:
     GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS")
 
     # ComfyUI API Settings
-    CLOUD_COMFY_API_URL = os.getenv("COMFYUI_API_URL", os.getenv("CLOUD_COMFY_API_URL", "https://cloud.comfy.org/api"))
+    CLOUD_COMFY_API_URL = os.getenv("CLOUD_COMFY_API_URL", os.getenv("COMFYUI_API_URL", "https://cloud.comfy.org/api"))
     COMFYUI_API_KEY = os.getenv("COMFYUI_API_KEY")
     COMFYUI_API_TIMEOUT = int(os.getenv("COMFYUI_API_TIMEOUT", "1000"))
     COMFYUI_POLL_INTERVAL = int(os.getenv("COMFYUI_POLL_INTERVAL", "5"))
@@ -94,6 +94,7 @@ class GlobalConfig:
 
     # Prompts directory (for personas, presets, templates)
     PROMPTS_DIR = os.getenv("PROMPTS_DIR", "prompts")
+    UPLOAD_GCS = False
 
     @classmethod
     def get_sqlite_connect_args(cls):

@@ -37,7 +37,7 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   width: 1024,
   height: 1600,
   lora_name: '',
-  clip_model_type: 'sd3',
+  clip_model_type: 'qwen_image',
 }
 
 export const WorkspacePage: React.FC = () => {

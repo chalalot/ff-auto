@@ -1,0 +1,179 @@
+---
+
+## 3. DETAILED CONSTRAINTS PER PARAGRAPH
+
+### Subject / Environment Prompt Routing
+
+Use the paragraph constraints below as source material, then route the final answer into `#Subject` and `#Environment`.
+
+**MANDATORY `#Subject` anchor opening:**
+> EMI_woman, fair porcelain skin, stunningly beautiful youthful Western facial features with an elegant, highly defined Caucasian bone structure.
+>
+> Her signature short layered bob haircut in beautiful platinum blonde.
+
+Continue the `#Subject` prompt immediately after this anchor with:
+- mood, gaze, transient expression, and face visibility from Analyst Categories A/B/H
+- pose and body dynamics from Category B
+- outfit, accessories, and handheld objects from Category C
+- subject-side lighting and skin/photo finish from Categories E/G
+- a short integration phrase that connects the subject to the scene lighting, without turning the subject prompt into a background prompt
+
+Do not let the reference image override the two anchor sentences. Do not replace EMI_woman, skin identity wording, face-bone wording, or platinum-blonde bob wording.
+
+**`#Environment` prompt requirements:**
+- Start with camera/framing/scene setting language based on Analyst Category A and E (e.g., "The scene is a tranquil outdoor setting...").
+- Include camera distance, point of view, and lens/depth behavior.
+- MUST explicitly divide the environment into spatial zones: Foreground, Midground, Background, and Sky (if applicable), dedicating one full prose paragraph to each zone.
+- For each paragraph/zone, MUST describe the elements (Category D) and explicitly integrate their color tones (Category E) into the natural prose.
+- Include material surfaces, scale anchors, and readable environmental detail.
+- Keep the environment prompt free of persona identity details, hair details, makeup, face structure, and outfit specifics unless needed as a scale/contact anchor.
+
+**Adapter example shape:**
+`#Subject` should read like the subject/persona conditioning node.
+`#Environment` should read like the environment/layout conditioning node.
+
+---
+
+### Paragraph 1 — TRIGGER + SUBJECT + CAMERA & FRAMING
+
+**MANDATORY opening:** `EMI_woman, a young woman`
+For the current adapter output, this legacy opening is superseded by the mandatory `#Subject` anchor above. Keep this paragraph rule only as a construction aid for camera/framing extraction.
+
+Append camera data from Analyst's Category A:
+- Framing (close-up / medium shot / cowboy shot / full body)
+- Vertical angle (eye-level / low-angle / high-angle / top-down)
+- Subject viewpoint ("captured from the front", "in three-quarter profile", "from behind")
+- Optional: lens behavior if notable
+- Subject-to-environment scale and camera distance if the Analyst reported it
+**FACE_NOT_VISIBLE**: state face is hidden here.
+
+**SOCIAL PHOTO NORMALIZATION:** If the Analyst says portrait, close-up, editorial, compressed background, or head/upper torso dominate, translate it into natural social-photo language unless there is explicit magazine/studio evidence. Prefer "natural medium close-up", "upper-body social photo", "realistic camera distance", and "surrounding environment still visible". Do not write "magazine cover", "editorial portrait", or "head and upper torso dominate" unless the reference contains those exact cues.
+
+**Example (MODE_FULL + FACE_VISIBLE):**
+> EMI_woman, a young woman, full body shot captured from the + > front at eye-level, standard focal length with minimal distortion.
+
+---
+
+### Paragraph 2 — POSE & BODY DYNAMICS
+
+Translate Analyst's Category B spatial/anatomical cues.
+
+**MUST include:** spine orientation, body rotation vs camera, weight distribution / hip tilt if standing, limb placement, head orientation.
+
+**DO NOT:** use numeric degrees, body shape words, facial/expression info.
+
+**Example:**
+> Standing in contrapposto with weight on left leg, lateral hip tilt, torso angled ten degrees left, right arm raised with hand tucked into hair at crown, left arm relaxed at side, head turned slightly back over right shoulder.
+
+---
+
+### Paragraph 3 — OUTFIT & ACCESSORIES
+
+Integrate Analyst's Category C. Preserve exact color codes verbatim.
+
+**MUST include:** garment types, exact colors, fabric physics, construction details, all accessories.
+
+**Example:**
+> Optic White camisole top in lightweight cotton blend, spaghetti straps, natural drape, fine gold-toned chain necklace with small teardrop pendant holding a pale translucent green stone in matching gold bezel.
+
+---
+
+### Paragraph 4 — HAIR
+
+Ignore Analyst hair observations and inject the fixed EMI identity hair. The reference image must never override this paragraph.
+
+**MANDATORY hair paragraph:**
+> Her signature short layered bob haircut, pale golden blonde and champagne blonde with subtle darker blonde roots, jaw-to-neck length, softly textured layers framing the face, natural flyaways and slight everyday movement, no bangs, no long hair, no dark hair.
+
+---
+
+### Paragraph 5 — EXPRESSION
+*(CONDITIONAL: FACE_VISIBLE only)*
+
+**IF Analyst Status = FACE_NOT_VISIBLE:** OMIT this paragraph.
+- Write **only transient facial muscle states** in this paragraph: + emotions, eye movements, mouth movements, gaze direction,
+- facial muscle tension. Do NOT include makeup here (separate paragraph).
+
+**CRITICAL RULE:** ABSOLUTELY DO NOT describe permanent facial + structure features ("high nose," "thin lips," "round face," + "pointed chin," "big eyes," etc.) — these dilute LoRA learning.
+
+**Example:**
+> Lips slightly parted in neutral position, eyes engaging the
+> camera directly with a relaxed gaze, tension-free facial muscles.
+
+---
+
+### Paragraph 6 — MAKEUP
+*(CONDITIONAL: FACE_VISIBLE only)*
+
+**IF Analyst Status = FACE_NOT_VISIBLE:** OMIT this paragraph.
+
+**IF FACE_VISIBLE:
+** translate Analyst's "Makeup Observation" into granular product description.
+**Each sub-feature must be enumerated separately**, never collapsed into umbrella label.
+
+**Required sub-features:**
+- Blush (color + finish + placement) — or "no blush"
+- Lipstick (color + finish + opacity) — or "uncolored natural lips"
+- Mascara (intensity + lashes covered) — or "no mascara"
+- Eyeliner (style + thickness) — or "no eyeliner"
+- Eyeshadow (color + style) — or "no eyeshadow"
+- Brows (shape + density) — or "untreated natural brows"
+- Contour & Highlight (placement) — or "no contour, no highlight"
+- Overall style label (e.g. "polished feminine everyday makeup", "smoky evening glam", "no-makeup look")
+
+**CRITICAL LANGUAGE RULE:**
+Describe PRODUCTS APPLIED, never facial structure beneath. Reuse Analyst's "ALLOWED vs FORBIDDEN" table (matte red lipstick ✓, full red lips ✗).
+
+**Example:**
+> Soft pink blush diffused on the apples of the cheeks, glossy
+> nude-pink lipstick with sheer finish, dark mascara on upper
+> lashes only, no eyeliner, no eyeshadow, defined arched brows
+> with soft fill, light highlight on the nose bridge, no contour,
+> polished feminine everyday makeup.
+
+—--
+
+### Paragraph 7 — SKIN & PHOTO FINISH
+Translate Analyst's Category G.
+**MUST include:** skin texture descriptor, photo finish quality, image quality.
+
+**Examples of valid descriptors:**
+- "smooth retouched skin with soft glow"
+- "natural skin texture with visible pores"
+- "sun-warmed skin with slight specular highlights"
+- "matte finish skin"
+- "vintage film grain across the image"
+- "polished editorial finish"
+- "raw unfiltered look"
+
+**FORBIDDEN:** "flawless skin", "perfect complexion", "porcelain skin" (these are identity-leak — they describe skin tone/quality as character feature instead of photo finish).
+**SOCIAL PHOTO TARGET:** Prefer natural skin texture, subtle pores, normal camera rendering, and mild real-photo grain. Avoid converting the Analyst report into "retouched smooth skin", "clean digital polished editorial finish", or "studio beauty retouching" unless explicitly required by the user.
+
+**Example:**
+> Smooth retouched skin with soft glow, slightly filtered
+> editorial finish.
+
+—--
+### Paragraph 8 — LIGHTING, COLOR GRADING & DEPTH OF FIELD
+
+Integrate Analyst's Category E.
+You must explicitly extract and integrate the following elements from the Analyst's report:
+- Light Source & Quality: Describe exactly where the light originates (e.g., window, studio strobe) and its physical behavior (hard, sharp shadows vs. soft, wrap-around diffusion).
+- Color Grading & Tone: Integrate the Analyst's specific tint shifts and atmospheric color casts (e.g., matte, desaturated, warm cast, cool shadow tones).
+- Depth & Scale Continuity: keep the background readable enough to judge object scale. Use moderate depth of field, not heavy telephoto compression, unless the source explicitly requires it.
+
+EXAMPLES OF EXECUTION:
+- Bad Execution: "The scene is lit with vibrant, perfectly balanced sunlight. The background features a beautiful bokeh effect, making the subject pop." (Fails: Uses "vibrant", "perfectly balanced", and "bokeh". Ignores the deep focus constraint and Analyst's specific color grading).
+- Good Execution: "Illuminated by a soft, diffused window light that creates gentle contrast, the scene features a desaturated color grading with cool shadow tones and a natural, camera-auto color look. Captured with high aperture photography (f/8), there is a deep depth of field, ensuring that both the subject and all background environmental details are in sharp, crystal clear focus." (Succeeds: Uses Analyst's data, applies grounded color terms, strictly avoids "vibrant", and forcefully dictates universal clarity).
+---
+
+### Paragraph 9 — BACKGROUND & ENVIRONMENT
+
+Integrate Analyst's Category D.
+Your objective is to build a tactile, lived-in environment based on the Analyst's data. You must defeat the "AI plastic look" by emphasizing material textures, everyday wear-and-tear, and natural chaos.
+A. WHAT TO WRITE (Content Requirements)
+- **Surface Grounding (CRITICAL FOR POSTURE):** You MUST physically ground the subject to their environment.
+- **Object Specificity:** Extract and name the exact background objects identified by the Analyst (e.g., "a vintage brass lamp," "stacked paperback books"). Never use lazy, generic terms like "furniture," "stuff," or "plants."
+- **Material Surfaces:** Explicitly describe what things are made of (e.g., peeling paint, porous concrete, smudged glass, damp tiles, unfinished wood).
+- **Scale Coherence:** Write the environment so the subject appears physically present inside it. Include believable human-to-object scale, realistic distance to chairs/tables/walls/trees/background people, and no oversized fixtures hovering directly behind the head.
+- **Readable Background:** Keep enough midground and background structure visible for a natural social/media post. Do not reduce the environment to anonymous blur unless the reference image truly requires it.
