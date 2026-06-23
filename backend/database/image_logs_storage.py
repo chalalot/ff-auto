@@ -208,18 +208,46 @@ class ImageLogsStorage:
             conn.close()
 
     def get_execution_by_result_path(self, result_image_path: str):
-        """Get execution details by result image path."""
+        """Get execution details by result image path.
+
+        A single execution can produce several result images (variations); their
+        paths are stored comma-joined in ``result_image_path``. We therefore match
+        in three escalating steps:
+          1. exact value (single-image executions),
+          2. membership in the comma-joined list,
+          3. basename match — so lookups still succeed when the caller's path
+             prefix differs from the stored one (e.g. the gallery scans a
+             different mount than the worker that wrote the row).
+        """
         conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
-                SELECT * FROM image_logs 
-                WHERE result_image_path = ?
-            """, (result_image_path,))
+            # Step 1: exact match (fast path for single-image executions).
+            cursor.execute(
+                "SELECT * FROM image_logs WHERE result_image_path = ?",
+                (result_image_path,),
+            )
             row = cursor.fetchone()
-            return dict(row) if row else None
+            if row:
+                return dict(row)
+
+            # Steps 2 & 3: narrow candidates by basename, then verify in Python.
+            target_base = os.path.basename(result_image_path)
+            if not target_base:
+                return None
+            cursor.execute(
+                "SELECT * FROM image_logs WHERE result_image_path LIKE ?",
+                (f"%{target_base}%",),
+            )
+            for row in cursor.fetchall():
+                parts = [p for p in (row["result_image_path"] or "").split(",") if p]
+                if result_image_path in parts:
+                    return dict(row)
+                if target_base in {os.path.basename(p) for p in parts}:
+                    return dict(row)
+            return None
         except Exception as e:
             logger.error(f"Failed to fetch execution by path: {e}")
             return None

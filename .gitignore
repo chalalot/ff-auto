@@ -15,6 +15,11 @@ Sorted/
 processed/
 results/
 prompts/
+.agents/
+docs/
+z-image/
+tests/
+
 # --- Python ---
 __pycache__/
 **/__pycache__/
@@ -42,6 +47,8 @@ frontend/.vite/
 *.mov
 *.avi
 *.zip
+.claude
+.codegraph
 
 # --- OS ---
 .DS_Store
