@@ -299,6 +299,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
   const [evaluationLoading, setEvaluationLoading] = useState(true)
   const [detailTab, setDetailTab] = useState<'details' | 'evaluator'>('details')
   const backdropPointerStartedRef = React.useRef(false)
+  const scrollRef = React.useRef<HTMLDivElement>(null)
   const refImageUrl = galleryApi.getRefImageUrl(image.filename, status)
 
   const loadSavedEvaluation = React.useCallback(async () => {
@@ -339,6 +340,12 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
     void loadSavedEvaluation()
   }, [image.filename, image.path, loadSavedEvaluation, status])
 
+  // Switching tabs swaps in differently-sized content; anchor the dialog back
+  // to the top so the new tab isn't shown mid-scroll.
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [detailTab])
+
   React.useEffect(() => {
     if (evaluation?.status !== 'pending') return
     const intervalId = window.setInterval(() => {
@@ -359,6 +366,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
       }}
     >
       <div
+        ref={scrollRef}
         className="bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 relative"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
