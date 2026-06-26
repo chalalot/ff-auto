@@ -65,3 +65,11 @@ from backend.database.caption_exports_storage import CaptionExportsStorage
 @lru_cache
 def get_caption_exports_storage() -> CaptionExportsStorage:
     return CaptionExportsStorage()
+
+
+from backend.services.analysis import AnalysisService
+
+
+@lru_cache
+def get_analysis_service() -> AnalysisService:
+    return AnalysisService()
