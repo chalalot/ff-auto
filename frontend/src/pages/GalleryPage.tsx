@@ -356,7 +356,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 py-[5vh]"
       onPointerDownCapture={(e) => {
         backdropPointerStartedRef.current = e.target === e.currentTarget
       }}
