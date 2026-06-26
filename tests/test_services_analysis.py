@@ -12,7 +12,17 @@ def svc(_temp_dirs, tmp_path):
     gallery = GalleryService()
     # _temp_dirs is session-scoped, so wipe the three folders for a clean
     # universe in each test (exact-count assertions depend on it).
+    # SAFETY: only ever unlink inside a pytest tmp path. If env isolation has
+    # not engaged and these point at a real data dir, refuse — never delete
+    # real generated images. (This guard exists because an earlier version
+    # wiped the real OUTPUT_DIR when the conftest env-patch lost the import race.)
+    import tempfile
+    safe_root = str(tmp_path)
     for d in (gallery.output_dir, gallery.approved_dir, gallery.disapproved_dir):
+        resolved = str(d.resolve())
+        assert resolved.startswith(tempfile.gettempdir()) or "/pytest" in resolved or resolved.startswith(safe_root), (
+            f"Refusing to wipe non-temp dir {resolved!r} — test isolation is broken"
+        )
         for entry in d.iterdir():
             if entry.is_file():
                 entry.unlink()
