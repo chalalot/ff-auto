@@ -1,7 +1,7 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2 } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3 } from 'lucide-react'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import type { ActiveTask } from '@/types'
 
@@ -30,6 +30,7 @@ function getWorkerBanner(tasks: ActiveTask[]): { label: string; detail: string }
 const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; disabled?: boolean }[] = [
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
+  { to: '/analysis', label: 'Analysis', icon: BarChart3 },
   { to: '/archive', label: 'Archive', icon: Archive },
   { to: '/video', label: 'Video', icon: Video },
   { to: '/monitor', label: 'Monitor', icon: Activity },
