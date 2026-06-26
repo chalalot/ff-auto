@@ -37,11 +37,25 @@ class GlobalConfig:
     OPENAI_API_BASE = os.getenv("OPENAI_BASE_URL")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-    # GROK (xAI)
-    GROK_API_KEY = os.getenv("GROK_API_KEY")
-
     # GEMINI (Google)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+    # LLM media evaluator (OpenAI-compatible endpoint)
+    EVALUATOR_MODEL = os.getenv("EVALUATOR_MODEL", "gemma-4-31b-it")
+    _EVALUATOR_IS_GOOGLE_MODEL = EVALUATOR_MODEL.startswith(("gemini-", "gemma-", "models/gemini-", "models/gemma-", "google/gemini-", "google/gemma-"))
+    _DEFAULT_EVALUATOR_API_BASE = (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+        if _EVALUATOR_IS_GOOGLE_MODEL and GEMINI_API_KEY
+        else OPENAI_API_BASE
+    )
+    EVALUATOR_API_BASE = os.getenv("EVALUATOR_BASE_URL", os.getenv("EVALUATOR_API_BASE", _DEFAULT_EVALUATOR_API_BASE))
+    EVALUATOR_API_KEY = os.getenv(
+        "EVALUATOR_API_KEY",
+        GEMINI_API_KEY if _EVALUATOR_IS_GOOGLE_MODEL and EVALUATOR_API_BASE else OPENAI_API_KEY,
+    )
+
+    # GROK (xAI)
+    GROK_API_KEY = os.getenv("GROK_API_KEY")
 
     # API
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
