@@ -110,6 +110,11 @@ class GlobalConfig:
     PROMPTS_DIR = os.getenv("PROMPTS_DIR", "prompts")
     UPLOAD_GCS = False
 
+    # Root that local media paths submitted to the evaluator must stay within.
+    # Prevents path traversal / arbitrary file reads of files outside the
+    # generated-media tree. Remote (http/https/data) URLs are unaffected.
+    EVALUATION_MEDIA_ROOT = os.getenv("EVALUATION_MEDIA_ROOT", os.getcwd())
+
     @classmethod
     def get_sqlite_connect_args(cls):
         if cls.DB_TYPE == "sqlite":

@@ -104,7 +104,14 @@ class LLMEvaluatorClient:
         if media_path.startswith(("http://", "https://", "data:")):
             return media_path
 
-        path = Path(media_path)
+        media_root = Path(GlobalConfig.EVALUATION_MEDIA_ROOT).resolve()
+        path = (media_root / media_path).resolve()
+        try:
+            path.relative_to(media_root)
+        except ValueError:
+            raise ValueError(
+                f"Media path escapes the allowed media root: {media_path}"
+            )
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(f"Image file is not readable: {media_path}")
 
