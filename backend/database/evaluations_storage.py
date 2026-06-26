@@ -178,6 +178,64 @@ class EvaluationsStorage:
         finally:
             conn.close()
 
+    def get_latest_for_paths(self, paths: List[str]) -> Dict[str, Dict[str, Any]]:
+        if not paths:
+            return {}
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            placeholders = ",".join("?" for _ in paths)
+            cursor.execute(
+                f"""
+                SELECT * FROM evaluations
+                WHERE media_path IN ({placeholders})
+                ORDER BY id ASC
+                """,
+                tuple(paths),
+            )
+            # Higher id wins because we iterate ascending and overwrite.
+            latest: Dict[str, Dict[str, Any]] = {}
+            for row in cursor.fetchall():
+                decoded = self._decode_row(row)
+                latest[decoded["media_path"]] = decoded
+            return latest
+        finally:
+            conn.close()
+
+    def get_score_summary(self) -> Dict[str, Any]:
+        conn = self._get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT * FROM evaluations ORDER BY id ASC")
+            latest: Dict[str, Dict[str, Any]] = {}
+            for row in cursor.fetchall():
+                decoded = self._decode_row(row)
+                latest[decoded["media_path"]] = decoded
+        finally:
+            conn.close()
+
+        evaluated_paths = set()
+        failed_paths = set()
+        scores = []
+        for path, row in latest.items():
+            if row["status"] == "completed":
+                evaluated_paths.add(path)
+                if row.get("overall_score") is not None:
+                    scores.append(row["overall_score"])
+            elif row["status"] == "failed":
+                failed_paths.add(path)
+
+        avg = round(sum(scores) / len(scores), 2) if scores else None
+        return {
+            "evaluated": len(evaluated_paths),
+            "failed": len(failed_paths),
+            "avg_overall_score": avg,
+            "evaluated_paths": evaluated_paths,
+            "failed_paths": failed_paths,
+        }
+
     def _decode_row(self, row: sqlite3.Row) -> Dict[str, Any]:
         data = dict(row)
         data["scores"] = json.loads(data.pop("scores_json") or "[]")
