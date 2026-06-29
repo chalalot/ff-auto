@@ -21,6 +21,9 @@ from .base import (
 from . import image  # noqa: F401,E402  (registers image pipelines)
 from . import video  # noqa: F401,E402  (registers video pipelines)
 
+# Workflow-file helpers (ComfyUI graph selection) live with the image pipeline.
+from .image import list_workflow_files, load_workflow_template  # noqa: E402
+
 __all__ = [
     "GenerationInputs",
     "GenerationPipeline",
@@ -31,6 +34,8 @@ __all__ = [
     "available_pipelines",
     "describe_workflow_parameters",
     "get_pipeline",
+    "list_workflow_files",
+    "load_workflow_template",
     "pipelines_metadata",
     "register",
 ]

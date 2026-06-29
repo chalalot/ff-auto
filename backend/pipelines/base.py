@@ -134,6 +134,7 @@ class GenerationInputs:
     images: List[str] = field(default_factory=list)
     options: Dict[str, Any] = field(default_factory=dict)
     workflow_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    workflow_name: Optional[str] = None  # which workflows/*.json to build from
 
 
 class PipelineError(Exception):
@@ -168,15 +169,15 @@ class GenerationPipeline(ABC):
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
         """Return the fully-patched ComfyUI workflow graph for ``inputs``."""
 
-    def load_template(self) -> Dict[str, Any]:
+    def load_template(self, workflow_name: Optional[str] = None) -> Dict[str, Any]:
         """Return the raw workflow graph this pipeline builds from."""
         raise NotImplementedError(
             f"{self.pipeline_type} does not expose a workflow template"
         )
 
-    def describe_parameters(self) -> List[Dict[str, Any]]:
+    def describe_parameters(self, workflow_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """Introspect this pipeline's workflow JSON into editable parameters."""
-        return describe_workflow_parameters(self.load_template())
+        return describe_workflow_parameters(self.load_template(workflow_name))
 
     async def run(self, inputs: GenerationInputs, client: Any = None) -> str:
         """Validate → build → submit. Returns the ComfyUI ``prompt_id``.

@@ -32,6 +32,7 @@ from backend.third_parties.comfyui_client import (
 from .base import (
     GenerationInputs,
     GenerationPipeline,
+    PipelineInputError,
     apply_workflow_overrides,
     register,
 )
@@ -61,17 +62,57 @@ def _resolve_lora(lora_name: Optional[str], kol_persona: Optional[str]) -> Optio
     return None
 
 
-def _load_workflow_json() -> Dict[str, Any]:
-    """Load the workflow graph from ``WORKFLOW_JSON_PATH`` or the project root."""
-    workflow_path = os.getenv(
-        "WORKFLOW_JSON_PATH",
+def _workflows_dir() -> str:
+    """Directory holding the selectable workflow JSON graphs."""
+    return os.getenv(
+        "WORKFLOWS_DIR",
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "workflow.json",
+            "workflows",
         ),
     )
+
+
+def list_workflow_files() -> list:
+    """Sorted ``*.json`` filenames available in the workflows directory."""
+    directory = _workflows_dir()
+    if not os.path.isdir(directory):
+        return []
+    return sorted(f for f in os.listdir(directory) if f.endswith(".json"))
+
+
+def _resolve_workflow_path(workflow_name: str) -> str:
+    """Map a bare filename to a path inside the workflows dir, guarding traversal."""
+    if (
+        not workflow_name
+        or "/" in workflow_name
+        or "\\" in workflow_name
+        or ".." in workflow_name
+    ):
+        raise PipelineInputError(f"Invalid workflow name '{workflow_name}'")
+    return os.path.join(_workflows_dir(), workflow_name)
+
+
+def _load_workflow_json(workflow_name: Optional[str] = None) -> Dict[str, Any]:
+    """Load a workflow graph by filename, defaulting to ``workflow.json``.
+
+    An explicit ``workflow_name`` resolves inside :func:`_workflows_dir` (with a
+    path-traversal guard). With no name, ``WORKFLOW_JSON_PATH`` wins if set,
+    otherwise ``<workflows>/workflow.json``.
+    """
+    if workflow_name:
+        workflow_path = _resolve_workflow_path(workflow_name)
+    else:
+        workflow_path = os.getenv("WORKFLOW_JSON_PATH") or os.path.join(
+            _workflows_dir(), "workflow.json"
+        )
     with open(workflow_path, "r") as f:
         return json.load(f)
+
+
+def load_workflow_template(workflow_name: Optional[str] = None) -> Dict[str, Any]:
+    """Public accessor for a workflow graph (used by the API for introspection)."""
+    return _load_workflow_json(workflow_name)
 
 
 def _patch_clip_loader(workflow_data: Dict[str, Any], clip_model_type: str) -> None:
@@ -168,12 +209,12 @@ class ComfyImagePipeline(GenerationPipeline):
 
     media_type = "image"
 
-    def load_template(self) -> Dict[str, Any]:
-        return _load_workflow_json()
+    def load_template(self, workflow_name: Optional[str] = None) -> Dict[str, Any]:
+        return _load_workflow_json(workflow_name)
 
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
         cleaned_prompt = _clean_prompt(inputs.prompt)
-        workflow_data = self.load_template()
+        workflow_data = self.load_template(inputs.workflow_name)
         final_lora = _resolve_lora(inputs.lora_name, inputs.kol_persona)
 
         _patch_clip_loader(workflow_data, inputs.clip_model_type)

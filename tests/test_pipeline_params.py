@@ -134,7 +134,7 @@ IMAGE_WF = {
 
 @pytest.fixture
 def patched_template(monkeypatch):
-    monkeypatch.setattr(image_mod, "_load_workflow_json", lambda: copy.deepcopy(IMAGE_WF))
+    monkeypatch.setattr(image_mod, "_load_workflow_json", lambda *a, **k: copy.deepcopy(IMAGE_WF))
 
 
 def test_build_workflow_override_beats_dimension_patch(patched_template):
