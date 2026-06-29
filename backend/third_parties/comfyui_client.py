@@ -445,126 +445,47 @@ class ComfyUIClient:
         width: str = "1024",
         height: str = "1600",
         clip_model_type: str = "qwen_image",
+        pipeline_type: str = "image.subject_environment",
+        workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         **kwargs
     ) -> str:
         """
         Start image generation via Comfy Cloud API using workflow.json.
+
+        Workflow construction is delegated to the selected generation pipeline
+        (see ``backend.pipelines``); this client only submits the result. The
+        default ``image.subject_environment`` pipeline auto-detects
+        ``#Subject`` / ``#Environment`` prompts and falls back to a single CLIP
+        node, preserving the original generate_image behaviour.
         """
+        # Imported lazily: the pipelines package imports node-patching helpers
+        # from this module at load time, so a top-level import would cycle.
+        from backend.pipelines import GenerationInputs, get_pipeline
+
         logger.info("=" * 80)
-        logger.info(f"🎨 COMFYUI IMAGE GENERATION REQUEST (CLOUD API)")
+        logger.info("🎨 COMFYUI IMAGE GENERATION REQUEST (CLOUD API)")
+        logger.info(f"🧩 Pipeline: {pipeline_type}")
+        logger.info(
+            f"📝 Prompt: {positive_prompt[:200]}{'...' if len(positive_prompt) > 200 else ''}"
+        )
         logger.info("=" * 80)
 
-        cleaned_prompt = re.sub(r'<lora:[^>]+>,\s*Instagirl,?\s*', '', positive_prompt, flags=re.IGNORECASE)
-
-        logger.info(f"📝 Original Prompt: {positive_prompt[:100]}...")
-        logger.info(f"📝 Cleaned Prompt: {cleaned_prompt[:200]}{'...' if len(cleaned_prompt) > 200 else ''}")
-
-        # Determine Turbo LoRA
-        final_lora = None # No default hardcode, let workflow.json dictate it
-
-        if lora_name:
-            final_lora = lora_name
-            logger.info(f"🎭 LoRA Override: {final_lora}")
-        elif kol_persona:
-            for persona_key in PERSONA_LORA_MAPPING_TURBO.keys():
-                if persona_key.lower() == kol_persona.lower():
-                    final_lora = PERSONA_LORA_MAPPING_TURBO[persona_key]
-                    logger.info(f"🎭 LoRA Mapped: {final_lora}")
-                    break
-
-        # Load the workflow.json file from project root (override with WORKFLOW_JSON_PATH env var)
-        workflow_path = os.getenv(
-            "WORKFLOW_JSON_PATH",
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "workflow.json"),
+        inputs = GenerationInputs(
+            prompt=positive_prompt,
+            negative_prompt=negative_prompt,
+            lora_name=lora_name,
+            kol_persona=kol_persona,
+            strength_model=strength_model,
+            seed_strategy=seed_strategy,
+            base_seed=base_seed,
+            width=width,
+            height=height,
+            clip_model_type=clip_model_type,
+            workflow_overrides=workflow_overrides or {},
         )
-        try:
-            with open(workflow_path, 'r') as f:
-                workflow_data = json.load(f)
-        except Exception as e:
-            logger.error(f"❌ Failed to load workflow.json from {workflow_path}: {e}")
-            raise ComfyUIAPIError(f"Failed to load workflow.json: {e}")
 
-        # Inject overrides into workflow. Prefer semantic node discovery because
-        # ComfyUI node IDs change whenever the graph is rebuilt or copied.
-        clip_node = _find_workflow_node(
-            workflow_data,
-            class_type="CLIPLoader",
-            required_inputs={"type"},
-            legacy_id="39",
-        )
-        if clip_node:
-            clip_inputs = _workflow_node_inputs(clip_node)
-            if clip_model_type:
-                clip_inputs["type"] = clip_model_type
-            clip_device = os.getenv("COMFYUI_CLIP_DEVICE")
-            if "device" in clip_inputs:
-                if clip_device:
-                    clip_inputs["device"] = clip_device
-        else:
-            logger.warning("No CLIPLoader/type node found while patching workflow.")
-
-        # Attempt to split into #Subject and #Environment
-        subject_text, env_text = None, None
-        sub_match = re.search(r'#Subject\s*(.*?)(?=#Environment|$)', cleaned_prompt, re.IGNORECASE | re.DOTALL)
-        env_match = re.search(r'#Environment\s*(.*?)(?=#Subject|$)', cleaned_prompt, re.IGNORECASE | re.DOTALL)
-
-        if sub_match and env_match:
-            subject_text = f"#Subject\n{sub_match.group(1).strip()}"
-            env_text = f"#Environment\n{env_match.group(1).strip()}"
-
-        # Find CLIP nodes mapped by ConditioningSetTimestepRange and enforce ranges
-        subject_node_id = None
-        env_node_id = None
-        for node_id, node in workflow_data.items():
-            if not isinstance(node, dict) or node.get("class_type") != "ConditioningSetTimestepRange":
-                continue
-            inputs = _workflow_node_inputs(node)
-            cond_input = inputs.get("conditioning")
-            start_val = inputs.get("start", 0)
-            if isinstance(cond_input, list) and len(cond_input) > 0:
-                source_id = str(cond_input[0])
-                if start_val > 0:
-                    subject_node_id = source_id
-                else:
-                    env_node_id = source_id
-
-        if subject_text and env_text and subject_node_id and env_node_id and \
-           subject_node_id in workflow_data and env_node_id in workflow_data:
-            # We have a 2-part prompt and a 2-part workflow!
-            _workflow_node_inputs(workflow_data[subject_node_id])["text"] = subject_text
-            _workflow_node_inputs(workflow_data[env_node_id])["text"] = env_text
-            logger.info("✅ Split prompt into Subject and Environment nodes.")
-        else:
-            # Fallback to single node injection
-            prompt_node = _find_workflow_node(
-                workflow_data,
-                class_type="CLIPTextEncode",
-                required_inputs={"text"},
-                legacy_id="45",
-            )
-            if prompt_node:
-                # If we parsed it but workflow doesn't support split, combine cleanly
-                if subject_text and env_text:
-                    _workflow_node_inputs(prompt_node)["text"] = f"{subject_text}, {env_text}"
-                else:
-                    _workflow_node_inputs(prompt_node)["text"] = cleaned_prompt
-            else:
-                logger.warning("No CLIPTextEncode/text node found while patching workflow.")
-
-        lora_node = _find_lora_workflow_node(workflow_data)
-        if lora_node:
-            lora_inputs = _workflow_node_inputs(lora_node)
-            if final_lora:
-                lora_inputs["lora_name"] = final_lora
-            if strength_model is not None:
-                lora_inputs["strength_model"] = float(strength_model)
-        else:
-            logger.warning("No LoRA loader node found while patching workflow.")
-
-        _patch_workflow_dimensions(workflow_data, width, height)
-        _patch_sampler_seeds(workflow_data, seed_strategy, base_seed)
-
-        return await self.queue_prompt(workflow_data)
+        pipeline = get_pipeline(pipeline_type)
+        return await pipeline.run(inputs, client=self)
 
     async def check_status(self, execution_id: str) -> Dict[str, Any]:
         """

@@ -189,3 +189,79 @@ def test_get_parameters_unknown_pipeline_400(client):
 def test_get_parameters_video_pipeline_400(client):
     # video pipelines are unavailable (no template)
     assert client.get("/api/workspace/pipelines/video.first_frame/parameters").status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# workflow_overrides threading: dispatch + async_process_image
+# ---------------------------------------------------------------------------
+
+def test_dispatch_forwards_workflow_overrides(monkeypatch):
+    from backend.services import image_processing
+
+    captured = {}
+
+    class _FakeTask:
+        id = "t-1"
+
+    class _FakeRedis:
+        def sadd(self, *a, **k):
+            pass
+
+        def setex(self, *a, **k):
+            pass
+
+    def fake_send_task(name, kwargs, queue):
+        captured.update(kwargs)
+        return _FakeTask()
+
+    monkeypatch.setattr(image_processing.celery_app, "send_task", fake_send_task)
+    monkeypatch.setattr(image_processing, "_redis_client", lambda: _FakeRedis())
+
+    svc = image_processing.ImageProcessingService()
+    svc.dispatch_processing(
+        image_path="/x.png", persona="emi", prepare=False,
+        workflow_overrides={"125": {"strength_model": 1.3}},
+    )
+    assert captured["workflow_overrides"] == {"125": {"strength_model": 1.3}}
+
+
+@pytest.mark.asyncio
+async def test_async_process_image_forwards_workflow_overrides(monkeypatch):
+    from backend import tasks
+
+    calls = {}
+
+    class _FakeClient:
+        async def generate_image(self, **kwargs):
+            calls.update(kwargs)
+            return "exec-1"
+
+    class _FakeWorkflow:
+        async def process(self, **kwargs):
+            return {"generated_prompts": ["a prompt"]}
+
+    class _FakeStorage:
+        def log_execution(self, **kwargs):
+            pass
+
+        def log_failed_execution(self, **kwargs):
+            pass
+
+    class _FakeTask:
+        def update_state(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(
+        tasks, "get_instances", lambda: (_FakeWorkflow(), _FakeClient(), _FakeStorage())
+    )
+    monkeypatch.setattr(tasks.download_execution_task, "apply_async", lambda *a, **k: None)
+
+    await tasks.async_process_image(
+        dest_image_path="/x.png", persona="emi", workflow_type="turbo",
+        vision_model="gpt-4o", variation_count=1, strength_model=0.8,
+        seed_strategy="random", base_seed=0, width=1024, height=1600,
+        lora_name="", clip_model_type="qwen_image", task=_FakeTask(),
+        pipeline_type="image.unified",
+        workflow_overrides={"125": {"strength_model": 1.3}},
+    )
+    assert calls["workflow_overrides"] == {"125": {"strength_model": 1.3}}

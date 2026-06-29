@@ -129,6 +129,8 @@ def process_image_task(
     height,
     lora_name,
     clip_model_type="qwen_image",
+    pipeline_type="image.subject_environment",
+    workflow_overrides=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -147,6 +149,8 @@ def process_image_task(
                 height=height,
                 lora_name=lora_name,
                 clip_model_type=clip_model_type,
+                pipeline_type=pipeline_type,
+                workflow_overrides=workflow_overrides or {},
                 task=self,
             )
         )
@@ -157,7 +161,8 @@ def process_image_task(
 
 async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
-    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type, task
+    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
+    task, pipeline_type="image.subject_environment", workflow_overrides=None
 ):
     workflow, client, storage = get_instances()
 
@@ -232,6 +237,8 @@ async def async_process_image(
             height=height,
             lora_name=lora_name,
             clip_model_type=clip_model_type,
+            pipeline_type=pipeline_type,
+            workflow_overrides=workflow_overrides or {},
         )
 
         if execution_id:

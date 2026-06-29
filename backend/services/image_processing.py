@@ -12,7 +12,7 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import redis as _redis
 from celery.result import AsyncResult
@@ -117,6 +117,8 @@ class ImageProcessingService:
         height: int = 1600,
         lora_name: str = "",
         clip_model_type: str = "qwen_image",
+        pipeline_type: str = "image.subject_environment",
+        workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         prepare: bool = True,
     ) -> str:
         """
@@ -140,6 +142,8 @@ class ImageProcessingService:
                 "height": height,
                 "lora_name": lora_name,
                 "clip_model_type": clip_model_type,
+                "pipeline_type": pipeline_type,
+                "workflow_overrides": workflow_overrides or {},
             },
             queue="image",
         )

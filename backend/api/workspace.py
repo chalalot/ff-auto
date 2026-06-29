@@ -138,6 +138,7 @@ def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depen
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
             pipeline_type=body.pipeline_type,
+            workflow_overrides=body.workflow_overrides,
             prepare=not body.skip_prepare,
         )
         return {"task_id": task_id}
@@ -165,6 +166,7 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
             pipeline_type=body.pipeline_type,
+            workflow_overrides=body.workflow_overrides,
             prepare=not body.skip_prepare,
         )
         return {"task_ids": task_ids}

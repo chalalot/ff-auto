@@ -37,6 +37,8 @@ class ProcessImageRequest(BaseModel):
     # Which image generation pipeline builds the ComfyUI workflow.
     # See backend.pipelines; default preserves the auto-split behaviour.
     pipeline_type: str = "image.subject_environment"
+    # Per-run node-input overrides: { node_id: { input_key: value } }.
+    workflow_overrides: Dict[str, Dict[str, Any]] = {}
 
 
 class ProcessBatchRequest(BaseModel):
@@ -54,6 +56,7 @@ class ProcessBatchRequest(BaseModel):
     lora_name: str = ""
     clip_model_type: str = "qwen_image"
     pipeline_type: str = "image.subject_environment"
+    workflow_overrides: Dict[str, Dict[str, Any]] = {}
 
 
 class TaskStatusResponse(BaseModel):
