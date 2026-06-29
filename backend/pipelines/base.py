@@ -71,6 +71,46 @@ def describe_workflow_parameters(workflow_data: Dict[str, Any]) -> List[Dict[str
     return nodes
 
 
+def _coerce_to(existing: Any, value: Any) -> Any:
+    """Coerce ``value`` to the type of ``existing`` (best-effort)."""
+    try:
+        if isinstance(existing, bool):
+            return bool(value)
+        if isinstance(existing, int):
+            return int(value)
+        if isinstance(existing, float):
+            return float(value)
+        return type(existing)(value)
+    except (TypeError, ValueError):
+        return existing  # leave the original value untouched on bad input
+
+
+def apply_workflow_overrides(
+    workflow_data: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]
+) -> None:
+    """Apply per-run node-input overrides in place.
+
+    Skips locked keys, unknown nodes, and keys not already present as a
+    non-list input. Coerces each value to the existing value's type. Defensive
+    by design: a stale panel must never raise here.
+    """
+    if not overrides:
+        return
+    for node_id, patch in overrides.items():
+        node = workflow_data.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        node_inputs = node.get("inputs")
+        if not isinstance(node_inputs, dict):
+            continue
+        for key, value in (patch or {}).items():
+            if key in LOCKED_INPUT_KEYS:
+                continue
+            if key not in node_inputs or isinstance(node_inputs[key], list):
+                continue
+            node_inputs[key] = _coerce_to(node_inputs[key], value)
+
+
 @dataclass
 class GenerationInputs:
     """Engine-agnostic inputs shared by every generation pipeline.
@@ -93,6 +133,7 @@ class GenerationInputs:
     clip_model_type: str = "qwen_image"
     images: List[str] = field(default_factory=list)
     options: Dict[str, Any] = field(default_factory=dict)
+    workflow_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
 
 class PipelineError(Exception):

@@ -29,7 +29,12 @@ from backend.third_parties.comfyui_client import (
     _workflow_node_inputs,
 )
 
-from .base import GenerationInputs, GenerationPipeline, register
+from .base import (
+    GenerationInputs,
+    GenerationPipeline,
+    apply_workflow_overrides,
+    register,
+)
 
 _SUBJECT_RE = re.compile(r"#Subject\s*(.*?)(?=#Environment|$)", re.IGNORECASE | re.DOTALL)
 _ENVIRONMENT_RE = re.compile(r"#Environment\s*(.*?)(?=#Subject|$)", re.IGNORECASE | re.DOTALL)
@@ -168,7 +173,7 @@ class ComfyImagePipeline(GenerationPipeline):
 
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
         cleaned_prompt = _clean_prompt(inputs.prompt)
-        workflow_data = _load_workflow_json()
+        workflow_data = self.load_template()
         final_lora = _resolve_lora(inputs.lora_name, inputs.kol_persona)
 
         _patch_clip_loader(workflow_data, inputs.clip_model_type)
@@ -184,6 +189,7 @@ class ComfyImagePipeline(GenerationPipeline):
 
         _patch_workflow_dimensions(workflow_data, inputs.width, inputs.height)
         _patch_sampler_seeds(workflow_data, inputs.seed_strategy, inputs.base_seed)
+        apply_workflow_overrides(workflow_data, inputs.workflow_overrides)
         return workflow_data
 
     @abstractmethod
