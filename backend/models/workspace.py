@@ -39,6 +39,8 @@ class ProcessImageRequest(BaseModel):
     pipeline_type: str = "image.subject_environment"
     # Per-run node-input overrides: { node_id: { input_key: value } }.
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
+    # Which workflows/*.json graph to build from (default: workflow.json).
+    workflow_name: Optional[str] = None
 
 
 class ProcessBatchRequest(BaseModel):
@@ -57,6 +59,7 @@ class ProcessBatchRequest(BaseModel):
     clip_model_type: str = "qwen_image"
     pipeline_type: str = "image.subject_environment"
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
+    workflow_name: Optional[str] = None
 
 
 class TaskStatusResponse(BaseModel):

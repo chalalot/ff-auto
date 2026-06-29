@@ -119,6 +119,7 @@ class ImageProcessingService:
         clip_model_type: str = "qwen_image",
         pipeline_type: str = "image.subject_environment",
         workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        workflow_name: Optional[str] = None,
         prepare: bool = True,
     ) -> str:
         """
@@ -144,6 +145,7 @@ class ImageProcessingService:
                 "clip_model_type": clip_model_type,
                 "pipeline_type": pipeline_type,
                 "workflow_overrides": workflow_overrides or {},
+                "workflow_name": workflow_name,
             },
             queue="image",
         )
