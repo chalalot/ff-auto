@@ -19,7 +19,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy, ExternalLink, BookOpen } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
 import { WorkflowParametersPanel, buildInitialOverrides } from '@/components/workspace/WorkflowParametersPanel'
-import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, PipelineInfo, WorkflowParameters } from '@/types'
+import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, WorkflowParameters } from '@/types'
 
 // "owner__repo__name_v7.safetensors" → "name_v7"
 const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
@@ -35,7 +35,7 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   seed_strategy: 'random',
   base_seed: 0,
   lora_name: '',
-  pipeline_type: 'image.subject_environment',
+  workflow_name: 'workflow.json',
 }
 
 export const WorkspacePage: React.FC = () => {
@@ -46,25 +46,25 @@ export const WorkspacePage: React.FC = () => {
   const [overrides, setOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const configInitializedRef = React.useRef(false)
 
-  const { data: pipelines = [] } = useQuery<PipelineInfo[]>({
-    queryKey: ['pipelines'],
-    queryFn: workspaceApi.getPipelines,
+  const { data: workflows = [] } = useQuery<string[]>({
+    queryKey: ['workflows'],
+    queryFn: workspaceApi.getWorkflows,
   })
 
-  const pipelineType = config.pipeline_type || 'image.subject_environment'
+  const workflowName = config.workflow_name || 'workflow.json'
   const {
-    data: pipelineParams = null,
+    data: workflowParams = null,
     isLoading: paramsLoading,
     error: paramsError,
   } = useQuery<WorkflowParameters>({
-    queryKey: ['pipeline-params', pipelineType],
-    queryFn: () => workspaceApi.getPipelineParameters(pipelineType),
+    queryKey: ['workflow-params', workflowName],
+    queryFn: () => workspaceApi.getWorkflowParameters(workflowName),
   })
 
   // Re-seed override values whenever a new parameter set loads.
   React.useEffect(() => {
-    if (pipelineParams) setOverrides(buildInitialOverrides(pipelineParams))
-  }, [pipelineParams])
+    if (workflowParams) setOverrides(buildInitialOverrides(workflowParams))
+  }, [workflowParams])
 
   const { data: activeTasks = [] } = useActiveTasks()
 
@@ -203,19 +203,17 @@ export const WorkspacePage: React.FC = () => {
         </div>
 
         <div className="p-4 space-y-4 flex-1">
-          {/* Pipeline */}
+          {/* Workflow */}
           <div className="space-y-2">
-            <Label>Pipeline</Label>
+            <Label>Workflow</Label>
             <Select
-              value={pipelineType}
-              onValueChange={(v) => setConfig(p => ({ ...p, pipeline_type: v }))}
+              value={workflowName}
+              onValueChange={(v) => setConfig(p => ({ ...p, workflow_name: v }))}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {pipelines.map(p => (
-                  <SelectItem key={p.pipeline_type} value={p.pipeline_type} disabled={!p.available}>
-                    {p.label}{!p.available ? ' (coming soon)' : ''}
-                  </SelectItem>
+                {workflows.map(w => (
+                  <SelectItem key={w} value={w}>{w.replace(/\.json$/i, '')}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -356,14 +354,14 @@ export const WorkspacePage: React.FC = () => {
           <Separator />
 
           <WorkflowParametersPanel
-            params={pipelineParams}
+            params={workflowParams}
             loading={paramsLoading}
             error={paramsError ? 'Failed to load workflow parameters' : null}
             values={overrides}
             onChange={(nodeId, key, value) =>
               setOverrides(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], [key]: value } }))
             }
-            onReset={() => pipelineParams && setOverrides(buildInitialOverrides(pipelineParams))}
+            onReset={() => workflowParams && setOverrides(buildInitialOverrides(workflowParams))}
           />
         </div>
       </aside>

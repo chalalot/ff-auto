@@ -69,7 +69,8 @@ export interface WorkflowParamNode {
 }
 
 export interface WorkflowParameters {
-  pipeline_type: string
+  workflow?: string
+  pipeline_type?: string
   nodes: WorkflowParamNode[]
 }
 
@@ -82,8 +83,8 @@ export interface ProcessImageConfig {
   seed_strategy: string
   base_seed: number
   lora_name: string
-  // Which generation pipeline builds the workflow (backend defaults when omitted).
-  pipeline_type?: string
+  // Which workflows/*.json graph to build from (backend defaults to workflow.json).
+  workflow_name?: string
   // Per-run node-input overrides: { node_id: { input_key: value } }.
   workflow_overrides?: Record<string, Record<string, unknown>>
 }

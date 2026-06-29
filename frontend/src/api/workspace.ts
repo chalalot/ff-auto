@@ -18,6 +18,16 @@ export const workspaceApi = {
       )
       .then(r => r.data),
 
+  getWorkflows: () =>
+    apiClient.get<string[]>('/workspace/workflows').then(r => r.data),
+
+  getWorkflowParameters: (workflowName: string) =>
+    apiClient
+      .get<import('@/types').WorkflowParameters>(
+        `/workspace/workflows/${encodeURIComponent(workflowName)}/parameters`,
+      )
+      .then(r => r.data),
+
   getThumbnailUrl: (filename: string) =>
     `/api/workspace/input-images/${filename}/thumbnail`,
 
