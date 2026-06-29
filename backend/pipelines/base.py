@@ -18,6 +18,59 @@ from typing import Any, Dict, List, Optional
 from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 
 
+LOCKED_INPUT_KEYS: Dict[str, str] = {
+    "seed": "Controlled by the Seed strategy",
+    "noise_seed": "Controlled by the Seed strategy",
+    "text": "Set from the generated prompt",
+    "lora_name": "Controlled by the LoRA selector",
+    "device": "Controlled by deployment (COMFYUI_CLIP_DEVICE)",
+}
+
+
+def _infer_param_type(value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    return "string"
+
+
+def describe_workflow_parameters(workflow_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """List every editable (non-wiring) node input from a workflow graph.
+
+    List-valued inputs are node connections and are excluded. Inputs whose key
+    is in ``LOCKED_INPUT_KEYS`` are returned but flagged ``locked`` so the UI can
+    show them greyed-out (they are owned by the app / prompt / deployment).
+    """
+    nodes: List[Dict[str, Any]] = []
+    for node_id, node in workflow_data.items():
+        if not isinstance(node, dict) or "inputs" not in node:
+            continue
+        title = node.get("_meta", {}).get("title") or node.get("class_type", node_id)
+        inputs: List[Dict[str, Any]] = []
+        for key, value in node.get("inputs", {}).items():
+            if isinstance(value, list):  # node connection (wiring), not a value
+                continue
+            locked_reason = LOCKED_INPUT_KEYS.get(key)
+            inputs.append({
+                "key": key,
+                "value": value,
+                "type": _infer_param_type(value),
+                "locked": locked_reason is not None,
+                "locked_reason": locked_reason,
+            })
+        if inputs:
+            nodes.append({
+                "node_id": node_id,
+                "class_type": node.get("class_type", ""),
+                "title": title,
+                "inputs": inputs,
+            })
+    return nodes
+
+
 @dataclass
 class GenerationInputs:
     """Engine-agnostic inputs shared by every generation pipeline.
@@ -73,6 +126,16 @@ class GenerationPipeline(ABC):
     @abstractmethod
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
         """Return the fully-patched ComfyUI workflow graph for ``inputs``."""
+
+    def load_template(self) -> Dict[str, Any]:
+        """Return the raw workflow graph this pipeline builds from."""
+        raise NotImplementedError(
+            f"{self.pipeline_type} does not expose a workflow template"
+        )
+
+    def describe_parameters(self) -> List[Dict[str, Any]]:
+        """Introspect this pipeline's workflow JSON into editable parameters."""
+        return describe_workflow_parameters(self.load_template())
 
     async def run(self, inputs: GenerationInputs, client: Any = None) -> str:
         """Validate → build → submit. Returns the ComfyUI ``prompt_id``.

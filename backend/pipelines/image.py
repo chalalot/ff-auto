@@ -163,6 +163,9 @@ class ComfyImagePipeline(GenerationPipeline):
 
     media_type = "image"
 
+    def load_template(self) -> Dict[str, Any]:
+        return _load_workflow_json()
+
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
         cleaned_prompt = _clean_prompt(inputs.prompt)
         workflow_data = _load_workflow_json()
