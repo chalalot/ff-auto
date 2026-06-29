@@ -97,6 +97,7 @@ async def test_generate_image_patches_current_workflow_nodes(monkeypatch, tmp_pa
         encoding="utf-8",
     )
     monkeypatch.setenv("WORKFLOW_JSON_PATH", str(workflow_path))
+    monkeypatch.setenv("COMFYUI_CLIP_DEVICE", "cpu")
 
     captured_workflow = {}
 
@@ -120,8 +121,10 @@ async def test_generate_image_patches_current_workflow_nodes(monkeypatch, tmp_pa
     )
 
     assert prompt_id == "prompt-123"
-    assert captured_workflow["2"]["inputs"]["width"] == 512
-    assert captured_workflow["2"]["inputs"]["height"] == 768
+    # ImageScale node present -> upscale node gets final dims; latent node "2" is
+    # halved by _patch_workflow_dimensions ("base latent to half").
+    assert captured_workflow["2"]["inputs"]["width"] == 320
+    assert captured_workflow["2"]["inputs"]["height"] == 480
     assert captured_workflow["15"]["inputs"]["width"] == 640
     assert captured_workflow["15"]["inputs"]["height"] == 960
     assert captured_workflow["7"]["inputs"]["lora_name"] == "custom_lora.safetensors"
