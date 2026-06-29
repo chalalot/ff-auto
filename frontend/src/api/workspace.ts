@@ -5,6 +5,19 @@ export const workspaceApi = {
   getInputImages: () =>
     apiClient.get<InputImage[]>('/workspace/input-images').then(r => r.data),
 
+  getImagePipelines: () =>
+    apiClient.get<string[]>('/workspace/image-pipelines').then(r => r.data),
+
+  getPipelines: () =>
+    apiClient.get<import('@/types').PipelineInfo[]>('/workspace/pipelines').then(r => r.data),
+
+  getPipelineParameters: (pipelineType: string) =>
+    apiClient
+      .get<import('@/types').WorkflowParameters>(
+        `/workspace/pipelines/${encodeURIComponent(pipelineType)}/parameters`,
+      )
+      .then(r => r.data),
+
   getThumbnailUrl: (filename: string) =>
     `/api/workspace/input-images/${filename}/thumbnail`,
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api/workspace'
 import { configApi } from '@/api/config'
-import { usePersonas, useVisionModels, useClipModels, useLoraOptions, useLastUsed } from '@/hooks/usePersonas'
+import { usePersonas, useVisionModels, useLoraOptions, useLastUsed } from '@/hooks/usePersonas'
 import { useTaskProgress } from '@/hooks/useTaskProgress'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,7 +18,8 @@ import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow, format } from 'date-fns'
 import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy, ExternalLink, BookOpen } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
-import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry } from '@/types'
+import { WorkflowParametersPanel, buildInitialOverrides } from '@/components/workspace/WorkflowParametersPanel'
+import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, PipelineInfo, WorkflowParameters } from '@/types'
 
 // "owner__repo__name_v7.safetensors" → "name_v7"
 const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
@@ -31,13 +32,10 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   workflow_type: 'turbo',
   vision_model: 'gpt-4o',
   variation_count: 1,
-  strength: 0.8,
   seed_strategy: 'random',
   base_seed: 0,
-  width: 1024,
-  height: 1600,
   lora_name: '',
-  clip_model_type: 'qwen_image',
+  pipeline_type: 'image.subject_environment',
 }
 
 export const WorkspacePage: React.FC = () => {
@@ -45,13 +43,33 @@ export const WorkspacePage: React.FC = () => {
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
+  const [overrides, setOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const configInitializedRef = React.useRef(false)
+
+  const { data: pipelines = [] } = useQuery<PipelineInfo[]>({
+    queryKey: ['pipelines'],
+    queryFn: workspaceApi.getPipelines,
+  })
+
+  const pipelineType = config.pipeline_type || 'image.subject_environment'
+  const {
+    data: pipelineParams = null,
+    isLoading: paramsLoading,
+    error: paramsError,
+  } = useQuery<WorkflowParameters>({
+    queryKey: ['pipeline-params', pipelineType],
+    queryFn: () => workspaceApi.getPipelineParameters(pipelineType),
+  })
+
+  // Re-seed override values whenever a new parameter set loads.
+  React.useEffect(() => {
+    if (pipelineParams) setOverrides(buildInitialOverrides(pipelineParams))
+  }, [pipelineParams])
 
   const { data: activeTasks = [] } = useActiveTasks()
 
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
-  const { data: clipModels = [] } = useClipModels()
   const { data: loraOptions = [] } = useLoraOptions()
   const [addLoraOpen, setAddLoraOpen] = useState(false)
   const [addLoraValue, setAddLoraValue] = useState('')
@@ -82,12 +100,8 @@ export const WorkspacePage: React.FC = () => {
         ...prev,
         persona: lastUsed.persona || prev.persona,
         vision_model: lastUsed.vision_model || prev.vision_model,
-        clip_model_type: lastUsed.clip_model_type || prev.clip_model_type,
         variation_count: lastUsed.variations ?? prev.variation_count,
-        strength: lastUsed.strength ?? prev.strength,
         lora_name: lastUsed.lora_name ?? prev.lora_name,
-        width: lastUsed.width || prev.width,
-        height: lastUsed.height || prev.height,
         seed_strategy: lastUsed.seed_strategy || prev.seed_strategy,
         base_seed: lastUsed.base_seed ?? prev.base_seed,
         workflow_type: lastUsed.workflow_type || prev.workflow_type,
@@ -103,12 +117,8 @@ export const WorkspacePage: React.FC = () => {
       configApi.saveLastUsed({
         persona: config.persona,
         vision_model: config.vision_model,
-        clip_model_type: config.clip_model_type,
         variations: config.variation_count,
-        strength: config.strength,
         lora_name: config.lora_name,
-        width: config.width,
-        height: config.height,
         seed_strategy: config.seed_strategy,
         base_seed: config.base_seed,
         workflow_type: config.workflow_type,
@@ -130,10 +140,10 @@ export const WorkspacePage: React.FC = () => {
       const paths = Array.from(selectedPaths)
       let taskIds: string[]
       if (paths.length === 1) {
-        const result = await workspaceApi.process({ ...config, image_path: paths[0], skip_prepare: true })
+        const result = await workspaceApi.process({ ...config, workflow_overrides: overrides, image_path: paths[0], skip_prepare: true })
         taskIds = [result.task_id]
       } else {
-        const result = await workspaceApi.processBatch(paths, { ...config, skip_prepare: true })
+        const result = await workspaceApi.processBatch(paths, { ...config, workflow_overrides: overrides, skip_prepare: true })
         taskIds = result.task_ids
       }
       return { taskIds, paths, configSnapshot: { ...config } }
@@ -193,6 +203,24 @@ export const WorkspacePage: React.FC = () => {
         </div>
 
         <div className="p-4 space-y-4 flex-1">
+          {/* Pipeline */}
+          <div className="space-y-2">
+            <Label>Pipeline</Label>
+            <Select
+              value={pipelineType}
+              onValueChange={(v) => setConfig(p => ({ ...p, pipeline_type: v }))}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {pipelines.map(p => (
+                  <SelectItem key={p.pipeline_type} value={p.pipeline_type} disabled={!p.available}>
+                    {p.label}{!p.available ? ' (coming soon)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Persona */}
           <div className="space-y-2">
             <Label>Persona</Label>
@@ -231,19 +259,6 @@ export const WorkspacePage: React.FC = () => {
             </Select>
           </div>
 
-          {/* CLIP Model */}
-          <div className="space-y-2">
-            <Label>CLIP Model</Label>
-            <Select value={config.clip_model_type} onValueChange={(v) => setConfig(p => ({ ...p, clip_model_type: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {clipModels.map(m => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           <Separator />
 
           {/* Variations */}
@@ -254,36 +269,6 @@ export const WorkspacePage: React.FC = () => {
               value={[config.variation_count]}
               onValueChange={([v]) => setConfig(p => ({ ...p, variation_count: v }))}
             />
-          </div>
-
-          {/* Strength */}
-          <div className="space-y-2">
-            <Label>Strength: {config.strength.toFixed(2)}</Label>
-            <Slider
-              min={0} max={2} step={0.05}
-              value={[config.strength]}
-              onValueChange={([v]) => setConfig(p => ({ ...p, strength: v }))}
-            />
-          </div>
-
-          <Separator />
-
-          {/* Dimensions */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Width</Label>
-              <Input
-                type="number" value={config.width}
-                onChange={(e) => setConfig(p => ({ ...p, width: parseInt(e.target.value) || p.width }))}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Height</Label>
-              <Input
-                type="number" value={config.height}
-                onChange={(e) => setConfig(p => ({ ...p, height: parseInt(e.target.value) || p.height }))}
-              />
-            </div>
           </div>
 
           {/* Seed Strategy */}
@@ -367,6 +352,19 @@ export const WorkspacePage: React.FC = () => {
               <p className="text-xs text-muted-foreground font-mono break-all leading-relaxed">{config.lora_name}</p>
             )}
           </div>
+
+          <Separator />
+
+          <WorkflowParametersPanel
+            params={pipelineParams}
+            loading={paramsLoading}
+            error={paramsError ? 'Failed to load workflow parameters' : null}
+            values={overrides}
+            onChange={(nodeId, key, value) =>
+              setOverrides(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], [key]: value } }))
+            }
+            onReset={() => pipelineParams && setOverrides(buildInitialOverrides(pipelineParams))}
+          />
         </div>
       </aside>
 
