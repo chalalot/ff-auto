@@ -55,3 +55,27 @@ def test_build_workflow_loads_selected_file(monkeypatch):
     pipe = get_pipeline("image.unified")
     pipe.build_workflow(GenerationInputs(prompt="hi", workflow_name="alt.json"))
     assert captured["name"] == "alt.json"
+
+
+# ---------------------------------------------------------------------------
+# Endpoints: GET /workflows and /workflows/{name}/parameters (real workflows/)
+# ---------------------------------------------------------------------------
+
+def test_get_workflows_lists_json_files(client):
+    resp = client.get("/api/workspace/workflows")
+    assert resp.status_code == 200
+    names = resp.json()
+    assert "workflow.json" in names
+    assert "kling.json" in names
+
+
+def test_get_workflow_parameters_ok(client):
+    resp = client.get("/api/workspace/workflows/workflow.json/parameters")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["workflow"] == "workflow.json"
+    assert len(body["nodes"]) > 0
+
+
+def test_get_workflow_parameters_unknown_404(client):
+    assert client.get("/api/workspace/workflows/nope.json/parameters").status_code == 404

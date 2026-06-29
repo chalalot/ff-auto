@@ -20,6 +20,7 @@ from backend.models.workspace import (
     BatchDispatchResponse,
     PipelineInfo,
     WorkflowParametersResponse,
+    WorkflowFileParametersResponse,
     ActiveTask,
     ExecutionRecord,
     CaptionExportEntry,
@@ -88,6 +89,31 @@ def get_pipeline_parameters(pipeline_type: str):
     """Editable workflow parameters introspected from the pipeline's JSON."""
     pipeline = _get_available_pipeline(pipeline_type)
     return {"pipeline_type": pipeline_type, "nodes": pipeline.describe_parameters()}
+
+
+@router.get("/workflows", response_model=List[str])
+def list_workflows():
+    """Workflow JSON graphs available in the workflows directory, for selection."""
+    from backend.pipelines import list_workflow_files
+
+    return list_workflow_files()
+
+
+@router.get("/workflows/{workflow_name}/parameters", response_model=WorkflowFileParametersResponse)
+def get_workflow_parameters(workflow_name: str):
+    """Editable parameters introspected from the selected workflow JSON file."""
+    from backend.pipelines import (
+        describe_workflow_parameters,
+        list_workflow_files,
+        load_workflow_template,
+    )
+
+    if workflow_name not in list_workflow_files():
+        raise HTTPException(status_code=404, detail=f"Unknown workflow '{workflow_name}'")
+    return {
+        "workflow": workflow_name,
+        "nodes": describe_workflow_parameters(load_workflow_template(workflow_name)),
+    }
 
 
 @router.get("/input-images", response_model=List[InputImage])

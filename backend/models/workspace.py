@@ -102,6 +102,11 @@ class WorkflowParametersResponse(BaseModel):
     nodes: List[WorkflowParamNode]
 
 
+class WorkflowFileParametersResponse(BaseModel):
+    workflow: str
+    nodes: List[WorkflowParamNode]
+
+
 class ComfyUIQueueStatus(BaseModel):
     running: List[dict]
     pending: List[dict]
