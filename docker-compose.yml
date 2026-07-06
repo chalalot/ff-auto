@@ -1,6 +1,23 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-ffauto}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-ffauto}
+      - POSTGRES_DB=${POSTGRES_DB:-ffauto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - ff-shared-net
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -30,9 +47,13 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   frontend:
     build:
@@ -66,11 +87,15 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   video_worker:
     build:
@@ -86,11 +111,18 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
 
 networks:
   ff-shared-net:

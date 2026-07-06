@@ -1,0 +1,36 @@
+# ---------------------------------------------------------------------------
+# Throwaway Postgres for tests ONLY.
+#
+# Safety properties (see repo memory "never-test-against-live-container"):
+#   - Random host port (Docker assigns; read it with `docker compose port`).
+#   - tmpfs data dir: nothing is persisted to disk, wiped on container stop.
+#   - Default bridge network only, NOT ff-shared-net — cannot reach the live
+#     stack or global-redis.
+#   - No bind mounts to real data dirs (Sorted/, results/, *.db).
+#
+# Usage:
+#   docker compose -f docker-compose.test.yml up -d
+#   HOST_PORT=$(docker compose -f docker-compose.test.yml port postgres-test 5432 | cut -d: -f2)
+#   export DATABASE_URL="postgresql://test:test@localhost:${HOST_PORT}/ffauto_test"
+#   ...run pytest...
+#   docker compose -f docker-compose.test.yml down -v
+# ---------------------------------------------------------------------------
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=test
+      - POSTGRES_PASSWORD=test
+      - POSTGRES_DB=ffauto_test
+    ports:
+      # Host port 0 => Docker picks a random free port; container is 5432.
+      - "5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d ffauto_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
