@@ -45,7 +45,6 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped
@@ -83,7 +82,6 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped
@@ -107,7 +105,6 @@ services:
       - CELERY_BROKER_URL=redis://global-redis:6379/1
       - CELERY_RESULT_BACKEND=redis://global-redis:6379/2
       - GCS_CREDENTIALS_PATH=/app/soulie-gcp-bucket.json
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-ffauto}:${POSTGRES_PASSWORD:-ffauto}@postgres:5432/${POSTGRES_DB:-ffauto}
     networks:
       - ff-shared-net
     restart: unless-stopped

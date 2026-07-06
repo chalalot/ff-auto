@@ -12,7 +12,12 @@ and remain untouched in `./sqlite-backup/`.
 - This branch's code checked out on the production host (not yet deployed).
 - `.env` contains `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and a
   `DATABASE_URL` pointing at the compose `postgres` service
-  (see `.env.example`).
+  (see `.env.example`). **`DATABASE_URL` is mandatory** — compose no longer
+  injects a default; a service started without it exits immediately with an
+  actionable error.
+- If the old deployment used the runs/posts Postgres (legacy `DB_HOST` /
+  `DB_USER` / ... values in `.env`), note that DB's URL — step 2 copies
+  runs/posts out of it. Do not delete those env vars until after cutover.
 - The **old** stack (backend / worker / video_worker) is still **running** —
   step 1 copies files out of the live containers.
 
@@ -52,25 +57,51 @@ done
 
 ## 2. Bring up Postgres, migrate schema, copy data
 
+The postgres service publishes no host port, so schema and data migration run
+in **one-off containers on the compose network** (the backend image ships
+`alembic.ini` and `scripts/`). This never touches the running app services.
+
 ```bash
 # Start ONLY the postgres service (does not touch the running app):
 docker compose up -d postgres
 
-# Apply the schema (from the repo checkout, DATABASE_URL pointing at the
-# published postgres port or run inside a one-off container on ff-shared-net):
-alembic upgrade head
+# Build the new backend image once (used only for the one-off runs below;
+# the live containers keep running on the old image):
+docker compose build backend
 
-# Copy the data (idempotent; re-running is safe):
-python -m scripts.migrate_sqlite_to_pg --sqlite-dir ./sqlite-backup
+# Apply the schema:
+docker compose run --rm --no-deps backend alembic upgrade head
 
-# The script prints per-table:  sqlite rows / pg before / pg after.
-# VERIFY: for each table, pg_after == sqlite rows (or pg_before + new rows).
-# Spot-check a couple of rows:
-#   SELECT count(*) FROM image_logs;  SELECT count(*) FROM evaluations;
+# Copy the sqlite data (idempotent; re-running is safe).
+# Add --source-database-url with the LEGACY runs/posts Postgres URL (built
+# from the old DB_HOST/DB_USER/DB_PASSWORD/DB_NAME values in .env) so
+# historical campaign runs/posts are copied too — without it they are NOT
+# migrated and the script warns loudly:
+docker compose run --rm --no-deps \
+  -v "$(pwd)/sqlite-backup:/app/sqlite-backup:ro" \
+  backend python -m scripts.migrate_sqlite_to_pg \
+    --sqlite-dir /app/sqlite-backup \
+    --source-database-url "postgresql://<DB_USER>:<DB_PASSWORD>@<DB_HOST>:<DB_PORT>/<DB_NAME>"
+
+# The script prints per-table:  source rows / pg before / pg after.
+# VERIFY: for each table, pg_after == source rows (or pg_before + new rows).
+# Spot-check via psql inside the postgres container:
+docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c "SELECT count(*) FROM image_logs;" \
+  -c "SELECT count(*) FROM evaluations;" \
+  -c "SELECT count(*) FROM runs;" \
+  -c "SELECT count(*) FROM posts;"
 ```
 
 Row-count verification is the exit criterion — do not proceed until the
-counts match the script's reported sqlite rows.
+counts (including **runs** and **posts**) match the script's reported source
+rows.
+
+> Alternative: if you skip `--source-database-url` because the new stack
+> should keep using the existing legacy Postgres directly, point
+> `DATABASE_URL` at that DB instead — `alembic upgrade head` adopts it
+> (the baseline skips tables that already exist) and then only the sqlite
+> copy is needed.
 
 ## 3. Deploy the new images
 
@@ -94,6 +125,8 @@ head, the API and workers exit immediately with a one-line error saying so.
 - Archive: `/api/archive/...` listing works
 - Gallery: images show prompt/persona metadata (comes from `image_logs`)
 - Workspace: executions history, runpod jobs list, caption export history
+- Runs/campaigns: historical runs list and their posts (incl. post versions)
+  are present — this is the `runs`/`posts` data copied in step 2
 
 ## 4. Rollback path
 
