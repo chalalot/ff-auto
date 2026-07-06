@@ -8,6 +8,7 @@ class ImageItem(BaseModel):
     thumbnail_url: str
     created_at: float
     date: str
+    persona: Optional[str] = None
     metadata: Optional[dict] = None
 
 

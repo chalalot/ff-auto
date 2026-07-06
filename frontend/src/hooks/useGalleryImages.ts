@@ -1,10 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { galleryApi, type GalleryStatus } from '@/api/gallery'
+import { galleryApi, type GalleryStatus, type GalleryFilters } from '@/api/gallery'
 
-export const useGalleryImages = (status: GalleryStatus, page: number = 1, perPage: number = 20) => {
+export const useGalleryImages = (
+  status: GalleryStatus,
+  page: number = 1,
+  perPage: number = 20,
+  filters: GalleryFilters = {},
+) => {
   return useQuery({
-    queryKey: ['gallery', status, page, perPage],
-    queryFn: () => galleryApi.getImages({ status, page, per_page: perPage }),
+    queryKey: ['gallery', status, page, perPage, filters],
+    queryFn: () => galleryApi.getImages({ status, page, per_page: perPage, ...filters }),
+  })
+}
+
+export const useGalleryPersonas = () => {
+  return useQuery({
+    queryKey: ['gallery', 'personas'],
+    queryFn: galleryApi.getPersonas,
+    staleTime: 30000,
   })
 }
 

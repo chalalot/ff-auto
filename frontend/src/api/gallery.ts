@@ -3,15 +3,24 @@ import type { GalleryResponse, ImageMetadata, GalleryStats } from '@/types'
 
 export type GalleryStatus = 'pending' | 'approved' | 'disapproved'
 
+export interface GalleryFilters {
+  persona?: string
+  search?: string
+  date_from?: string
+  date_to?: string
+  sort?: 'newest' | 'oldest'
+}
+
 export const galleryApi = {
   getImages: (params: {
     status: GalleryStatus
     page?: number
     per_page?: number
-    group_by?: string
-    sort?: string
-  }) =>
+  } & GalleryFilters) =>
     apiClient.get<GalleryResponse>('/gallery/images', { params }).then(r => r.data),
+
+  getPersonas: () =>
+    apiClient.get<string[]>('/gallery/personas').then(r => r.data),
 
   getThumbnailUrl: (filename: string, status: GalleryStatus) =>
     `/api/gallery/images/${encodeURIComponent(filename)}/thumbnail?status=${status}`,

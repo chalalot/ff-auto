@@ -78,16 +78,41 @@ class GalleryService:
         status: str = "pending",
         page: int = 1,
         per_page: int = 20,
+        persona: Optional[str] = None,
+        search: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        sort: str = "newest",
     ) -> dict:
         directory = self._dir_for_status(status)
-        all_files = self._scan_dir(directory)
-        total = len(all_files)
+        all_files = self._scan_dir(directory)  # newest first
+
+        persona_map = self.storage.get_persona_by_result_filename()
+
+        def matches(filename: str, mtime: float) -> bool:
+            if persona and persona_map.get(filename) != persona:
+                return False
+            if search and search.lower() not in filename.lower():
+                return False
+            if date_from or date_to:
+                day = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
+                if date_from and day < date_from:
+                    return False
+                if date_to and day > date_to:
+                    return False
+            return True
+
+        filtered = [(f, m) for f, m in all_files if matches(f, m)]
+        if sort == "oldest":
+            filtered.reverse()
+
+        total = len(filtered)
         pages = math.ceil(total / per_page) if total else 1
         page = max(1, min(page, pages))
 
         start = (page - 1) * per_page
         end = start + per_page
-        slice_ = all_files[start:end]
+        slice_ = filtered[start:end]
 
         items = []
         for filename, mtime in slice_:
@@ -99,10 +124,14 @@ class GalleryService:
                     "thumbnail_url": f"/api/gallery/images/{filename}/thumbnail?status={status}",
                     "created_at": mtime,
                     "date": dt.strftime("%Y-%m-%d"),
+                    "persona": persona_map.get(filename),
                 }
             )
 
         return {"items": items, "total": total, "page": page, "pages": pages, "per_page": per_page}
+
+    def get_available_personas(self) -> List[str]:
+        return self.storage.get_distinct_personas()
 
     # ------------------------------------------------------------------
     # Thumbnail

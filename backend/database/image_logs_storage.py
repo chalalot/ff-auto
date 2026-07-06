@@ -264,6 +264,43 @@ class ImageLogsStorage:
         finally:
             conn.close()
 
+    def get_distinct_personas(self):
+        """Return sorted list of distinct non-empty personas ever logged."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT DISTINCT persona FROM image_logs
+                WHERE persona IS NOT NULL AND persona != ''
+                ORDER BY persona COLLATE NOCASE
+            """)
+            return [row[0] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get distinct personas: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def get_persona_by_result_filename(self) -> dict:
+        """Return {basename(result_image_path): persona} for all logged results."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT result_image_path, persona FROM image_logs
+                WHERE result_image_path IS NOT NULL
+            """)
+            return {
+                os.path.basename(path): persona
+                for path, persona in cursor.fetchall()
+                if path
+            }
+        except Exception as e:
+            logger.error(f"Failed to map personas by filename: {e}")
+            return {}
+        finally:
+            conn.close()
+
     def get_all_completed_executions(self):
         """Get all completed executions (where result_image_path is not null)."""
         conn = self._get_connection()

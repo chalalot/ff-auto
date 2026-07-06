@@ -109,6 +109,7 @@ export interface GalleryImage {
   path: string
   thumbnail_url: string
   created_at: string
+  persona?: string
   metadata?: ImageMetadata
 }
 

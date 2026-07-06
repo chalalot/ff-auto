@@ -138,3 +138,44 @@ def test_build_zip_by_date(svc, _temp_dirs):
 def test_build_zip_empty_raises(svc):
     with pytest.raises(ValueError):
         svc.build_zip(filenames=[])
+
+
+def test_list_images_filters_by_persona(svc, _temp_dirs, monkeypatch):
+    make_png(_temp_dirs["OUTPUT_DIR"], "persona_a.png")
+    make_png(_temp_dirs["OUTPUT_DIR"], "persona_b.png")
+    monkeypatch.setattr(
+        svc.storage, "get_persona_by_result_filename",
+        lambda: {"persona_a.png": "Alice", "persona_b.png": "Bob"},
+    )
+    result = svc.list_images(status="pending", persona="Alice")
+    filenames = [i["filename"] for i in result["items"]]
+    assert "persona_a.png" in filenames
+    assert "persona_b.png" not in filenames
+    assert result["items"][filenames.index("persona_a.png")]["persona"] == "Alice"
+
+
+def test_list_images_search_filter(svc, _temp_dirs):
+    make_png(_temp_dirs["OUTPUT_DIR"], "unique_search_target.png")
+    result = svc.list_images(status="pending", search="unique_search_target")
+    filenames = [i["filename"] for i in result["items"]]
+    assert "unique_search_target.png" in filenames
+
+    result_none = svc.list_images(status="pending", search="does_not_match_anything_xyz")
+    assert result_none["total"] == 0
+
+
+def test_list_images_sort_oldest(svc, _temp_dirs):
+    import time
+
+    make_png(_temp_dirs["OUTPUT_DIR"], "sort_first.png")
+    time.sleep(0.02)
+    make_png(_temp_dirs["OUTPUT_DIR"], "sort_second.png")
+
+    result = svc.list_images(status="pending", sort="oldest", per_page=1000)
+    filenames = [i["filename"] for i in result["items"]]
+    assert filenames.index("sort_first.png") < filenames.index("sort_second.png")
+
+
+def test_get_available_personas(svc, monkeypatch):
+    monkeypatch.setattr(svc.storage, "get_distinct_personas", lambda: ["Alice", "Bob"])
+    assert svc.get_available_personas() == ["Alice", "Bob"]

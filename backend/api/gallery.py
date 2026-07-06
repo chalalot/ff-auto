@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
@@ -25,9 +25,23 @@ def list_images(
     status: str = Query("pending", pattern="^(pending|approved|disapproved)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    persona: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None, pattern="^\\d{4}-\\d{2}-\\d{2}$"),
+    date_to: Optional[str] = Query(None, pattern="^\\d{4}-\\d{2}-\\d{2}$"),
+    sort: str = Query("newest", pattern="^(newest|oldest)$"),
     svc: GalleryService = Depends(get_gallery_service),
 ):
-    return svc.list_images(status=status, page=page, per_page=per_page)
+    return svc.list_images(
+        status=status, page=page, per_page=per_page,
+        persona=persona, search=search,
+        date_from=date_from, date_to=date_to, sort=sort,
+    )
+
+
+@router.get("/personas", response_model=List[str])
+def gallery_personas(svc: GalleryService = Depends(get_gallery_service)):
+    return svc.get_available_personas()
 
 
 @router.get("/images/{filename}/thumbnail")

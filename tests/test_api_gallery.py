@@ -54,6 +54,56 @@ def test_gallery_invalid_status(client):
     assert r.status_code == 422
 
 
+# ---- filters ----
+
+def test_gallery_personas_endpoint(client):
+    r = client.get("/api/gallery/personas")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+
+def test_gallery_search_filter(client, _temp_dirs):
+    make_png(_temp_dirs["OUTPUT_DIR"], "api_search_target.png")
+    r = client.get("/api/gallery/images?status=pending&search=api_search_target")
+    assert r.status_code == 200
+    filenames = [item["filename"] for item in r.json()["items"]]
+    assert "api_search_target.png" in filenames
+
+
+def test_gallery_persona_filter(client, _temp_dirs, monkeypatch):
+    from backend.api.deps import get_gallery_service
+
+    make_png(_temp_dirs["OUTPUT_DIR"], "api_persona_a.png")
+    make_png(_temp_dirs["OUTPUT_DIR"], "api_persona_b.png")
+
+    svc = get_gallery_service()
+    monkeypatch.setattr(
+        svc.storage, "get_persona_by_result_filename",
+        lambda: {"api_persona_a.png": "Alice", "api_persona_b.png": "Bob"},
+    )
+
+    r = client.get("/api/gallery/images?status=pending&persona=Alice")
+    assert r.status_code == 200
+    filenames = [item["filename"] for item in r.json()["items"]]
+    assert "api_persona_a.png" in filenames
+    assert "api_persona_b.png" not in filenames
+
+
+def test_gallery_sort_oldest(client):
+    r = client.get("/api/gallery/images?status=pending&sort=oldest&per_page=100")
+    assert r.status_code == 200
+
+
+def test_gallery_invalid_sort(client):
+    r = client.get("/api/gallery/images?status=pending&sort=invalid")
+    assert r.status_code == 422
+
+
+def test_gallery_invalid_date_format(client):
+    r = client.get("/api/gallery/images?status=pending&date_from=not-a-date")
+    assert r.status_code == 422
+
+
 # ---- thumbnail ----
 
 def test_thumbnail_returns_jpeg(client, output_png):

@@ -6,15 +6,18 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
 import {
-  useGalleryImages, useGalleryStats,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select'
+import {
+  useGalleryImages, useGalleryStats, useGalleryPersonas,
   useApproveImages, useDisapproveImages, useUndoImages
 } from '@/hooks/useGalleryImages'
-import { galleryApi, type GalleryStatus } from '@/api/gallery'
+import { galleryApi, type GalleryStatus, type GalleryFilters } from '@/api/gallery'
 import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
   Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
-  LayoutGrid, Info, X
+  LayoutGrid, Info, X, Filter, FilterX
 } from 'lucide-react'
 import type { ImageMetadata } from '@/types'
 import type { GalleryImage } from '@/types'
@@ -28,8 +31,24 @@ export const GalleryPage: React.FC = () => {
   const [renameMap, setRenameMap] = useState<Record<string, string>>({})
   const [columns, setColumns] = useState(4)
 
-  const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE)
+  const [persona, setPersona] = useState('all')
+  const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sort, setSort] = useState<'newest' | 'oldest'>('newest')
+
+  const filters: GalleryFilters = {
+    persona: persona !== 'all' ? persona : undefined,
+    search: search || undefined,
+    date_from: dateFrom || undefined,
+    date_to: dateTo || undefined,
+    sort,
+  }
+  const hasActiveFilters = Boolean(filters.persona || filters.search || filters.date_from || filters.date_to || sort !== 'newest')
+
+  const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE, filters)
   const { data: stats } = useGalleryStats()
+  const { data: personas } = useGalleryPersonas()
   const approveMutation = useApproveImages()
   const disapproveMutation = useDisapproveImages()
   const undoMutation = useUndoImages()
@@ -39,6 +58,15 @@ export const GalleryPage: React.FC = () => {
     setPage(1)
     setSelectedImages(new Set())
     setRenameMap({})
+  }
+
+  const clearFilters = () => {
+    setPersona('all')
+    setSearch('')
+    setDateFrom('')
+    setDateTo('')
+    setSort('newest')
+    setPage(1)
   }
 
   const toggleImage = (filename: string) => {
@@ -102,6 +130,68 @@ export const GalleryPage: React.FC = () => {
         <Button variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="w-4 h-4 mr-2" />Refresh
         </Button>
+      </div>
+
+      {/* Filters */}
+      <div className="p-4 border-b flex items-center gap-2 flex-wrap">
+        <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+
+        <Select
+          value={persona}
+          onValueChange={(v) => { setPersona(v); setPage(1) }}
+        >
+          <SelectTrigger className="w-40 h-9">
+            <SelectValue placeholder="Persona" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All personas</SelectItem>
+            {(personas || []).map(p => (
+              <SelectItem key={p} value={p}>{p}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Input
+          placeholder="Search filename..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+          className="h-9 w-44"
+        />
+
+        <div className="flex items-center gap-1">
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => { setDateFrom(e.target.value); setPage(1) }}
+            className="h-9 w-36"
+          />
+          <span className="text-xs text-muted-foreground">to</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => { setDateTo(e.target.value); setPage(1) }}
+            className="h-9 w-36"
+          />
+        </div>
+
+        <Select
+          value={sort}
+          onValueChange={(v) => { setSort(v as 'newest' | 'oldest'); setPage(1) }}
+        >
+          <SelectTrigger className="w-32 h-9">
+            <SelectValue placeholder="Sort" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newest">Newest first</SelectItem>
+            <SelectItem value="oldest">Oldest first</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <FilterX className="w-4 h-4 mr-2" />Clear filters
+          </Button>
+        )}
       </div>
 
       {/* Bulk Actions */}
@@ -433,9 +523,14 @@ const ImageCard: React.FC<ImageCardProps> = ({
         <p className="text-xs truncate text-muted-foreground" title={image.filename}>
           {image.filename}
         </p>
-        {timeAgo && (
-          <p className="text-xs text-muted-foreground/70">{timeAgo}</p>
-        )}
+        <div className="flex items-center gap-1.5">
+          {timeAgo && (
+            <p className="text-xs text-muted-foreground/70">{timeAgo}</p>
+          )}
+          {image.persona && (
+            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">{image.persona}</Badge>
+          )}
+        </div>
 
         {/* Rename input for pending */}
         {status === 'pending' && (
