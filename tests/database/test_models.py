@@ -226,8 +226,16 @@ def test_engine_import_does_not_connect(monkeypatch):
     import sys
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://nobody:nope@127.0.0.1:1/nodb")
+    original = sys.modules.get("backend.database.engine")
     sys.modules.pop("backend.database.engine", None)
-    module = importlib.import_module("backend.database.engine")
-    assert hasattr(module, "get_engine")
-    # Re-import cleanly so other tests get a fresh module state.
-    sys.modules.pop("backend.database.engine", None)
+    try:
+        module = importlib.import_module("backend.database.engine")
+        assert hasattr(module, "get_engine")
+    finally:
+        # Restore the original module object (if any) so modules that bound
+        # to it earlier and later importers agree on one engine singleton —
+        # leaving a fresh third copy behind causes order-dependent failures.
+        if original is not None:
+            sys.modules["backend.database.engine"] = original
+        else:
+            sys.modules.pop("backend.database.engine", None)

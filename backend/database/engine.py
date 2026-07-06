@@ -5,7 +5,6 @@ Shared SQLAlchemy engine/session layer for FastAPI and Celery.
                        (Celery forks — each process builds its own engine on
                        first use).
 - ``SessionLocal``     session factory bound lazily to the singleton engine.
-- ``get_db()``         FastAPI dependency: yields a session, always closes.
 - ``session_scope()``  context manager for Celery tasks and scripts: commits
                        on success, rolls back on exception, always closes.
 
@@ -15,7 +14,7 @@ There is no sqlite fallback.
 """
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Iterator, Optional
+from typing import Iterator, Optional
 
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
@@ -47,16 +46,6 @@ def dispose_engine() -> None:
     if _engine is not None:
         _engine.dispose()
         _engine = None
-
-
-def get_db() -> Generator[Session, None, None]:
-    """FastAPI dependency that yields a request-scoped session."""
-    get_engine()
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @contextmanager

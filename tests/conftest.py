@@ -78,9 +78,32 @@ def migrated_engine(database_url):
     )
     command.upgrade(cfg, "head")
 
-    from backend.database.engine import get_engine
+    from sqlalchemy.engine import make_url
 
-    yield get_engine()
+    from backend.database.engine import dispose_engine, get_engine
+
+    # An earlier test may have created the singleton under an ambient
+    # DATABASE_URL (e.g. a real .env). Drop it so the engine we yield — and
+    # that clean_tables TRUNCATEs through — is provably the throwaway DB.
+    dispose_engine()
+    engine = get_engine()
+    expected = make_url(database_url)
+    actual = engine.url
+    if (actual.host, actual.port, actual.database) != (
+        expected.host,
+        expected.port,
+        expected.database,
+    ):
+        pytest.fail(
+            f"Engine bound to {actual.render_as_string(hide_password=True)} "
+            f"instead of the throwaway test DB "
+            f"{expected.render_as_string(hide_password=True)} — refusing to "
+            "run destructive fixtures against it."
+        )
+
+    yield engine
+
+    dispose_engine()
 
 
 @pytest.fixture()

@@ -5,21 +5,11 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select, update
 
+from .db_utils import format_legacy_ts as _format_ts
 from .engine import session_scope
 from .models import Evaluation
 
 logger = logging.getLogger(__name__)
-
-# Legacy sqlite CURRENT_TIMESTAMP format; the API layer expects these strings.
-_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def _format_ts(value: Optional[datetime]) -> Optional[str]:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc)
-    return value.strftime(_TS_FORMAT)
 
 
 class EvaluationsStorage:

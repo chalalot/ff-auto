@@ -1,24 +1,13 @@
 import logging
-from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import func, select, update
 
+from .db_utils import format_legacy_ts as _format_ts
 from .engine import session_scope
 from .models import VideoLog
 
 logger = logging.getLogger(__name__)
-
-# Legacy sqlite CURRENT_TIMESTAMP format; API consumers expect these strings.
-_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
-
-
-def _format_ts(value: Optional[datetime]) -> Optional[str]:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc)
-    return value.strftime(_TS_FORMAT)
 
 
 def _row_dict(row: VideoLog) -> dict:
