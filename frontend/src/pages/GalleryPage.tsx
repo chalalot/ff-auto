@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import { evaluationsApi } from '@/api/evaluations'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -13,16 +14,24 @@ import {
   useApproveImages, useDisapproveImages, useUndoImages
 } from '@/hooks/useGalleryImages'
 import { galleryApi, type GalleryStatus, type GalleryFilters } from '@/api/gallery'
+import { useMutation } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
   Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
-  LayoutGrid, Info, X, Filter, FilterX
+  LayoutGrid, Info, X, Filter, FilterX, Sparkles
 } from 'lucide-react'
 import type { ImageMetadata } from '@/types'
 import type { GalleryImage } from '@/types'
+import type { EvaluationResult } from '@/types/evaluation'
 
 const ITEMS_PER_PAGE = 20
+
+const formatDimension = (dimension: string) =>
+  dimension
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
 
 export const GalleryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<GalleryStatus>('pending')
@@ -30,6 +39,7 @@ export const GalleryPage: React.FC = () => {
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
   const [renameMap, setRenameMap] = useState<Record<string, string>>({})
   const [columns, setColumns] = useState(4)
+  const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
 
   const [persona, setPersona] = useState('all')
   const [search, setSearch] = useState('')
@@ -253,6 +263,7 @@ export const GalleryPage: React.FC = () => {
               onRename={(filename, value) => setRenameMap(prev => ({ ...prev, [filename]: value }))}
               onSelectAll={() => setSelectedImages(new Set((gallery?.items || []).map(i => i.filename)))}
               onClearAll={() => setSelectedImages(new Set())}
+              onShowDetail={(image) => setDetailImage({ image, status })}
               onAction={async (action, filename) => {
                 if (action === 'approve') await approveMutation.mutateAsync({ filenames: [filename] })
                 if (action === 'disapprove') await disapproveMutation.mutateAsync([filename])
@@ -277,6 +288,14 @@ export const GalleryPage: React.FC = () => {
           </TabsContent>
         ))}
       </Tabs>
+
+      {detailImage && (
+        <ImageDetailModal
+          image={detailImage.image}
+          status={detailImage.status}
+          onClose={() => setDetailImage(null)}
+        />
+      )}
     </div>
   )
 }
@@ -293,13 +312,14 @@ interface ImageGridProps {
   onRename: (filename: string, value: string) => void
   onSelectAll: () => void
   onClearAll: () => void
+  onShowDetail: (image: GalleryImage) => void
   onAction: (action: string, filename: string) => Promise<void>
 }
 
 const ImageGrid: React.FC<ImageGridProps> = ({
   images, status, isLoading, selectedImages, renameMap,
   columns, onColumnsChange,
-  onToggle, onRename, onSelectAll, onClearAll, onAction
+  onToggle, onRename, onSelectAll, onClearAll, onShowDetail, onAction
 }) => {
   if (isLoading) return (
     <div className="flex items-center justify-center h-48">
@@ -344,6 +364,7 @@ const ImageGrid: React.FC<ImageGridProps> = ({
             onToggle={() => onToggle(img.filename)}
             onRename={(v) => onRename(img.filename, v)}
             onAction={(action) => onAction(action, img.filename)}
+            onShowDetail={() => onShowDetail(img)}
           />
         ))}
       </div>
@@ -364,24 +385,81 @@ interface ImageDetailModalProps {
 const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onClose }) => {
   const [metadata, setMetadata] = useState<ImageMetadata | null>(null)
   const [loading, setLoading] = useState(true)
+  const [evaluation, setEvaluation] = useState<EvaluationResult | null>(null)
+  const [evaluationLoading, setEvaluationLoading] = useState(true)
+  const [detailTab, setDetailTab] = useState<'details' | 'evaluator'>('details')
+  const backdropPointerStartedRef = React.useRef(false)
+  const scrollRef = React.useRef<HTMLDivElement>(null)
   const refImageUrl = galleryApi.getRefImageUrl(image.filename, status)
+
+  const loadSavedEvaluation = React.useCallback(async () => {
+    setEvaluationLoading(true)
+    try {
+      const result = await evaluationsApi.list({ limit: 1, media_path: image.path })
+      setEvaluation(result.items[0] || null)
+    } catch {
+      setEvaluation(null)
+    } finally {
+      setEvaluationLoading(false)
+    }
+  }, [image.path])
+
+  const evaluateMutation = useMutation({
+    mutationFn: () =>
+      evaluationsApi.create({
+        media_type: 'image',
+        media_path: image.path,
+        prompt: metadata?.prompt || undefined,
+      }),
+    onSuccess: setEvaluation,
+    onError: () => {
+      void loadSavedEvaluation()
+    },
+  })
 
   React.useEffect(() => {
     setLoading(true)
+    setEvaluation(null)
+    setEvaluationLoading(true)
+    setDetailTab('details')
     galleryApi.getMetadata(image.filename, status)
       .then(setMetadata)
       .catch(() => setMetadata(null))
       .finally(() => setLoading(false))
-  }, [image.filename, status])
+
+    void loadSavedEvaluation()
+  }, [image.filename, image.path, loadSavedEvaluation, status])
+
+  // Switching tabs swaps in differently-sized content; anchor the dialog back
+  // to the top so the new tab isn't shown mid-scroll.
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [detailTab])
+
+  React.useEffect(() => {
+    if (evaluation?.status !== 'pending') return
+    const intervalId = window.setInterval(() => {
+      void loadSavedEvaluation()
+    }, 5000)
+    return () => window.clearInterval(intervalId)
+  }, [evaluation?.status, loadSavedEvaluation])
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 py-[5vh]"
+      onPointerDownCapture={(e) => {
+        backdropPointerStartedRef.current = e.target === e.currentTarget
+      }}
+      onClick={(e) => {
+        if (backdropPointerStartedRef.current && e.target === e.currentTarget) onClose()
+        backdropPointerStartedRef.current = false
+      }}
     >
       <div
-        className="bg-background rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 relative"
+        ref={scrollRef}
+        className="bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 relative"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
@@ -392,69 +470,152 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
 
         <h2 className="text-base font-semibold mb-4 pr-6 truncate">{image.filename}</h2>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Generated image */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Generated</p>
-            <img
-              src={galleryApi.getThumbnailUrl(image.filename, status)}
-              alt="generated"
-              className="w-full rounded-lg object-cover"
-            />
-          </div>
+        <Tabs
+          value={detailTab}
+          onValueChange={(value) => setDetailTab(value === 'evaluator' ? 'evaluator' : 'details')}
+          className="space-y-4"
+        >
+          <TabsList>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="evaluator">Evaluator</TabsTrigger>
+          </TabsList>
 
-          {/* Reference image */}
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Reference</p>
-            <img
-              src={refImageUrl}
-              alt="reference"
-              className="w-full rounded-lg object-cover"
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none'
-                const sibling = e.currentTarget.nextElementSibling as HTMLElement | null
-                if (sibling) sibling.style.display = 'flex'
-              }}
-            />
-            <div className="hidden items-center justify-center h-32 rounded-lg bg-muted text-xs text-muted-foreground">
-              No reference image
-            </div>
-          </div>
-        </div>
+          <TabsContent value="details" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Generated</p>
+                <img
+                  src={galleryApi.getThumbnailUrl(image.filename, status)}
+                  alt="generated"
+                  className="w-full rounded-lg object-cover"
+                />
+              </div>
 
-        {/* Metadata */}
-        <div className="mt-4 space-y-3">
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading metadata...
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Reference</p>
+                <img
+                  src={refImageUrl}
+                  alt="reference"
+                  className="w-full rounded-lg object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none'
+                    const sibling = e.currentTarget.nextElementSibling as HTMLElement | null
+                    if (sibling) sibling.style.display = 'flex'
+                  }}
+                />
+                <div className="hidden items-center justify-center h-32 rounded-lg bg-muted text-xs text-muted-foreground">
+                  No reference image
+                </div>
+              </div>
             </div>
-          )}
-          {!loading && metadata && (
-            <>
-              {metadata.persona && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Persona</p>
-                  <p className="text-sm">{metadata.persona}</p>
+
+            <div className="space-y-3">
+              {loading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading metadata...
                 </div>
               )}
-              {metadata.seed != null && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Seed</p>
-                  <p className="text-sm font-mono">{metadata.seed}</p>
+              {!loading && metadata && (
+                <>
+                  {metadata.persona && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">Persona</p>
+                      <p className="text-sm">{metadata.persona}</p>
+                    </div>
+                  )}
+                  {metadata.seed != null && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">Seed</p>
+                      <p className="text-sm font-mono">{metadata.seed}</p>
+                    </div>
+                  )}
+                  {metadata.prompt && (
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-0.5">Prompt</p>
+                      <p className="text-sm whitespace-pre-wrap break-words">{metadata.prompt}</p>
+                    </div>
+                  )}
+                  {!metadata.persona && metadata.seed == null && !metadata.prompt && (
+                    <p className="text-sm text-muted-foreground">No metadata available</p>
+                  )}
+                </>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="evaluator" className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Production evaluator</p>
+                <p className="text-xs text-muted-foreground">
+                  {evaluationLoading
+                    ? 'Loading saved result...'
+                    : evaluation
+                    ? `${evaluation.model} · ${evaluation.rubric_version}`
+                    : 'LLM production rubric'}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => evaluateMutation.mutate()}
+                disabled={loading}
+                isLoading={evaluateMutation.isPending}
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                Evaluate
+              </Button>
+            </div>
+
+            {evaluationLoading && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading saved evaluation...
+              </div>
+            )}
+
+            {evaluateMutation.isError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {(evaluateMutation.error as Error).message}
+              </div>
+            )}
+
+            {evaluation?.status === 'pending' && (
+              <div className="flex items-center gap-2 rounded-md border p-3 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> Evaluation is still pending.
+              </div>
+            )}
+
+            {evaluation?.status === 'failed' && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                {evaluation.error_message || 'Evaluation failed'}
+              </div>
+            )}
+
+            {evaluation?.status === 'completed' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">Score {evaluation.overall_score?.toFixed(2)}/5</Badge>
+                  <Badge variant="secondary">{evaluation.status}</Badge>
                 </div>
-              )}
-              {metadata.prompt && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Prompt</p>
-                  <p className="text-sm whitespace-pre-wrap break-words">{metadata.prompt}</p>
+
+                {evaluation.summary && (
+                  <p className="text-sm text-muted-foreground">{evaluation.summary}</p>
+                )}
+
+                <div className="space-y-3">
+                  {evaluation.scores.map(score => (
+                    <div key={score.dimension} className="rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">{formatDimension(score.dimension)}</p>
+                        <Badge variant="outline">{score.score}/5</Badge>
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">{score.rationale}</p>
+                    </div>
+                  ))}
                 </div>
-              )}
-              {!metadata.persona && metadata.seed == null && !metadata.prompt && (
-                <p className="text-sm text-muted-foreground">No metadata available</p>
-              )}
-            </>
-          )}
-        </div>
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
@@ -472,13 +633,13 @@ interface ImageCardProps {
   onToggle: () => void
   onRename: (value: string) => void
   onAction: (action: string) => Promise<void>
+  onShowDetail: () => void
 }
 
 const ImageCard: React.FC<ImageCardProps> = ({
-  image, status, isSelected, renameValue, onToggle, onRename, onAction
+  image, status, isSelected, renameValue, onToggle, onRename, onAction, onShowDetail
 }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [showDetail, setShowDetail] = useState(false)
   const thumbnailUrl = galleryApi.getThumbnailUrl(image.filename, status)
 
   const handleAction = async (action: string) => {
@@ -591,7 +752,7 @@ const ImageCard: React.FC<ImageCardProps> = ({
           )}
           <button
             className="flex items-center justify-center h-7 w-7 rounded-md border border-input hover:bg-accent transition-colors"
-            onClick={(e) => { e.stopPropagation(); setShowDetail(true) }}
+            onClick={(e) => { e.stopPropagation(); onShowDetail() }}
             title="View metadata"
           >
             <Info className="w-3 h-3" />
@@ -606,14 +767,6 @@ const ImageCard: React.FC<ImageCardProps> = ({
           </a>
         </div>
       </div>
-
-      {showDetail && (
-        <ImageDetailModal
-          image={image}
-          status={status}
-          onClose={() => setShowDetail(false)}
-        />
-      )}
     </div>
   )
 }

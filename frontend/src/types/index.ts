@@ -19,13 +19,9 @@ export interface PresetConfig {
 export interface LastUsedConfig {
   persona?: string
   vision_model?: string
-  clip_model_type?: string
   batch_limit?: number
   variations?: number
-  strength?: number
   lora_name?: string
-  width?: number
-  height?: number
   seed_strategy?: string
   base_seed?: number
   workflow_type?: string
@@ -50,19 +46,47 @@ export interface InputImage {
   thumbnail_url: string
 }
 
+export interface PipelineInfo {
+  pipeline_type: string
+  media_type: string   // "image" | "video"
+  label: string
+  available: boolean
+}
+
+export interface WorkflowParamInput {
+  key: string
+  value: unknown
+  type: 'integer' | 'number' | 'boolean' | 'string'
+  locked: boolean
+  locked_reason?: string | null
+}
+
+export interface WorkflowParamNode {
+  node_id: string
+  class_type: string
+  title: string
+  inputs: WorkflowParamInput[]
+}
+
+export interface WorkflowParameters {
+  workflow?: string
+  pipeline_type?: string
+  nodes: WorkflowParamNode[]
+}
+
 export interface ProcessImageConfig {
   image_path: string
   persona: string
   workflow_type: string
   vision_model: string
   variation_count: number
-  strength: number
   seed_strategy: string
   base_seed: number
-  width: number
-  height: number
   lora_name: string
-  clip_model_type: string
+  // Which workflows/*.json graph to build from (backend defaults to workflow.json).
+  workflow_name?: string
+  // Per-run node-input overrides: { node_id: { input_key: value } }.
+  workflow_overrides?: Record<string, Record<string, unknown>>
 }
 
 export interface TaskStatusResponse {

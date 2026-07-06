@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
+# Long-edge cap for gallery thumbnails. Cards render in large grid cells, so a
+# 512px thumbnail looked low-res; 1024 keeps them crisp without serving the full
+# multi-MB PNG. Bumping this value also invalidates the on-disk cache because the
+# size is encoded into the cached filename.
+THUMBNAIL_MAX = 1024
+
 
 class GalleryService:
     def __init__(self):
@@ -142,7 +148,7 @@ class GalleryService:
         if not original_path.exists():
             return None
 
-        thumb_path = self.thumbnails_dir / f"thumb_{filename}"
+        thumb_path = self.thumbnails_dir / f"thumb_{THUMBNAIL_MAX}_{filename}"
         if thumb_path.exists() and thumb_path.stat().st_mtime >= original_path.stat().st_mtime:
             return thumb_path.read_bytes()
 
@@ -150,7 +156,7 @@ class GalleryService:
             with Image.open(original_path) as img:
                 if img.mode in ("RGBA", "P"):
                     img = img.convert("RGB")
-                img.thumbnail((512, 512), Image.Resampling.LANCZOS)
+                img.thumbnail((THUMBNAIL_MAX, THUMBNAIL_MAX), Image.Resampling.LANCZOS)
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=85)
                 data = buf.getvalue()
@@ -174,6 +180,7 @@ class GalleryService:
                 if "prompt" in meta:
                     prompt_data = json.loads(meta["prompt"])
                     metadata["raw_metadata"] = prompt_data
+                    text_nodes = []
                     for node_id, node_data in prompt_data.items():
                         inputs = node_data.get("inputs", {})
                         class_type = node_data.get("class_type", "")
@@ -183,8 +190,16 @@ class GalleryService:
                             elif "noise_seed" in inputs:
                                 metadata["seed"] = inputs["noise_seed"]
                         if "text" in inputs and isinstance(inputs["text"], str):
-                            if "CLIPTextEncode" in class_type or metadata["prompt"] is None:
-                                metadata["prompt"] = inputs["text"]
+                            text_nodes.append(inputs["text"])
+                    # The positive prompt is split across CLIPTextEncode nodes
+                    # ("#Subject" / "#Environment"). Join those sections so both
+                    # are shown; otherwise fall back to the first text node.
+                    sectioned = [t for t in text_nodes if t.strip().startswith("#")]
+                    if sectioned:
+                        sectioned.sort(key=lambda t: 0 if t.strip().startswith("#Subject") else 1)
+                        metadata["prompt"] = "\n\n".join(t.strip() for t in sectioned)
+                    elif text_nodes:
+                        metadata["prompt"] = text_nodes[0]
         except Exception as e:
             logger.debug(f"Could not extract metadata from {filename}: {e}")
 
@@ -193,6 +208,12 @@ class GalleryService:
             record = self.storage.get_execution_by_result_path(str(path))
             if record:
                 metadata["persona"] = record.get("persona")
+                # The DB holds the full prompt (both "#Subject" and "#Environment"
+                # sections). The embedded PNG workflow splits these across separate
+                # CLIPTextEncode nodes, so prefer the DB copy when available.
+                db_prompt = record.get("prompt")
+                if db_prompt:
+                    metadata["prompt"] = db_prompt
                 ref_path = record.get("image_ref_path")
                 if ref_path and Path(ref_path).exists():
                     metadata["ref_image"] = ref_path
@@ -241,13 +262,27 @@ class GalleryService:
         if txt_src.exists():
             shutil.move(str(txt_src), str(dest_path.with_suffix(".txt")))
 
-        # Keep DB result_image_path in sync with the file's new location
+        # Keep DB result_image_path in sync with the file's new location. A row
+        # may list several comma-joined variation paths, so rewrite only the
+        # entry we just moved and leave its siblings intact.
         try:
             record = self.storage.get_execution_by_result_path(str(src_path))
             if record:
+                src_str, dest_str = str(src_path), str(dest_path)
+                src_base = os.path.basename(src_str)
+                parts = [p for p in (record.get("result_image_path") or "").split(",") if p]
+                new_parts, replaced = [], False
+                for p in parts:
+                    if p == src_str or os.path.basename(p) == src_base:
+                        new_parts.append(dest_str)
+                        replaced = True
+                    else:
+                        new_parts.append(p)
+                if not replaced:
+                    new_parts = [dest_str]
                 self.storage.update_result_path(
                     execution_id=record["execution_id"],
-                    result_image_path=str(dest_path),
+                    result_image_path=",".join(new_parts),
                 )
         except Exception as e:
             logger.warning(f"Could not update DB path after move {src_path} → {dest_path}: {e}")

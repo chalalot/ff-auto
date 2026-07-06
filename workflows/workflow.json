@@ -1,0 +1,322 @@
+{
+  "119": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "120": {
+    "inputs": {
+      "width": 512,
+      "height": 768,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "121": {
+    "inputs": {
+      "conditioning": [
+        "136",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "122": {
+    "inputs": {
+      "samples": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "123": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "124": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "133",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "125": {
+    "inputs": {
+      "lora_name": "Macincesht__ff-loras__emi_v4.safetensors",
+      "strength_model": 1.15,
+      "model": [
+        "123",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "126": {
+    "inputs": {
+      "shift": 4,
+      "model": [
+        "125",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "127": {
+    "inputs": {
+      "text": "A medium-wide, knee-up smartphone snapshot outdoor on a city street. The camera is positioned several meters back to capture a wide view of the surrounding environment. Point of view is slightly below eye level. The deep background features a large, classic cream-colored European-style building across a wide street, parked cars, and a tall street lamp pole. The foreground includes a low stone architectural wall and vibrant green bushes on the right. The perspective clearly establishes a deep, open urban environment, avoiding a tight portrait crop.",
+      "clip": [
+        "129",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "128": {
+    "inputs": {
+      "seed": 91988939629792,
+      "steps": 8,
+      "cfg": 0.9,
+      "sampler_name": "dpmpp_2m_sde_gpu",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "126",
+        0
+      ],
+      "positive": [
+        "136",
+        0
+      ],
+      "negative": [
+        "121",
+        0
+      ],
+      "latent_image": [
+        "120",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "129": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "130": {
+    "inputs": {
+      "pixels": [
+        "131",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "131": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "width": 1024,
+      "height": 1536,
+      "crop": "disabled",
+      "image": [
+        "122",
+        0
+      ]
+    },
+    "class_type": "ImageScale",
+    "_meta": {
+      "title": "Upscale Image"
+    }
+  },
+  "132": {
+    "inputs": {
+      "seed": 636532936542181,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "linear_quadratic",
+      "denoise": 0.3,
+      "model": [
+        "126",
+        0
+      ],
+      "positive": [
+        "136",
+        0
+      ],
+      "negative": [
+        "121",
+        0
+      ],
+      "latent_image": [
+        "130",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "133": {
+    "inputs": {
+      "samples": [
+        "132",
+        0
+      ],
+      "vae": [
+        "138",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "134": {
+    "inputs": {
+      "text": "EMI_woman, fair porcelain skin, stunningly beautiful youthful Western facial features with an elegant, highly defined Caucasian bone structure. \n\nHer signature short layered bob haircut in beautiful platinum blonde. Her mood is effortlessly chic and relaxed. She has a soft, observant expression, looking away from the camera toward the left with a calm, magnetic gaze. Her large, mesmerizing grey-blue eyes reflect the bright outdoor daylight.\n\nShe is wearing a casual, stylish outfit consisting of a fitted white spaghetti-strap tank top, high-waisted white wide-leg jeans, and a black cardigan draped loosely off one shoulder. In one hand, she loosely holds the top handle of a small, structured black boxy handbag with a long strap hanging down. The bright, natural daylight casts soft, realistic shadows across her clothing and face, perfectly integrating her into the sunny urban scene.",
+      "clip": [
+        "129",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "135": {
+    "inputs": {
+      "start": 0.18,
+      "end": 1,
+      "conditioning": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "ConditioningSetTimestepRange",
+    "_meta": {
+      "title": "ConditioningSetTimestepRange"
+    }
+  },
+  "136": {
+    "inputs": {
+      "conditioning_1": [
+        "135",
+        0
+      ],
+      "conditioning_2": [
+        "137",
+        0
+      ]
+    },
+    "class_type": "ConditioningCombine",
+    "_meta": {
+      "title": "Conditioning (Combine)"
+    }
+  },
+  "137": {
+    "inputs": {
+      "start": 0,
+      "end": 0.2,
+      "conditioning": [
+        "127",
+        0
+      ]
+    },
+    "class_type": "ConditioningSetTimestepRange",
+    "_meta": {
+      "title": "ConditioningSetTimestepRange"
+    }
+  },
+  "138": {
+    "inputs": {
+      "vae_name": "UltraFlux-v1.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "143": {
+    "inputs": {
+      "sparse_hint_mult": 1,
+      "sparse_nonhint_mult": 1,
+      "sparse_mask_mult": 1,
+      "cn_extras": [
+        "144",
+        0
+      ]
+    },
+    "class_type": "ACN_SparseCtrlWeightExtras",
+    "_meta": {
+      "title": "SparseCtrl Weight Extras 🛂🅐🅒🅝"
+    }
+  },
+  "144": {
+    "inputs": {
+      "middle_mult": 1
+    },
+    "class_type": "ACN_ExtrasMiddleMult",
+    "_meta": {
+      "title": "Middle Weight Extras 🛂🅐🅒🅝"
+    }
+  }
+}

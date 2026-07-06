@@ -18,6 +18,9 @@ from backend.models.workspace import (
     TaskStatusResponse,
     DispatchResponse,
     BatchDispatchResponse,
+    PipelineInfo,
+    WorkflowParametersResponse,
+    WorkflowFileParametersResponse,
     ActiveTask,
     ExecutionRecord,
     CaptionExportEntry,
@@ -32,6 +35,85 @@ from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
 
 router = APIRouter()
+
+
+def _validate_image_pipeline_type(pipeline_type: str) -> None:
+    """Reject unknown or non-image pipeline types at the request boundary."""
+    from backend.pipelines import UnknownPipelineError, get_pipeline
+
+    try:
+        pipeline = get_pipeline(pipeline_type)
+    except UnknownPipelineError:
+        raise HTTPException(status_code=400, detail=f"Unknown pipeline_type '{pipeline_type}'")
+    if pipeline.media_type != "image":
+        raise HTTPException(
+            status_code=400,
+            detail=f"pipeline_type '{pipeline_type}' is not an image pipeline",
+        )
+
+
+@router.get("/image-pipelines", response_model=List[str])
+def list_image_pipelines():
+    """Available image generation pipeline types, for the caller to choose from."""
+    from backend.pipelines import available_pipelines, get_pipeline
+
+    return [pt for pt in available_pipelines() if get_pipeline(pt).media_type == "image"]
+
+
+def _get_available_pipeline(pipeline_type: str):
+    """Resolve a runnable pipeline or raise 400 (unknown or unavailable)."""
+    from backend.pipelines import UnknownPipelineError, get_pipeline
+
+    try:
+        pipeline = get_pipeline(pipeline_type)
+    except UnknownPipelineError:
+        raise HTTPException(status_code=400, detail=f"Unknown pipeline_type '{pipeline_type}'")
+    if not pipeline.available:
+        raise HTTPException(
+            status_code=400,
+            detail=f"pipeline_type '{pipeline_type}' is not available yet",
+        )
+    return pipeline
+
+
+@router.get("/pipelines", response_model=List[PipelineInfo])
+def list_pipelines():
+    """All registered pipelines (image + video) with selector metadata."""
+    from backend.pipelines import pipelines_metadata
+
+    return pipelines_metadata()
+
+
+@router.get("/pipelines/{pipeline_type}/parameters", response_model=WorkflowParametersResponse)
+def get_pipeline_parameters(pipeline_type: str):
+    """Editable workflow parameters introspected from the pipeline's JSON."""
+    pipeline = _get_available_pipeline(pipeline_type)
+    return {"pipeline_type": pipeline_type, "nodes": pipeline.describe_parameters()}
+
+
+@router.get("/workflows", response_model=List[str])
+def list_workflows():
+    """Workflow JSON graphs available in the workflows directory, for selection."""
+    from backend.pipelines import list_workflow_files
+
+    return list_workflow_files()
+
+
+@router.get("/workflows/{workflow_name}/parameters", response_model=WorkflowFileParametersResponse)
+def get_workflow_parameters(workflow_name: str):
+    """Editable parameters introspected from the selected workflow JSON file."""
+    from backend.pipelines import (
+        describe_workflow_parameters,
+        list_workflow_files,
+        load_workflow_template,
+    )
+
+    if workflow_name not in list_workflow_files():
+        raise HTTPException(status_code=404, detail=f"Unknown workflow '{workflow_name}'")
+    return {
+        "workflow": workflow_name,
+        "nodes": describe_workflow_parameters(load_workflow_template(workflow_name)),
+    }
 
 
 @router.get("/input-images", response_model=List[InputImage])
@@ -66,6 +148,7 @@ async def upload_images(
 
 @router.post("/process", response_model=DispatchResponse)
 def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    _validate_image_pipeline_type(body.pipeline_type)
     try:
         task_id = svc.dispatch_processing(
             image_path=body.image_path,
@@ -80,6 +163,9 @@ def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depen
             height=body.height,
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
+            pipeline_type=body.pipeline_type,
+            workflow_overrides=body.workflow_overrides,
+            workflow_name=body.workflow_name,
             prepare=not body.skip_prepare,
         )
         return {"task_id": task_id}
@@ -91,6 +177,7 @@ def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depen
 
 @router.post("/process-batch", response_model=BatchDispatchResponse)
 def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    _validate_image_pipeline_type(body.pipeline_type)
     try:
         task_ids = svc.dispatch_batch(
             image_paths=body.image_paths,
@@ -105,6 +192,9 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
             height=body.height,
             lora_name=body.lora_name,
             clip_model_type=body.clip_model_type,
+            pipeline_type=body.pipeline_type,
+            workflow_overrides=body.workflow_overrides,
+            workflow_name=body.workflow_name,
             prepare=not body.skip_prepare,
         )
         return {"task_ids": task_ids}

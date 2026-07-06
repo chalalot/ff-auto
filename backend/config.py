@@ -37,11 +37,25 @@ class GlobalConfig:
     OPENAI_API_BASE = os.getenv("OPENAI_BASE_URL")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-    # GROK (xAI)
-    GROK_API_KEY = os.getenv("GROK_API_KEY")
-
     # GEMINI (Google)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+    # LLM media evaluator (OpenAI-compatible endpoint)
+    EVALUATOR_MODEL = os.getenv("EVALUATOR_MODEL", "gemma-4-31b-it")
+    _EVALUATOR_IS_GOOGLE_MODEL = EVALUATOR_MODEL.startswith(("gemini-", "gemma-", "models/gemini-", "models/gemma-", "google/gemini-", "google/gemma-"))
+    _DEFAULT_EVALUATOR_API_BASE = (
+        "https://generativelanguage.googleapis.com/v1beta/openai/"
+        if _EVALUATOR_IS_GOOGLE_MODEL and GEMINI_API_KEY
+        else OPENAI_API_BASE
+    )
+    EVALUATOR_API_BASE = os.getenv("EVALUATOR_BASE_URL", os.getenv("EVALUATOR_API_BASE", _DEFAULT_EVALUATOR_API_BASE))
+    EVALUATOR_API_KEY = os.getenv(
+        "EVALUATOR_API_KEY",
+        GEMINI_API_KEY if _EVALUATOR_IS_GOOGLE_MODEL and EVALUATOR_API_BASE else OPENAI_API_KEY,
+    )
+
+    # GROK (xAI)
+    GROK_API_KEY = os.getenv("GROK_API_KEY")
 
     # API
     API_HOST = os.getenv("API_HOST", "0.0.0.0")
@@ -79,7 +93,7 @@ class GlobalConfig:
     GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS")
 
     # ComfyUI API Settings
-    CLOUD_COMFY_API_URL = os.getenv("COMFYUI_API_URL", os.getenv("CLOUD_COMFY_API_URL", "https://cloud.comfy.org/api"))
+    CLOUD_COMFY_API_URL = os.getenv("CLOUD_COMFY_API_URL", os.getenv("COMFYUI_API_URL", "https://cloud.comfy.org/api"))
     COMFYUI_API_KEY = os.getenv("COMFYUI_API_KEY")
     COMFYUI_API_TIMEOUT = int(os.getenv("COMFYUI_API_TIMEOUT", "1000"))
     COMFYUI_POLL_INTERVAL = int(os.getenv("COMFYUI_POLL_INTERVAL", "5"))
@@ -94,6 +108,12 @@ class GlobalConfig:
 
     # Prompts directory (for personas, presets, templates)
     PROMPTS_DIR = os.getenv("PROMPTS_DIR", "prompts")
+    UPLOAD_GCS = False
+
+    # Root that local media paths submitted to the evaluator must stay within.
+    # Prevents path traversal / arbitrary file reads of files outside the
+    # generated-media tree. Remote (http/https/data) URLs are unaffected.
+    EVALUATION_MEDIA_ROOT = os.getenv("EVALUATION_MEDIA_ROOT", os.getcwd())
 
     @classmethod
     def get_sqlite_connect_args(cls):

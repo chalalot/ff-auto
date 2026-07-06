@@ -8,6 +8,7 @@ import { MonitorPage } from '@/pages/MonitorPage'
 import { PromptsPage } from '@/pages/PromptsPage'
 import { VideoPage } from '@/pages/VideoPage'
 import { ArchivePage } from '@/pages/ArchivePage'
+import { AnalysisPage } from '@/pages/AnalysisPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +64,7 @@ function App() {
               <Route path="monitor" element={<MonitorPage />} />
               <Route path="prompts" element={<PromptsPage />} />
               <Route path="archive" element={<ArchivePage />} />
+              <Route path="analysis" element={<AnalysisPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

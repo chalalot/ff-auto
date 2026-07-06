@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -33,7 +33,14 @@ class ProcessImageRequest(BaseModel):
     width: int = 1024
     height: int = 1600
     lora_name: str = ""
-    clip_model_type: str = "sd3"
+    clip_model_type: str = "qwen_image"
+    # Which image generation pipeline builds the ComfyUI workflow.
+    # See backend.pipelines; default preserves the auto-split behaviour.
+    pipeline_type: str = "image.subject_environment"
+    # Per-run node-input overrides: { node_id: { input_key: value } }.
+    workflow_overrides: Dict[str, Dict[str, Any]] = {}
+    # Which workflows/*.json graph to build from (default: workflow.json).
+    workflow_name: Optional[str] = None
 
 
 class ProcessBatchRequest(BaseModel):
@@ -49,7 +56,10 @@ class ProcessBatchRequest(BaseModel):
     width: int = 1024
     height: int = 1600
     lora_name: str = ""
-    clip_model_type: str = "sd3"
+    clip_model_type: str = "qwen_image"
+    pipeline_type: str = "image.subject_environment"
+    workflow_overrides: Dict[str, Dict[str, Any]] = {}
+    workflow_name: Optional[str] = None
 
 
 class TaskStatusResponse(BaseModel):
@@ -66,6 +76,38 @@ class DispatchResponse(BaseModel):
 
 class BatchDispatchResponse(BaseModel):
     task_ids: List[str]
+
+
+class PipelineInfo(BaseModel):
+    pipeline_type: str
+    media_type: str
+    label: str
+    available: bool
+
+
+class WorkflowParamInput(BaseModel):
+    key: str
+    value: Any = None
+    type: str
+    locked: bool = False
+    locked_reason: Optional[str] = None
+
+
+class WorkflowParamNode(BaseModel):
+    node_id: str
+    class_type: str
+    title: str
+    inputs: List[WorkflowParamInput]
+
+
+class WorkflowParametersResponse(BaseModel):
+    pipeline_type: str
+    nodes: List[WorkflowParamNode]
+
+
+class WorkflowFileParametersResponse(BaseModel):
+    workflow: str
+    nodes: List[WorkflowParamNode]
 
 
 class ComfyUIQueueStatus(BaseModel):

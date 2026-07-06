@@ -1,0 +1,154 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "43",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "40": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "41": {
+    "inputs": {
+      "width": 1024,
+      "height": 1600,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "42": {
+    "inputs": {
+      "conditioning": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "43": {
+    "inputs": {
+      "samples": [
+        "44",
+        0
+      ],
+      "vae": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "44": {
+    "inputs": {
+      "seed": 1105923186574249,
+      "steps": 9,
+      "cfg": 1.5,
+      "sampler_name": "res_2s",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "47",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "negative": [
+        "42",
+        0
+      ],
+      "latent_image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "45": {
+    "inputs": {
+      "text": "EMI_woman, fair porcelain skin, stunningly beautiful youthful Western facial features matching the elegant Caucasian bone structure in image_f32640.png. Full-body shot, eye-level angle, high-fashion outdoor lifestyle travel snapshot with sharp focus.\n\nStanding confidently on an asphalt path in a dynamic pose. One hand is raised gracefully to touch the stylish sunglasses perched on top of her head, while her body is slightly angled to showcase her outfit. She looks directly at the camera with an intense, captivating gaze.\n\nWearing an edgy autumn streetwear outfit. An oversized dark brown zip-up bomber jacket with a prominent cream-colored fleece collar, worn open. Underneath, she wears a tight-fitting white tank top tucked into high-waisted black denim mini shorts. The shorts are secured by a thick, flashy silver Western belt heavily embellished with shimmering rhinestones. A brown leather shoulder bag hangs casually from her right arm.\n\nStyled with cozy white scrunched mid-calf slouch socks pulling up from inside a pair of fashionable, loose knee-high beige suede boots with a comfortable low heel.\n\nHer signature short layered bob haircut, perfectly matching the style and color of image_f32640.png. The hair is a beautiful pale golden blonde and champagne blonde color with natural subtle dark blonde roots, styled into textured, slightly messy layers framing her face.\n\nAn intense, alluring, and confident expression with completely relaxed, un-crinkled facial muscles. Her large, mesmerizing grey-blue eyes look out with a calm and quiet confidence.\n\nA clean, minimalist Western makeup look. Softly defined natural light-brown eyebrows, a very subtle and light touch of nude-peach blush only on her upper cheekbones, and a sheer natural nude lip color. The makeup is completely fresh, natural, and clean with no heavy lines.\n\nRealistically textured fair porcelain skin with subtle visible pores, a flawless natural matte-satin finish with no plastic shine, and fine 35mm film grain distributed naturally across the frame for an authentic outdoor photography look.\n\nGrounded on a paved path next to a neatly manicured, dense green hedge. The deep background features a lush, moody pine forest with tall trees and a faint glimpse of a classic stone villa under a soft, overcast sky, creating a cool and scenic travel atmosphere.\n\nNegative Prompt (Khiên chắn Bước 4 - Chống lây nét Á, tóc dài và lỗi tay):\n\nheavy makeup, thick makeup, dark eyeshadow, thick black eyeliner, bright red lips, gradient lips, overdone makeup, asian makeup style, douyin makeup, ulzzang lifestyle, 3d render, plastic smoothness, cartoonish, airbrushed, wax skin, hyper-polished, long hair, black hair, brunette, pitch-black hair, Asian facial features, forced smile, awkward hand placement, deformed hands, missing fingers, extra limbs, bad anatomy.",
+      "clip": [
+        "56",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "46": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "47": {
+    "inputs": {
+      "shift": 7,
+      "model": [
+        "53",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "53": {
+    "inputs": {
+      "lora_name": "Macincesht__ff-loras__emi_v8_latest.safetensors",
+      "strength_model": 0.8,
+      "model": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoraLoaderModelOnly"
+    }
+  },
+  "56": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  }
+}

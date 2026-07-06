@@ -49,6 +49,19 @@ DEFAULT_BASE_DELAY = 2.0  # Base delay in seconds
 DEFAULT_MAX_DELAY = 60.0  # Maximum delay in seconds
 DEFAULT_BACKOFF_MULTIPLIER = 2.0
 DEFAULT_JITTER_RANGE = 0.1  # ±10% jitter to prevent thundering herd
+TRANSIENT_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+DEFAULT_RESPONSE_PREVIEW_CHARS = 500
+COMFYUI_SUCCESS_STATUSES = {"success", "completed"}
+COMFYUI_FAILED_STATUSES = {
+    "failed",
+    "failure",
+    "error",
+    "lost",
+    "canceled",
+    "cancelled",
+    "timeout",
+    "timed_out",
+}
 
 # ComfyUI configuration from GlobalConfig
 CLOUD_COMFY_API_URL = GlobalConfig.CLOUD_COMFY_API_URL
@@ -84,6 +97,194 @@ def _calculate_backoff_delay(
     delay += jitter
 
     return max(0, delay)
+
+
+def _response_text_preview(text: str, max_chars: int = DEFAULT_RESPONSE_PREVIEW_CHARS) -> str:
+    """Keep proxy HTML/error pages readable in logs and exceptions."""
+    cleaned = " ".join(text.split())
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[:max_chars]}..."
+
+
+def _workflow_node_inputs(node: Any) -> Dict[str, Any]:
+    if not isinstance(node, dict):
+        return {}
+    inputs = node.get("inputs")
+    if not isinstance(inputs, dict):
+        return {}
+    return inputs
+
+
+def _workflow_nodes(
+    workflow_data: Dict[str, Any],
+    class_type: str,
+    required_inputs: Optional[set[str]] = None,
+) -> list[Dict[str, Any]]:
+    required_inputs = required_inputs or set()
+    matches = []
+
+    for node in workflow_data.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") != class_type:
+            continue
+        inputs = _workflow_node_inputs(node)
+        if required_inputs.issubset(inputs.keys()):
+            matches.append(node)
+
+    return matches
+
+
+def _find_workflow_node(
+    workflow_data: Dict[str, Any],
+    class_type: str,
+    required_inputs: Optional[set[str]] = None,
+    legacy_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    required_inputs = required_inputs or set()
+
+    for node in workflow_data.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") != class_type:
+            continue
+        inputs = _workflow_node_inputs(node)
+        if required_inputs.issubset(inputs.keys()):
+            return node
+
+    if legacy_id:
+        legacy_node = workflow_data.get(legacy_id)
+        if isinstance(legacy_node, dict):
+            inputs = _workflow_node_inputs(legacy_node)
+            if required_inputs.issubset(inputs.keys()):
+                return legacy_node
+
+    return None
+
+
+def _find_lora_workflow_node(workflow_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    lora_classes = {"LoraLoaderModelOnly", "LoraLoader"}
+    required_inputs = {"lora_name", "strength_model"}
+
+    for node in workflow_data.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("class_type") not in lora_classes:
+            continue
+        inputs = _workflow_node_inputs(node)
+        if required_inputs.issubset(inputs.keys()):
+            return node
+
+    legacy_node = workflow_data.get("53")
+    if isinstance(legacy_node, dict):
+        inputs = _workflow_node_inputs(legacy_node)
+        if required_inputs.issubset(inputs.keys()):
+            return legacy_node
+
+    return None
+
+
+def _patch_workflow_dimensions(workflow_data: Dict[str, Any], width: str, height: str) -> None:
+    final_width = int(width)
+    final_height = int(height)
+
+    upscale_nodes = _workflow_nodes(
+        workflow_data,
+        class_type="ImageScale",
+        required_inputs={"width", "height"},
+    )
+
+    latent_node = _find_workflow_node(
+        workflow_data,
+        class_type="EmptySD3LatentImage",
+        required_inputs={"width", "height"},
+        legacy_id="41",
+    )
+
+    if upscale_nodes:
+        # We have an upscale workflow. Set target to upscale node, and base latent to half.
+        for upscale_node in upscale_nodes:
+            upscale_inputs = _workflow_node_inputs(upscale_node)
+            upscale_inputs["width"] = final_width
+            upscale_inputs["height"] = final_height
+
+        if latent_node:
+            latent_inputs = _workflow_node_inputs(latent_node)
+            latent_inputs["width"] = final_width // 2
+            latent_inputs["height"] = final_height // 2
+    else:
+        # Standard workflow without upscaling
+        if latent_node:
+            latent_inputs = _workflow_node_inputs(latent_node)
+            latent_inputs["width"] = final_width
+            latent_inputs["height"] = final_height
+        else:
+            logger.warning("No EmptySD3LatentImage width/height node found while patching workflow.")
+
+
+def _patch_sampler_seeds(
+    workflow_data: Dict[str, Any],
+    seed_strategy: str,
+    base_seed: int,
+) -> None:
+    sampler_nodes = _workflow_nodes(
+        workflow_data,
+        class_type="KSampler",
+        required_inputs={"seed"},
+    )
+    if not sampler_nodes:
+        legacy_node = workflow_data.get("44")
+        if isinstance(legacy_node, dict) and "seed" in _workflow_node_inputs(legacy_node):
+            sampler_nodes = [legacy_node]
+
+    if not sampler_nodes:
+        logger.warning("No KSampler seed node found while patching workflow.")
+        return
+
+    for index, sampler_node in enumerate(sampler_nodes):
+        sampler_inputs = _workflow_node_inputs(sampler_node)
+        if seed_strategy == "random":
+            sampler_inputs["seed"] = random.randint(1, 1000000000000000)
+        else:
+            sampler_inputs["seed"] = int(base_seed) + index
+
+
+def _extract_comfy_error_message(status_payload: Dict[str, Any]) -> str:
+    raw_error = (
+        status_payload.get("error_message")
+        or status_payload.get("error")
+        or status_payload.get("exception_message")
+        or status_payload
+    )
+
+    if isinstance(raw_error, str):
+        try:
+            raw_error = json.loads(raw_error)
+        except json.JSONDecodeError:
+            return raw_error
+
+    if isinstance(raw_error, dict):
+        exception_message = (
+            raw_error.get("exception_message")
+            or raw_error.get("message")
+            or raw_error.get("error_message")
+            or raw_error.get("error")
+        )
+        node_id = raw_error.get("node_id")
+        node_type = raw_error.get("node_type")
+        parts = []
+        if exception_message:
+            parts.append(str(exception_message).strip())
+        if node_id or node_type:
+            node_label = f"node {node_id}" if node_id else "node"
+            if node_type:
+                node_label = f"{node_label} ({node_type})"
+            parts.append(node_label)
+        if parts:
+            return " at ".join(parts)
+
+    return json.dumps(raw_error, ensure_ascii=False)
 
 
 class ComfyUIError(Exception):
@@ -144,14 +345,14 @@ class ComfyUIClient:
         """
         if not self.cloud_api_url:
             raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
-            
+
         url = f"{self.cloud_api_url}/queue"
-        
+
         logger.info(f"🔵 ComfyUI Cloud Request: GET {url}")
         headers = {}
         if self.api_key:
             headers["X-API-Key"] = self.api_key
-            
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(url, headers=headers)
@@ -171,14 +372,14 @@ class ComfyUIClient:
         """
         if not self.cloud_api_url:
             raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
-            
+
         url = f"{self.cloud_api_url}/prompt"
-        
+
         # Comfy Cloud format
         payload = {
             "prompt": prompt_workflow
         }
-        
+
         logger.info(f"🔵 ComfyUI Cloud Request: POST {url}")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -188,20 +389,48 @@ class ComfyUIClient:
             payload["extra_data"] = {
                 "api_key_comfy_org": self.api_key
             }
-            
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload, headers=headers)
-                response.raise_for_status()
-                data = response.json()
-                logger.info(f"✅ Prompt queued: {data}")
-                return data.get("prompt_id")
-        except httpx.HTTPStatusError as e:
-            logger.error(f"❌ Queue prompt HTTP Error ({e.response.status_code}): {e.response.text}")
-            raise ComfyUIAPIError(f"Queue prompt failed ({e.response.status_code}): {e.response.text}")
-        except Exception as e:
-            logger.error(f"❌ Failed to queue prompt: {e}")
-            raise ComfyUIAPIError(f"Queue prompt failed: {e}")
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(url, json=payload, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    prompt_id = data.get("prompt_id")
+                    if not prompt_id:
+                        raise ComfyUIAPIError(f"Queue prompt response missing prompt_id: {data}")
+                    logger.info(f"✅ Prompt queued: {data}")
+                    return prompt_id
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                response_preview = _response_text_preview(e.response.text)
+                should_retry = (
+                    status_code in TRANSIENT_HTTP_STATUS_CODES
+                    and attempt < self.max_retries
+                )
+                if should_retry:
+                    delay = _calculate_backoff_delay(attempt)
+                    logger.warning(
+                        "⚠️ Queue prompt transient HTTP Error (%s), retrying in %.1fs "
+                        "(attempt %s/%s): %s",
+                        status_code,
+                        delay,
+                        attempt + 1,
+                        self.max_retries + 1,
+                        response_preview,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                logger.error(f"❌ Queue prompt HTTP Error ({status_code}): {response_preview}")
+                raise ComfyUIAPIError(f"Queue prompt failed ({status_code}): {response_preview}") from e
+            except ComfyUIAPIError:
+                raise
+            except Exception as e:
+                logger.error(f"❌ Failed to queue prompt: {e}")
+                raise ComfyUIAPIError(f"Queue prompt failed: {e}") from e
+
+        raise ComfyUIAPIError("Queue prompt failed after retry exhaustion")
 
     async def generate_image(
         self,
@@ -215,65 +444,50 @@ class ComfyUIClient:
         base_seed: int = 0,
         width: str = "1024",
         height: str = "1600",
-        clip_model_type: str = "sd3",
+        clip_model_type: str = "qwen_image",
+        pipeline_type: str = "image.subject_environment",
+        workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        workflow_name: Optional[str] = None,
         **kwargs
     ) -> str:
         """
         Start image generation via Comfy Cloud API using workflow.json.
+
+        Workflow construction is delegated to the selected generation pipeline
+        (see ``backend.pipelines``); this client only submits the result. The
+        default ``image.subject_environment`` pipeline auto-detects
+        ``#Subject`` / ``#Environment`` prompts and falls back to a single CLIP
+        node, preserving the original generate_image behaviour.
         """
-        logger.info("=" * 80)
-        logger.info(f"🎨 COMFYUI IMAGE GENERATION REQUEST (CLOUD API)")
-        logger.info("=" * 80)
+        # Imported lazily: the pipelines package imports node-patching helpers
+        # from this module at load time, so a top-level import would cycle.
+        from backend.pipelines import GenerationInputs, get_pipeline
 
-        cleaned_prompt = re.sub(r'<lora:[^>]+>,\s*Instagirl,?\s*', '', positive_prompt, flags=re.IGNORECASE)
-        
-        logger.info(f"📝 Original Prompt: {positive_prompt[:100]}...")
-        logger.info(f"📝 Cleaned Prompt: {cleaned_prompt[:200]}{'...' if len(cleaned_prompt) > 200 else ''}")
-        
-        # Determine Turbo LoRA
-        final_lora = "z-image-persona/emi_turbo_v2.safetensors" # default
-        
-        if lora_name:
-            final_lora = lora_name
-            logger.info(f"🎭 LoRA Override: {final_lora}")
-        elif kol_persona:
-            for persona_key in PERSONA_LORA_MAPPING_TURBO.keys():
-                if persona_key.lower() == kol_persona.lower():
-                    final_lora = PERSONA_LORA_MAPPING_TURBO[persona_key]
-                    logger.info(f"🎭 LoRA Mapped: {final_lora}")
-                    break
-        
-        # Load the workflow.json file from project root (override with WORKFLOW_JSON_PATH env var)
-        workflow_path = os.getenv(
-            "WORKFLOW_JSON_PATH",
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "workflow.json"),
+        logger.info("=" * 80)
+        logger.info("🎨 COMFYUI IMAGE GENERATION REQUEST (CLOUD API)")
+        logger.info(f"🧩 Pipeline: {pipeline_type}")
+        logger.info(
+            f"📝 Prompt: {positive_prompt[:200]}{'...' if len(positive_prompt) > 200 else ''}"
         )
-        try:
-            with open(workflow_path, 'r') as f:
-                workflow_data = json.load(f)
-        except Exception as e:
-            logger.error(f"❌ Failed to load workflow.json from {workflow_path}: {e}")
-            raise ComfyUIAPIError(f"Failed to load workflow.json: {e}")
-            
-        # Inject overrides into workflow
-        if "39" in workflow_data and "inputs" in workflow_data["39"]:
-            workflow_data["39"]["inputs"]["type"] = clip_model_type
+        logger.info("=" * 80)
 
-        if "45" in workflow_data and "inputs" in workflow_data["45"]:
-            workflow_data["45"]["inputs"]["text"] = cleaned_prompt
-        if "53" in workflow_data and "inputs" in workflow_data["53"]:
-            workflow_data["53"]["inputs"]["lora_name"] = final_lora
-            workflow_data["53"]["inputs"]["strength_model"] = float(strength_model) if strength_model is not None else 1.0
-        if "41" in workflow_data and "inputs" in workflow_data["41"]:
-            workflow_data["41"]["inputs"]["width"] = int(width)
-            workflow_data["41"]["inputs"]["height"] = int(height)
-        if "44" in workflow_data and "inputs" in workflow_data["44"]:
-            if seed_strategy == "random":
-                workflow_data["44"]["inputs"]["seed"] = random.randint(1, 1000000000000000)
-            else:
-                workflow_data["44"]["inputs"]["seed"] = int(base_seed)
-                
-        return await self.queue_prompt(workflow_data)
+        inputs = GenerationInputs(
+            prompt=positive_prompt,
+            negative_prompt=negative_prompt,
+            lora_name=lora_name,
+            kol_persona=kol_persona,
+            strength_model=strength_model,
+            seed_strategy=seed_strategy,
+            base_seed=base_seed,
+            width=width,
+            height=height,
+            clip_model_type=clip_model_type,
+            workflow_overrides=workflow_overrides or {},
+            workflow_name=workflow_name,
+        )
+
+        pipeline = get_pipeline(pipeline_type)
+        return await pipeline.run(inputs, client=self)
 
     async def check_status(self, execution_id: str) -> Dict[str, Any]:
         """
@@ -282,31 +496,32 @@ class ComfyUIClient:
         async def _status_request():
             if not self.cloud_api_url:
                 raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
-            
+
             # Cloud API first uses /job/{prompt_id}/status to check if complete
             status_url = f"{self.cloud_api_url}/job/{execution_id}/status"
             headers = {}
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
-            
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 try:
                     # 1. Check job status
                     status_response = await client.get(status_url, headers=headers)
                     status_response.raise_for_status()
-                    job_status = status_response.json().get("status", "").lower()
-                    
-                    if job_status in ["success", "completed"]:
+                    status_payload = status_response.json()
+                    job_status = status_payload.get("status", "").lower()
+
+                    if job_status in COMFYUI_SUCCESS_STATUSES:
                         # 2. If completed, get history to find output filename
                         history_url = f"{self.cloud_api_url}/history_v2/{execution_id}"
                         history_response = await client.get(history_url, headers=headers)
                         history_response.raise_for_status()
                         history_data = history_response.json()
-                        
+
                         job_data = history_data.get(execution_id, {})
                         outputs = job_data.get("outputs", {})
                         output_images = []
-                        
+
                         # Flatten outputs
                         for node_id, node_output in outputs.items():
                             if "images" in node_output:
@@ -317,25 +532,26 @@ class ComfyUIClient:
                                     ftype = img.get("type", "output")
                                     # Construct path that we can download later
                                     paths.append(f"{sub}/{fname}?type={ftype}" if sub else f"{fname}?type={ftype}")
-                                
+
                                 output_images.append({node_id: paths})
-                        
+
                         return {
                             "status": "completed",
                             "output_images": output_images,
                             "raw_history": history_data
                         }
-                    
-                    elif job_status in ["failed", "error"]:
+
+                    elif job_status in COMFYUI_FAILED_STATUSES:
                         return {
                             "status": "failed",
-                            "error_message": status_response.text
+                            "error_message": _extract_comfy_error_message(status_payload),
+                            "raw_status": status_payload,
                         }
-                        
+
                     else:
                         # pending, running, etc.
                         return {"status": "running"}
-                        
+
                 except httpx.HTTPStatusError as e:
                     logger.error(f"Status check failed ({e.response.status_code}): {e.response.text}")
                     # In some APIs, if job hasn't started yet, it might 404. We'll assume running if 404 for now.
@@ -528,9 +744,10 @@ class ComfyUIClient:
         async with httpx.AsyncClient(timeout=30.0) as client:
             status_response = await client.get(status_url, headers=headers)
             status_response.raise_for_status()
-            job_status = status_response.json().get("status", "").lower()
+            status_payload = status_response.json()
+            job_status = status_payload.get("status", "").lower()
 
-            if job_status in ["success", "completed"]:
+            if job_status in COMFYUI_SUCCESS_STATUSES:
                 history_url = f"{self.cloud_api_url}/history_v2/{execution_id}"
                 history_response = await client.get(history_url, headers=headers)
                 history_response.raise_for_status()
@@ -571,8 +788,12 @@ class ComfyUIClient:
                     "raw_history": history_data,
                 }
 
-            elif job_status in ["failed", "error"]:
-                return {"status": "failed", "error_message": status_response.text}
+            elif job_status in COMFYUI_FAILED_STATUSES:
+                return {
+                    "status": "failed",
+                    "error_message": _extract_comfy_error_message(status_payload),
+                    "raw_status": status_payload,
+                }
             else:
                 return {"status": "running"}
 
@@ -608,7 +829,7 @@ class ComfyUIClient:
         product_name: Optional[str] = None,
         kol_persona: Optional[str] = None,
         image_type: str = "marketing",
-        upload_to_gcs: bool = True,
+        upload_to_gcs: Optional[bool] = None,
         run_id: Optional[str] = None,
         lora_name: Optional[str] = None,
         **kwargs
@@ -616,6 +837,9 @@ class ComfyUIClient:
         """
         Complete image generation workflow: generate, wait, download, and optionally upload to GCS.
         """
+        if upload_to_gcs is None:
+            upload_to_gcs = getattr(GlobalConfig, "UPLOAD_GCS", True)
+
         async def _execute_generation():
             execution_id = await self.generate_image(
                 positive_prompt,
@@ -629,7 +853,7 @@ class ComfyUIClient:
 
         # Use queue manager to ensure sequential processing
         description = f"Image generation for {kol_persona or 'unknown'} - {product_name or 'unknown'}"
-        
+
         # Try to get current Celery task ID if available
         celery_task_id = None
         try:
@@ -642,14 +866,14 @@ class ComfyUIClient:
             pass
         except Exception:
             pass
-        
+
         execution_id, status_data = await execute_with_queue(
             operation=_execute_generation,
             description=description,
             timeout=self.max_poll_time + 120,  # Add buffer time for queue waiting
             celery_task_id=celery_task_id
         )
-        
+
         try:
             # Extract image path from output_images
             output_images = status_data.get("output_images", [])
@@ -672,29 +896,29 @@ class ComfyUIClient:
             logger.info(f"📁 Found image path: {image_path}")
 
             logger.info(f"📥 Attempting to download image for {execution_id}...")
-            
+
             # Cloud API download via /view endpoint
             if not self.cloud_api_url:
                  raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
-            
+
             filename_part = image_path.split('?')[0]
             query_part = image_path.split('?')[1] if '?' in image_path else "type=output"
-            
+
             view_url = f"{self.cloud_api_url}/view?filename={os.path.basename(filename_part)}&{query_part}"
             if '/' in filename_part:
                 sub = os.path.dirname(filename_part)
                 view_url += f"&subfolder={sub}"
-            
+
             logger.info(f"📥 Downloading from Cloud: {view_url}")
             headers = {}
             if self.api_key:
                 headers["X-API-Key"] = self.api_key
-            
+
             async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
                 resp = await client.get(view_url, headers=headers)
                 resp.raise_for_status()
                 image_data = resp.content
-            
+
             remote_url = view_url
 
             logger.info(f"✅ Downloaded {len(image_data)} bytes")
@@ -789,20 +1013,20 @@ class ComfyUIClient:
         """
         if not self.cloud_api_url:
             raise ComfyUIConfigError("CLOUD_COMFY_API_URL is not set.")
-        
+
         filename_part = image_path.split('?')[0]
         query_part = image_path.split('?')[1] if '?' in image_path else "type=output"
-        
+
         view_url = f"{self.cloud_api_url}/view?filename={os.path.basename(filename_part)}&{query_part}"
         if '/' in filename_part:
             sub = os.path.dirname(filename_part)
             view_url += f"&subfolder={sub}"
-        
+
         logger.info(f"📥 Downloading image via path from Cloud: {view_url}")
         headers = {}
         if self.api_key:
             headers["X-API-Key"] = self.api_key
-        
+
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
             resp = await client.get(view_url, headers=headers)
             resp.raise_for_status()
@@ -815,21 +1039,21 @@ class ComfyUIClient:
         status_data = await self.check_status(execution_id)
         if status_data.get("status") != "completed":
             raise ComfyUIAPIError(f"Cannot download image for incomplete execution {execution_id}")
-            
+
         output_images = status_data.get("output_images", [])
         if not output_images:
             raise ComfyUIAPIError(f"No output images found for execution {execution_id}")
-            
+
         first_output = output_images[0]
         image_path = None
         for key, paths in first_output.items():
             if paths and len(paths) > 0:
                 image_path = paths[0]
                 break
-                
+
         if not image_path:
             raise ComfyUIAPIError(f"No image path found in output_images for {execution_id}")
-            
+
         return await self.download_image_by_path(image_path)
 
     async def generate_and_upload(
@@ -861,9 +1085,9 @@ class ComfyUIClient:
             product_name=product_name,
             kol_persona=kol_persona,
             image_type=image_type,
-            upload_to_gcs=True,
+            upload_to_gcs=getattr(GlobalConfig, "UPLOAD_GCS", True),
             run_id=run_id
-        ) 
+        )
 
 
 # Marketing prompt templates

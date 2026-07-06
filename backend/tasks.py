@@ -57,45 +57,56 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
 
     if status == "completed":
         output_images = status_data.get("output_images", [])
-        comfy_image_path = None
+        comfy_image_paths = []
         if output_images and isinstance(output_images, list):
-            first_output = output_images[0]
-            if isinstance(first_output, dict):
-                for _, paths in first_output.items():
-                    if paths:
-                        comfy_image_path = paths[0]
-                        break
+            for output in output_images:
+                if isinstance(output, dict):
+                    for _, paths in output.items():
+                        if paths and isinstance(paths, list):
+                            comfy_image_paths.extend(paths)
 
-        if not comfy_image_path:
-            logger.warning(f"[download_execution_task] No output image path for {execution_id}")
+        if not comfy_image_paths:
+            logger.warning(f"[download_execution_task] No output image paths found for {execution_id}")
             storage.mark_as_failed(execution_id)
             return
 
-        try:
-            image_bytes = asyncio.run(client.download_image_by_path(comfy_image_path))
-        except Exception as e:
-            logger.error(f"[download_execution_task] download_image_by_path failed for {execution_id}: {e}")
-            try:
-                image_bytes = asyncio.run(client.download_image(execution_id))
-            except Exception as inner_e:
-                logger.error(f"[download_execution_task] Fallback download failed for {execution_id}: {inner_e}")
-                storage.mark_as_failed(execution_id)
-                return
-
+        saved_paths = []
         base_name = Path(image_ref_path).stem if image_ref_path else execution_id
-        result_filename = f"result_{base_name}_{execution_id}.png"
-        local_result_path = output_dir / result_filename
-        local_result_path.write_bytes(image_bytes)
+
+        for idx, comfy_image_path in enumerate(comfy_image_paths):
+            try:
+                image_bytes = asyncio.run(client.download_image_by_path(comfy_image_path))
+            except Exception as e:
+                logger.error(f"[download_execution_task] download_image_by_path failed for {execution_id} path {comfy_image_path}: {e}")
+                if idx == 0:
+                    try:
+                        image_bytes = asyncio.run(client.download_image(execution_id))
+                    except Exception as inner_e:
+                        logger.error(f"[download_execution_task] Fallback download failed for {execution_id}: {inner_e}")
+                        continue
+                else:
+                    continue
+
+            suffix = f"_{idx}" if len(comfy_image_paths) > 1 else ""
+            result_filename = f"result_{base_name}_{execution_id}{suffix}.png"
+            local_result_path = output_dir / result_filename
+            local_result_path.write_bytes(image_bytes)
+            saved_paths.append(str(local_result_path))
+            logger.info(f"[download_execution_task] ✅ Saved {local_result_path}")
+
+        if not saved_paths:
+            storage.mark_as_failed(execution_id)
+            return
 
         storage.update_result_path(
             execution_id=execution_id,
-            result_image_path=str(local_result_path),
+            result_image_path=",".join(saved_paths),
             new_ref_path=None,
         )
-        logger.info(f"[download_execution_task] ✅ Saved {local_result_path}")
 
     elif status == "failed":
-        logger.error(f"[download_execution_task] ❌ Execution {execution_id} failed.")
+        error_message = status_data.get("error_message", "Unknown ComfyUI error")
+        logger.error(f"[download_execution_task] ❌ Execution {execution_id} failed: {error_message}")
         storage.mark_as_failed(execution_id)
 
     else:
@@ -117,7 +128,10 @@ def process_image_task(
     width,
     height,
     lora_name,
-    clip_model_type="sd3",
+    clip_model_type="qwen_image",
+    pipeline_type="image.subject_environment",
+    workflow_overrides=None,
+    workflow_name=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -136,6 +150,9 @@ def process_image_task(
                 height=height,
                 lora_name=lora_name,
                 clip_model_type=clip_model_type,
+                pipeline_type=pipeline_type,
+                workflow_overrides=workflow_overrides or {},
+                workflow_name=workflow_name,
                 task=self,
             )
         )
@@ -146,7 +163,9 @@ def process_image_task(
 
 async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
-    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type, task
+    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
+    task, pipeline_type="image.subject_environment", workflow_overrides=None,
+    workflow_name=None,
 ):
     workflow, client, storage = get_instances()
 
@@ -221,6 +240,9 @@ async def async_process_image(
             height=height,
             lora_name=lora_name,
             clip_model_type=clip_model_type,
+            pipeline_type=pipeline_type,
+            workflow_overrides=workflow_overrides or {},
+            workflow_name=workflow_name,
         )
 
         if execution_id:
@@ -434,7 +456,8 @@ def poll_comfy_video_task(self, prompt_id: str, image_path: str, batch_id=None):
         )
 
     elif status == "failed":
-        logger.error(f"[poll_comfy_video_task] ComfyUI job {prompt_id} failed.")
+        error_message = status_data.get("error_message", "Unknown ComfyUI error")
+        logger.error(f"[poll_comfy_video_task] ComfyUI job {prompt_id} failed: {error_message}")
         storage.update_result(execution_id=prompt_id, status="failed")
 
     else:

@@ -43,6 +43,14 @@ def get_archive_service() -> ArchiveService:
     return ArchiveService()
 
 
+from backend.services.evaluation import EvaluationService
+
+
+@lru_cache
+def get_evaluation_service() -> EvaluationService:
+    return EvaluationService()
+
+
 from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
 
@@ -57,3 +65,11 @@ from backend.database.caption_exports_storage import CaptionExportsStorage
 @lru_cache
 def get_caption_exports_storage() -> CaptionExportsStorage:
     return CaptionExportsStorage()
+
+
+from backend.services.analysis import AnalysisService
+
+
+@lru_cache
+def get_analysis_service() -> AnalysisService:
+    return AnalysisService()

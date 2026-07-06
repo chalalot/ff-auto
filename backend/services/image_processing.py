@@ -12,7 +12,7 @@ import time
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import redis as _redis
 from celery.result import AsyncResult
@@ -116,7 +116,10 @@ class ImageProcessingService:
         width: int = 1024,
         height: int = 1600,
         lora_name: str = "",
-        clip_model_type: str = "sd3",
+        clip_model_type: str = "qwen_image",
+        pipeline_type: str = "image.subject_environment",
+        workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        workflow_name: Optional[str] = None,
         prepare: bool = True,
     ) -> str:
         """
@@ -140,6 +143,9 @@ class ImageProcessingService:
                 "height": height,
                 "lora_name": lora_name,
                 "clip_model_type": clip_model_type,
+                "pipeline_type": pipeline_type,
+                "workflow_overrides": workflow_overrides or {},
+                "workflow_name": workflow_name,
             },
             queue="image",
         )
@@ -249,6 +255,17 @@ class ImageProcessingService:
                     continue
 
                 meta_raw = r.get(_TASK_META_PREFIX + tid)
+
+                # Self-heal stale orphans: a task still PENDING after its
+                # metadata has expired (TTL 6h, vs. a ~1h max real poll time) was
+                # never picked up by a worker — Celery reports unknown/dead ids as
+                # PENDING forever, so without this they linger in the set
+                # indefinitely and the UI shows a phantom "busy" state. Set
+                # membership has no TTL, so prune it here.
+                if state == "PENDING" and not meta_raw:
+                    r.srem(_ACTIVE_TASKS_SET, tid)
+                    continue
+
                 meta = json.loads(meta_raw) if meta_raw else {}
                 info = result.info or {}
 
