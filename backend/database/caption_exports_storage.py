@@ -1,36 +1,32 @@
-import sqlite3
 import logging
 from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import select
+
+from .engine import session_scope
+from .models import CaptionExport
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "image_logs.db"
+
+def _row_dict(row: CaptionExport) -> dict:
+    return {
+        "id": row.id,
+        "file_id": row.file_id,
+        "filename": row.filename,
+        "public_url": row.public_url,
+        "image_count": row.image_count,
+        "exported_at": row.exported_at,
+    }
 
 
 class CaptionExportsStorage:
-    def __init__(self, db_path: str = DB_PATH):
-        self.db_path = db_path
-        self._init_db()
-
-    def _conn(self):
-        return sqlite3.connect(self.db_path)
-
-    def _init_db(self):
-        conn = self._conn()
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS caption_exports (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    file_id      TEXT NOT NULL,
-                    filename     TEXT NOT NULL,
-                    public_url   TEXT NOT NULL,
-                    image_count  INTEGER NOT NULL DEFAULT 0,
-                    exported_at  TEXT NOT NULL
-                )
-            """)
-            conn.commit()
-        finally:
-            conn.close()
+    def __init__(self, db_path: Optional[str] = None):
+        # db_path is a legacy sqlite parameter: accepted and ignored so call
+        # sites keep working this phase (removed in the final cleanup task).
+        # Schema is owned by Alembic.
+        pass
 
     def insert(
         self,
@@ -39,30 +35,25 @@ class CaptionExportsStorage:
         public_url: str,
         image_count: int,
     ) -> int:
-        conn = self._conn()
         try:
-            cur = conn.execute(
-                """
-                INSERT INTO caption_exports (file_id, filename, public_url, image_count, exported_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (file_id, filename, public_url, image_count, datetime.utcnow().isoformat()),
-            )
-            conn.commit()
-            return cur.lastrowid
+            with session_scope() as session:
+                row = CaptionExport(
+                    file_id=file_id,
+                    filename=filename,
+                    public_url=public_url,
+                    image_count=image_count,
+                    exported_at=datetime.utcnow().isoformat(),
+                )
+                session.add(row)
+                session.flush()
+                return row.id
         except Exception as e:
             logger.error(f"[caption_exports] insert failed: {e}")
             raise
-        finally:
-            conn.close()
 
     def list_exports(self, limit: int = 50) -> list[dict]:
-        conn = self._conn()
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(
-                "SELECT * FROM caption_exports ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            conn.close()
+        with session_scope() as session:
+            rows = session.execute(
+                select(CaptionExport).order_by(CaptionExport.id.desc()).limit(limit)
+            ).scalars().all()
+            return [_row_dict(row) for row in rows]
