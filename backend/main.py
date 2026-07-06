@@ -16,6 +16,7 @@ from backend.api import (
     evaluations as evaluations_module,
     analysis as analysis_module,
 )
+from backend.database.engine import assert_database_ready
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast if the DB is unreachable or not migrated to alembic head.
+    assert_database_ready()
     logger.info("ff-auto backend starting up")
     yield
     logger.info("ff-auto backend shutting down")

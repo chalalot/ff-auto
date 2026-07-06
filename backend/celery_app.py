@@ -1,9 +1,20 @@
 import os
 from celery import Celery
+from celery.signals import worker_init
 from kombu import Queue
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def check_database_ready_on_worker_init(**kwargs):
+    """Fail fast if the DB is unreachable or not migrated to alembic head."""
+    from backend.database.engine import assert_database_ready
+
+    assert_database_ready()
+
+
+worker_init.connect(check_database_ready_on_worker_init, weak=False)
 
 broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")

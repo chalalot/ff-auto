@@ -14,9 +14,10 @@ The connection URL comes exclusively from
 There is no sqlite fallback.
 """
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Generator, Iterator, Optional
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .db_utils import get_postgres_connection_string
@@ -71,3 +72,51 @@ def session_scope() -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def _alembic_head() -> str:
+    """The newest revision shipped with this code (no alembic.ini needed)."""
+    from alembic.script import ScriptDirectory
+
+    script_location = Path(__file__).resolve().parent / "alembic"
+    return ScriptDirectory(str(script_location)).get_current_head()
+
+
+def assert_database_ready(database_url: Optional[str] = None) -> None:
+    """Fail-fast startup check for the API and Celery workers.
+
+    Verifies the database is reachable AND `alembic current == head`.
+    Raises RuntimeError with a one-line actionable message otherwise.
+    Never migrates — migrations are run explicitly (`alembic upgrade head`).
+    """
+    url = database_url or get_postgres_connection_string()
+    masked = get_postgres_connection_string(url, mask_password=True)
+    probe = create_engine(url, pool_pre_ping=True)
+    try:
+        try:
+            with probe.connect() as conn:
+                try:
+                    current = conn.execute(
+                        text("SELECT version_num FROM alembic_version")
+                    ).scalar()
+                except Exception:
+                    raise RuntimeError(
+                        f"Database at {masked} has no alembic_version table — "
+                        "run `alembic upgrade head` before starting the app."
+                    )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                f"Cannot reach database at {masked} — check DATABASE_URL "
+                f"({exc.__class__.__name__})."
+            )
+    finally:
+        probe.dispose()
+
+    head = _alembic_head()
+    if current != head:
+        raise RuntimeError(
+            f"Database schema at revision {current!r} but code expects {head!r} — "
+            "run `alembic upgrade head` before starting the app."
+        )
