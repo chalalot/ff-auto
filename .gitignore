@@ -16,7 +16,10 @@ processed/
 results/
 prompts/
 .agents/
-docs/
+docs/*
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/specs/
 z-image/
 tests/
 
