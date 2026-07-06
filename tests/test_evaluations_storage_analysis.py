@@ -4,8 +4,8 @@ from backend.database.evaluations_storage import EvaluationsStorage
 
 
 @pytest.fixture
-def storage(tmp_path):
-    return EvaluationsStorage(db_path=str(tmp_path / "evals.db"))
+def storage(clean_tables):
+    return EvaluationsStorage()
 
 
 def _complete(storage, media_path, overall, dims):

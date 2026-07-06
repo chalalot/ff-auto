@@ -1,4 +1,11 @@
+import pytest
+
 from tests.conftest import make_png
+
+
+@pytest.fixture(autouse=True)
+def _db(clean_tables):
+    """Analysis endpoints read evaluations from the (throwaway) postgres."""
 
 
 def test_analysis_endpoint_returns_summary_and_items(client, _temp_dirs):

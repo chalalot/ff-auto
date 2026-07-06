@@ -4,7 +4,7 @@ from tests.conftest import make_png
 
 
 @pytest.fixture
-def svc(_temp_dirs, tmp_path):
+def svc(_temp_dirs, tmp_path, clean_tables):
     from backend.services.gallery import GalleryService
     from backend.database.evaluations_storage import EvaluationsStorage
     from backend.services.analysis import AnalysisService
@@ -26,7 +26,7 @@ def svc(_temp_dirs, tmp_path):
         for entry in d.iterdir():
             if entry.is_file():
                 entry.unlink()
-    storage = EvaluationsStorage(db_path=str(tmp_path / "evals.db"))
+    storage = EvaluationsStorage()
     return AnalysisService(gallery_service=gallery, evaluations_storage=storage), gallery, storage
 
 
