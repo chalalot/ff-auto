@@ -1,41 +1,37 @@
 import json
-import sqlite3
 import logging
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from .engine import session_scope
+from .models import RunpodJob
+
 logger = logging.getLogger(__name__)
 
-DB_PATH = "image_logs.db"  # reuse the same SQLite file
+
+def _row_dict(row: RunpodJob) -> dict:
+    return {
+        "id": row.id,
+        "job_id": row.job_id,
+        "endpoint_id": row.endpoint_id,
+        "lora_name": row.lora_name,
+        "submitted_at": row.submitted_at,
+        "job_input": json.loads(row.job_input) if row.job_input else {},
+        "status": row.status,
+        "output": json.loads(row.output) if row.output else None,
+        "updated_at": row.updated_at,
+    }
 
 
 class RunpodJobsStorage:
-    def __init__(self, db_path: str = DB_PATH):
-        self.db_path = db_path
-        self._init_db()
-
-    def _conn(self):
-        return sqlite3.connect(self.db_path)
-
-    def _init_db(self):
-        conn = self._conn()
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS runpod_jobs (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id      TEXT NOT NULL UNIQUE,
-                    endpoint_id TEXT NOT NULL,
-                    lora_name   TEXT NOT NULL,
-                    submitted_at TEXT NOT NULL,
-                    job_input   TEXT NOT NULL,
-                    status      TEXT,
-                    output      TEXT,
-                    updated_at  TEXT
-                )
-            """)
-            conn.commit()
-        finally:
-            conn.close()
+    def __init__(self, db_path: Optional[str] = None):
+        # db_path is a legacy sqlite parameter: accepted and ignored so call
+        # sites keep working this phase (removed in the final cleanup task).
+        # Schema is owned by Alembic.
+        pass
 
     def insert(
         self,
@@ -45,22 +41,29 @@ class RunpodJobsStorage:
         submitted_at: str,
         job_input: dict,
     ) -> None:
-        conn = self._conn()
+        """Insert a job record. job_id is unique; a duplicate insert is a
+        no-op (upsert-style) so a re-submit of the same RunPod job id never
+        crashes the caller."""
         try:
-            conn.execute(
-                """
-                INSERT INTO runpod_jobs
-                    (job_id, endpoint_id, lora_name, submitted_at, job_input, status, output, updated_at)
-                VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL)
-                """,
-                (job_id, endpoint_id, lora_name, submitted_at, json.dumps(job_input)),
-            )
-            conn.commit()
+            with session_scope() as session:
+                stmt = (
+                    pg_insert(RunpodJob)
+                    .values(
+                        job_id=job_id,
+                        endpoint_id=endpoint_id,
+                        lora_name=lora_name,
+                        submitted_at=submitted_at,
+                        job_input=json.dumps(job_input),
+                        status=None,
+                        output=None,
+                        updated_at=None,
+                    )
+                    .on_conflict_do_nothing(index_elements=[RunpodJob.job_id])
+                )
+                session.execute(stmt)
         except Exception as e:
             logger.error(f"[runpod_jobs] insert failed: {e}")
             raise
-        finally:
-            conn.close()
 
     def update_status(
         self,
@@ -68,60 +71,38 @@ class RunpodJobsStorage:
         status: str,
         output: Optional[dict] = None,
     ) -> None:
-        conn = self._conn()
         try:
-            conn.execute(
-                """
-                UPDATE runpod_jobs
-                SET status = ?, output = COALESCE(?, output), updated_at = ?
-                WHERE job_id = ?
-                """,
-                (status, json.dumps(output) if output is not None else None, datetime.utcnow().isoformat(), job_id),
-            )
-            conn.commit()
+            with session_scope() as session:
+                values = {
+                    "status": status,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+                # Legacy COALESCE(?, output): only overwrite when provided.
+                if output is not None:
+                    values["output"] = json.dumps(output)
+                session.execute(
+                    update(RunpodJob)
+                    .where(RunpodJob.job_id == job_id)
+                    .values(**values)
+                )
         except Exception as e:
             logger.error(f"[runpod_jobs] update_status failed: {e}")
             raise
-        finally:
-            conn.close()
 
     def get_job(self, job_id: str) -> Optional[dict]:
-        conn = self._conn()
-        conn.row_factory = sqlite3.Row
-        try:
-            row = conn.execute(
-                "SELECT * FROM runpod_jobs WHERE job_id = ?", (job_id,)
-            ).fetchone()
-            if not row:
-                return None
-            d = dict(row)
-            d["job_input"] = json.loads(d["job_input"]) if d["job_input"] else {}
-            d["output"] = json.loads(d["output"]) if d["output"] else None
-            return d
-        finally:
-            conn.close()
+        with session_scope() as session:
+            row = session.execute(
+                select(RunpodJob).where(RunpodJob.job_id == job_id)
+            ).scalars().first()
+            return _row_dict(row) if row else None
 
     def delete_job(self, job_id: str) -> None:
-        conn = self._conn()
-        try:
-            conn.execute("DELETE FROM runpod_jobs WHERE job_id = ?", (job_id,))
-            conn.commit()
-        finally:
-            conn.close()
+        with session_scope() as session:
+            session.execute(delete(RunpodJob).where(RunpodJob.job_id == job_id))
 
     def list_jobs(self, limit: int = 100) -> list[dict]:
-        conn = self._conn()
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(
-                "SELECT * FROM runpod_jobs ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
-            result = []
-            for row in rows:
-                d = dict(row)
-                d["job_input"] = json.loads(d["job_input"]) if d["job_input"] else {}
-                d["output"] = json.loads(d["output"]) if d["output"] else None
-                result.append(d)
-            return result
-        finally:
-            conn.close()
+        with session_scope() as session:
+            rows = session.execute(
+                select(RunpodJob).order_by(RunpodJob.id.desc()).limit(limit)
+            ).scalars().all()
+            return [_row_dict(row) for row in rows]
