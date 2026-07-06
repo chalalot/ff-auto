@@ -1,9 +1,25 @@
 """
 Database connection utilities.
-Handles building connection strings from environment variables.
+Handles building connection strings from environment variables, plus shared
+serialization helpers for the storage modules.
 """
 import os
+from datetime import datetime, timezone
 from typing import Optional
+
+# Legacy sqlite CURRENT_TIMESTAMP format; the API layer expects these exact
+# strings, so every storage module must serialize timestamps identically.
+LEGACY_TS_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def format_legacy_ts(value: Optional[datetime]) -> Optional[str]:
+    """Serialize a timestamp the way the legacy sqlite layer did (UTC,
+    'YYYY-MM-DD HH:MM:SS'). Return-shape compatibility depends on this."""
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc)
+    return value.strftime(LEGACY_TS_FORMAT)
 
 
 def get_postgres_connection_string(
@@ -42,10 +58,6 @@ def get_postgres_connection_string(
         return db_url
 
     # Priority 3: Build from components
-    print(f"[DEBUG] DB_HOST from env: '{os.getenv('DB_HOST')}'")
-    print(f"[DEBUG] POSTGRES_HOST from env: '{os.getenv('POSTGRES_HOST')}'")
-    print(f"[DEBUG] DATABASE_URL from env: '{os.getenv('DATABASE_URL')}'")
-    
     db_host = os.getenv("DB_HOST")
     db_port = os.getenv("DB_PORT", "5432")
     db_user = os.getenv("DB_USER")

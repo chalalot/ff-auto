@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import delete, select, update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from .engine import session_scope
 from .models import RunpodJob
@@ -39,14 +38,14 @@ class RunpodJobsStorage:
         submitted_at: str,
         job_input: dict,
     ) -> None:
-        """Insert a job record. job_id is unique; a duplicate insert is a
-        no-op (upsert-style) so a re-submit of the same RunPod job id never
-        crashes the caller."""
+        """Insert a job record. job_id is unique; inserting a duplicate
+        raises IntegrityError — matching the legacy sqlite behavior, where
+        the UNIQUE constraint surfaced the collision to the caller instead
+        of silently keeping the stale row."""
         try:
             with session_scope() as session:
-                stmt = (
-                    pg_insert(RunpodJob)
-                    .values(
+                session.add(
+                    RunpodJob(
                         job_id=job_id,
                         endpoint_id=endpoint_id,
                         lora_name=lora_name,
@@ -56,9 +55,7 @@ class RunpodJobsStorage:
                         output=None,
                         updated_at=None,
                     )
-                    .on_conflict_do_nothing(index_elements=[RunpodJob.job_id])
                 )
-                session.execute(stmt)
         except Exception as e:
             logger.error(f"[runpod_jobs] insert failed: {e}")
             raise

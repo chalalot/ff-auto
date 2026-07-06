@@ -1,11 +1,13 @@
 """
 Task 4 tests: RunpodJobsStorage ported to SQLAlchemy/Postgres.
 
-job_id uniqueness is DB-enforced; insert is upsert-style (conflict on job_id
-is a no-op so callers never crash on a duplicate submit). job_input/output
-round-trip as dicts, exactly like the legacy JSON-decode behavior.
+job_id uniqueness is DB-enforced; a duplicate insert raises IntegrityError,
+matching the legacy sqlite behavior (the collision must surface to the
+caller, not silently keep the stale row). job_input/output round-trip as
+dicts, exactly like the legacy JSON-decode behavior.
 """
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from backend.database.runpod_jobs_storage import RunpodJobsStorage
 
@@ -52,9 +54,10 @@ def test_get_job_missing_returns_none(storage):
     assert storage.get_job("missing") is None
 
 
-def test_insert_duplicate_job_id_is_noop(storage):
+def test_insert_duplicate_job_id_raises(storage):
     _insert(storage, lora="first")
-    _insert(storage, lora="second")  # duplicate job_id: must not raise
+    with pytest.raises(IntegrityError):  # legacy parity: collision surfaces
+        _insert(storage, lora="second")
     job = storage.get_job("job-1")
     assert job["lora_name"] == "first"  # original row kept
     assert len(storage.list_jobs()) == 1

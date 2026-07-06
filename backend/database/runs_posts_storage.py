@@ -86,14 +86,16 @@ class RunsPostsStorage:
         """
         now = int(time.time())
         with session_scope() as session:
+            # Legacy psycopg2 code did `Json(x) if x else None`: empty dicts
+            # were stored as SQL NULL and read back as None. Preserve that.
             stmt = pg_insert(Run).values(
                 id=run_id,
                 persona_name=persona_name,
                 trend_text=trend_text,
                 num_posts=num_posts,
-                adapted_idea=adapted_idea,
-                trend_profile=trend_profile,
-                metadata_=metadata,
+                adapted_idea=adapted_idea or None,
+                trend_profile=trend_profile or None,
+                metadata_=metadata or None,
                 created_at=now,
                 updated_at=now,
             )
@@ -147,9 +149,10 @@ class RunsPostsStorage:
                 image_prompt=image_prompt,
                 positive_prompt=positive_prompt,
                 negative_prompt=negative_prompt,
-                visual_plan=visual_plan,
-                content_seed=content_seed,
-                metadata_=metadata,
+                # Same NULL-for-empty coercion as save_run (legacy parity).
+                visual_plan=visual_plan or None,
+                content_seed=content_seed or None,
+                metadata_=metadata or None,
                 created_at=now,
                 updated_at=now,
             )

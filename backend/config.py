@@ -1,5 +1,4 @@
 import os
-import threading
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,31 +6,8 @@ load_dotenv()
 
 class GlobalConfig:
     """Global configurations."""
-    # DATABASE TYPE
-    DB_TYPE = os.getenv("DB_TYPE", "sqlite")  # sqlite or postgres
-
-    # PostgreSQL specific (if DB_TYPE is postgres)
-    POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB = os.getenv("POSTGRES_DB", "mkt_agent")
-
-    # DATABASE URLs - constructed based on DB_TYPE
-    if DB_TYPE == "postgres":
-        DB_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-        ASYNC_DB_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-    else:
-        DB_URL = os.getenv("DB_URL", "sqlite:///./image_logs.db")
-        ASYNC_DB_URL = DB_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
-
-    IS_ECHO_QUERY = bool(os.getenv("IS_ECHO_QUERY", False))
-
-    # SQLite specific settings
-    SQLITE_TIMEOUT = int(os.getenv("SQLITE_TIMEOUT", "30"))
-    SQLITE_BUSY_TIMEOUT = int(os.getenv("SQLITE_BUSY_TIMEOUT", "120000"))
-
-    DB_CONNECTION_LOCAL = threading.local()
+    # Database access goes through backend.database.engine / db_utils
+    # (DATABASE_URL is the single source of truth) — no DB settings here.
 
     # OPENAI
     OPENAI_API_BASE = os.getenv("OPENAI_BASE_URL")

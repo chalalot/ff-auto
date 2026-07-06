@@ -201,3 +201,27 @@ def test_constructor_takes_no_legacy_args(clean_tables):
     with pytest.raises(TypeError):
         RunsPostsStorage(connection_string="postgresql://x")
     assert RunsPostsStorage().get_run("nope") is None
+
+
+def test_empty_dicts_stored_as_null_legacy_parity(storage):
+    """Legacy psycopg2 did `Json(x) if x else None`: an empty dict was stored
+    as SQL NULL and read back as None. Strict null checks downstream depend
+    on this."""
+    _run(storage, run_id="run-empty", metadata={}, adapted_idea={}, trend_profile={})
+    run = storage.get_run("run-empty")
+    assert run["metadata"] is None
+    assert run["adapted_idea"] is None
+    assert run["trend_profile"] is None
+
+    _post(
+        storage,
+        post_id="post-empty",
+        run_id="run-empty",
+        visual_plan={},
+        content_seed={},
+        metadata={},
+    )
+    post = storage.get_post_by_id("post-empty")
+    assert post["visual_plan"] is None
+    assert post["content_seed"] is None
+    assert post["metadata"] is None
