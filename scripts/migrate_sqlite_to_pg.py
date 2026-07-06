@@ -2,7 +2,7 @@
 One-off, idempotent sqlite -> postgres data migration for phase 1.
 
 Usage:
-    python -m backend.scripts.migrate_sqlite_to_pg --sqlite-dir <dir> [--dry-run]
+    python -m scripts.migrate_sqlite_to_pg --sqlite-dir <dir> [--dry-run]
 
 For each legacy sqlite file found in --sqlite-dir (evaluations.db,
 image_logs.db, video_logs.db — image_logs.db historically also carries the

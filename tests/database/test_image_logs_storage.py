@@ -128,6 +128,7 @@ def test_get_all_completed_executions(storage):
     assert rows[0]["execution_id"] == "e1"
 
 
-def test_constructor_still_accepts_db_path(clean_tables):
-    storage = ImageLogsStorage(db_path="ignored.db")
-    assert storage.log_execution("e-compat", "p") >= 1
+def test_constructor_takes_no_legacy_args(clean_tables):
+    with pytest.raises(TypeError):
+        ImageLogsStorage(db_path="legacy.db")
+    assert ImageLogsStorage().log_execution("e-noargs", "p") >= 1

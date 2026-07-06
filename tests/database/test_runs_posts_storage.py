@@ -194,3 +194,10 @@ def test_create_tables_is_a_noop(storage):
     """Alembic owns the schema; the legacy method survives as a no-op."""
     storage.create_tables()
     assert storage.get_run("still-fine") is None
+
+
+def test_constructor_takes_no_legacy_args(clean_tables):
+    """The psycopg2-era connection_string parameter is gone for good."""
+    with pytest.raises(TypeError):
+        RunsPostsStorage(connection_string="postgresql://x")
+    assert RunsPostsStorage().get_run("nope") is None

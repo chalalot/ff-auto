@@ -59,6 +59,7 @@ def test_list_exports_order_and_limit(storage):
     assert [r["file_id"] for r in rows] == ["drive-4", "drive-3", "drive-2"]
 
 
-def test_constructor_still_accepts_db_path(clean_tables):
-    storage = CaptionExportsStorage(db_path="ignored.db")
-    assert storage.insert("f", "n.zip", "https://u", 0) >= 1
+def test_constructor_takes_no_legacy_args(clean_tables):
+    with pytest.raises(TypeError):
+        CaptionExportsStorage(db_path="legacy.db")
+    assert CaptionExportsStorage().insert("f", "n.zip", "https://u", 0) >= 1

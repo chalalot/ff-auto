@@ -58,14 +58,9 @@ class RunsPostsStorage:
     - posts: Stores individual post content with GCS image links
     """
 
-    def __init__(self, connection_string: Optional[str] = None):
-        """
-        Initialize storage.
-
-        Args:
-            connection_string: Legacy parameter — accepted and ignored; the
-                shared SQLAlchemy engine resolves the URL via DATABASE_URL
-                (backend.database.db_utils). Schema is owned by Alembic.
+    def __init__(self):
+        """Initialize storage. The shared SQLAlchemy engine resolves the URL
+        via DATABASE_URL (backend.database.db_utils); Alembic owns the schema.
         """
         pass
 

@@ -181,8 +181,9 @@ def test_get_score_summary_latest_row_wins(storage):
     assert summary["failed_paths"] == set()
 
 
-def test_constructor_still_accepts_db_path(clean_tables):
-    """Transitional: legacy call sites pass db_path; it is accepted and ignored."""
-    storage = EvaluationsStorage(db_path="ignored.db")
-    eid = _create(storage)
-    assert storage.get_evaluation(eid) is not None
+def test_constructor_takes_no_legacy_args(clean_tables):
+    """The sqlite-era db_path parameter is gone for good."""
+    with pytest.raises(TypeError):
+        EvaluationsStorage(db_path="legacy.db")
+    storage = EvaluationsStorage()
+    assert storage.get_evaluation(999999) is None

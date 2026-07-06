@@ -61,7 +61,7 @@ docker compose up -d postgres
 alembic upgrade head
 
 # Copy the data (idempotent; re-running is safe):
-python -m backend.scripts.migrate_sqlite_to_pg --sqlite-dir ./sqlite-backup
+python -m scripts.migrate_sqlite_to_pg --sqlite-dir ./sqlite-backup
 
 # The script prints per-table:  sqlite rows / pg before / pg after.
 # VERIFY: for each table, pg_after == sqlite rows (or pg_before + new rows).

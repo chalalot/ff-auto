@@ -416,7 +416,7 @@ def poll_comfy_video_task(self, prompt_id: str, image_path: str, batch_id=None):
     client = ComfyUIClient()
     video_dir = Path(GlobalConfig.VIDEO_DIR)
     video_dir.mkdir(parents=True, exist_ok=True)
-    storage = VideoLogsStorage(str(video_dir / "video_logs.db"))
+    storage = VideoLogsStorage()
 
     try:
         status_data = asyncio.run(client.check_video_status(prompt_id))

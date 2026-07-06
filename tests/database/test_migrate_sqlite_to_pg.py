@@ -17,7 +17,7 @@ from backend.database.models import (
     RunpodJob,
     VideoLog,
 )
-from backend.scripts.migrate_sqlite_to_pg import migrate
+from scripts.migrate_sqlite_to_pg import migrate
 
 
 @pytest.fixture

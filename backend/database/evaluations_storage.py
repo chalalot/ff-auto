@@ -25,9 +25,7 @@ def _format_ts(value: Optional[datetime]) -> Optional[str]:
 class EvaluationsStorage:
     """Postgres storage adapter for media evaluation attempts."""
 
-    def __init__(self, db_path: Optional[str] = None):
-        # db_path is a legacy sqlite parameter: accepted and ignored so call
-        # sites keep working this phase (removed in the final cleanup task).
+    def __init__(self):
         # Schema is owned by Alembic; nothing to initialize here.
         pass
 

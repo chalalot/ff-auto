@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import select
 
@@ -22,10 +21,8 @@ def _row_dict(row: CaptionExport) -> dict:
 
 
 class CaptionExportsStorage:
-    def __init__(self, db_path: Optional[str] = None):
-        # db_path is a legacy sqlite parameter: accepted and ignored so call
-        # sites keep working this phase (removed in the final cleanup task).
-        # Schema is owned by Alembic.
+    def __init__(self):
+        # Schema is owned by Alembic; nothing to initialize here.
         pass
 
     def insert(

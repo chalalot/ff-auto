@@ -23,7 +23,7 @@ class VideoService:
         self.video_dir = Path(GlobalConfig.VIDEO_DIR)
         self.video_dir.mkdir(parents=True, exist_ok=True)
 
-        self.storage = VideoLogsStorage(str(self.video_dir / "video_logs.db"))
+        self.storage = VideoLogsStorage()
         self.kling_client = KlingClient()
         self.presets_path = self.video_dir / "kling_presets.json"
 

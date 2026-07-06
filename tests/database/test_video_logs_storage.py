@@ -102,7 +102,7 @@ def test_get_batch_executions_ascending(storage):
     assert all(r["batch_id"] == "batch-B" for r in rows)
 
 
-def test_constructor_still_accepts_positional_db_path(clean_tables):
-    """VideoService passes VideoLogsStorage(str(dir / 'video_logs.db'))."""
-    storage = VideoLogsStorage("/tmp/does-not-matter/video_logs.db")
-    assert storage.log_execution("compat", "p") >= 1
+def test_constructor_takes_no_legacy_args(clean_tables):
+    with pytest.raises(TypeError):
+        VideoLogsStorage("/tmp/legacy/video_logs.db")
+    assert VideoLogsStorage().log_execution("no-args", "p") >= 1

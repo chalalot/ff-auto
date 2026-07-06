@@ -94,7 +94,9 @@ def test_list_jobs_order_and_limit(storage):
     assert all(isinstance(j["job_input"], dict) for j in jobs)
 
 
-def test_constructor_still_accepts_db_path(clean_tables):
-    storage = RunpodJobsStorage(db_path="ignored.db")
-    _insert(storage, job_id="compat")
-    assert storage.get_job("compat") is not None
+def test_constructor_takes_no_legacy_args(clean_tables):
+    with pytest.raises(TypeError):
+        RunpodJobsStorage(db_path="legacy.db")
+    storage = RunpodJobsStorage()
+    _insert(storage, job_id="no-args")
+    assert storage.get_job("no-args") is not None

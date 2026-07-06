@@ -40,15 +40,8 @@ class VideoLogsStorage:
     Postgres storage adapter for video generation logs.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
-        """
-        Initialize storage.
-
-        Args:
-            db_path: Legacy sqlite parameter — accepted and ignored so call
-                sites keep working this phase (removed in the final cleanup
-                task). Schema is owned by Alembic.
-        """
+    def __init__(self):
+        """Initialize storage. Schema is owned by Alembic."""
         pass
 
     def log_execution(self, execution_id: str, prompt: str, source_image_path: str = None, batch_id: str = None, filename_id: str = None) -> int:
