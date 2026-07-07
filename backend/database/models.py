@@ -25,6 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -180,3 +181,37 @@ class Post(Base):
     current_version: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class GenerationRequest(Base):
+    """Prompt review queue (phase 2). All generation flows through here."""
+
+    __tablename__ = "generation_requests"
+    __table_args__ = (
+        Index("idx_generation_requests_status", "status"),
+        Index("idx_generation_requests_batch_id", "batch_id"),
+        Index("idx_generation_requests_execution_id", "execution_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(Text, nullable=False)
+    source_image_path: Mapped[str] = mapped_column(Text, nullable=False)
+    original_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    workflow_name: Mapped[Optional[str]] = mapped_column(Text)
+    settings: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, server_default=sa_text("'{}'::jsonb")
+    )
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="pending_review"
+    )
+    execution_id: Mapped[Optional[str]] = mapped_column(Text)
+    result_path: Mapped[Optional[str]] = mapped_column(Text)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )

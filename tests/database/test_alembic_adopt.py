@@ -26,6 +26,7 @@ EXPECTED_TABLES = {
     "runs",
     "video_logs",
     "posts",
+    "generation_requests",
 }
 
 
@@ -91,7 +92,7 @@ def test_upgrade_adopts_existing_runs_posts(adopt_db_url, monkeypatch):
                 conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar()
-                == "0001"
+                == "0002"
             )
     finally:
         engine.dispose()
