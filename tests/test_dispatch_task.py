@@ -107,3 +107,53 @@ def test_dispatch_unclaimed_row_skips(storage):
 def test_poll_kling_video_task_exists():
     from backend.tasks import poll_kling_video_task  # was a phantom import before
     assert poll_kling_video_task.name == "backend.tasks.poll_kling_video_task"
+
+
+# ---- completion hooks ----
+
+def _dispatched_row(storage, provider="comfy_image", execution_id="exec-hook"):
+    rid = _create(storage, provider)
+    storage.begin_dispatch(rid)
+    storage.set_execution(rid, execution_id)
+    return rid
+
+
+def test_download_execution_task_completes_queue_row(storage, tmp_path, monkeypatch):
+    from backend import tasks as tasks_module
+    rid = _dispatched_row(storage, execution_id="exec-dl")
+
+    fake_client = MagicMock()
+    async def fake_check_status(execution_id):
+        return {"status": "completed",
+                "output_images": [{"node": ["comfy/path.png"]}]}
+    async def fake_download(path):
+        return b"png-bytes"
+    fake_client.check_status = fake_check_status
+    fake_client.download_image_by_path = fake_download
+    fake_image_storage = MagicMock()
+
+    monkeypatch.setenv("OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setattr(tasks_module.GlobalConfig, "OUTPUT_DIR", str(tmp_path), raising=False)
+    with patch.object(tasks_module, "get_instances",
+                      return_value=(None, fake_client, fake_image_storage)):
+        tasks_module.download_execution_task.run("exec-dl", "/app/processed/img.png")
+
+    row = storage.get_request(rid)
+    assert row["status"] == "completed"
+    assert row["result_path"]
+
+
+def test_poll_comfy_video_task_failure_fails_queue_row(storage):
+    from backend import tasks as tasks_module
+    rid = _dispatched_row(storage, provider="comfy_video", execution_id="prompt-x")
+
+    async def fake_check(prompt_id):
+        return {"status": "failed", "error_message": "node exploded"}
+
+    with patch("backend.third_parties.comfyui_client.ComfyUIClient") as MockClient:
+        MockClient.return_value.check_video_status = fake_check
+        tasks_module.poll_comfy_video_task.run("prompt-x", "/app/img.png")
+
+    row = storage.get_request(rid)
+    assert row["status"] == "failed"
+    assert "node exploded" in row["error"]

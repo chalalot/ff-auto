@@ -155,6 +155,7 @@ class VideoService:
                 try:
                     self.kling_client.download_video(video_url, str(local_file))
                     self.storage.update_result(task_id, str(local_file), "completed")
+                    self._review_queue_hook(task_id, completed=True, result_path=str(local_file))
                     logger.info(f"[VideoService] Downloaded video to {local_file}")
                 except Exception as e:
                     logger.error(f"[VideoService] Download failed for {task_id}: {e}")
@@ -169,6 +170,9 @@ class VideoService:
         }
         status = status_map.get(kling_status, kling_status)
 
+        if status == "failed":
+            self._review_queue_hook(task_id, completed=False, error=error_message)
+
         return VideoStatusResponse(
             task_id=task_id,
             status=status,
@@ -178,6 +182,17 @@ class VideoService:
             duration=str(duration) if duration is not None else None,
             error_message=error_message,
         )
+
+    def _review_queue_hook(self, execution_id, *, completed, result_path=None, error=None):
+        try:
+            from backend.database.generation_requests_storage import GenerationRequestsStorage
+            storage = GenerationRequestsStorage()
+            if completed:
+                storage.mark_completed_by_execution(execution_id, result_path)
+            else:
+                storage.mark_failed_by_execution(execution_id, error or "generation failed")
+        except Exception as e:
+            logger.warning(f"[review-hook] failed for {execution_id}: {e}")
 
     # ------------------------------------------------------------------
     # Listing

@@ -32,6 +32,22 @@ def get_instances():
     return _workflow, _client, _storage
 
 
+def _review_queue_hook(execution_id: str, *, completed: bool,
+                       result_path=None, error=None):
+    """Best-effort: reflect a provider result onto the generation_requests
+    row that dispatched it. Executions with no queue row (legacy, or logged
+    outside the queue) are a no-op; hook errors never break the host task."""
+    try:
+        from backend.database.generation_requests_storage import GenerationRequestsStorage
+        storage = GenerationRequestsStorage()
+        if completed:
+            storage.mark_completed_by_execution(execution_id, result_path)
+        else:
+            storage.mark_failed_by_execution(execution_id, error or "generation failed")
+    except Exception as e:
+        logger.warning(f"[review-hook] failed for {execution_id}: {e}")
+
+
 @celery_app.task(
     bind=True,
     name="backend.tasks.download_execution_task",
@@ -68,6 +84,7 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
         if not comfy_image_paths:
             logger.warning(f"[download_execution_task] No output image paths found for {execution_id}")
             storage.mark_as_failed(execution_id)
+            _review_queue_hook(execution_id, completed=False, error="no output images")
             return
 
         saved_paths = []
@@ -96,6 +113,7 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
 
         if not saved_paths:
             storage.mark_as_failed(execution_id)
+            _review_queue_hook(execution_id, completed=False, error="no output images")
             return
 
         storage.update_result_path(
@@ -103,11 +121,13 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
             result_image_path=",".join(saved_paths),
             new_ref_path=None,
         )
+        _review_queue_hook(execution_id, completed=True, result_path=",".join(saved_paths))
 
     elif status == "failed":
         error_message = status_data.get("error_message", "Unknown ComfyUI error")
         logger.error(f"[download_execution_task] ❌ Execution {execution_id} failed: {error_message}")
         storage.mark_as_failed(execution_id)
+        _review_queue_hook(execution_id, completed=False, error=error_message)
 
     else:
         # still running / queued — retry after interval
@@ -454,11 +474,13 @@ def poll_comfy_video_task(self, prompt_id: str, image_path: str, batch_id=None):
             video_output_path=output_path,
             status="completed",
         )
+        _review_queue_hook(prompt_id, completed=True, result_path=output_path)
 
     elif status == "failed":
         error_message = status_data.get("error_message", "Unknown ComfyUI error")
         logger.error(f"[poll_comfy_video_task] ComfyUI job {prompt_id} failed: {error_message}")
         storage.update_result(execution_id=prompt_id, status="failed")
+        _review_queue_hook(prompt_id, completed=False, error=error_message)
 
     else:
         # Still running — retry
