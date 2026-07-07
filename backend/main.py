@@ -15,6 +15,7 @@ from backend.api import (
     archive as archive_module,
     evaluations as evaluations_module,
     analysis as analysis_module,
+    review as review_module,
 )
 from backend.database.engine import assert_database_ready
 
@@ -56,6 +57,7 @@ app.include_router(video_module.router, prefix="/api/video", tags=["video"])
 app.include_router(archive_module.router, prefix="/api/archive", tags=["archive"])
 app.include_router(evaluations_module.router, prefix="/api/evaluations", tags=["evaluations"])
 app.include_router(analysis_module.router, prefix="/api/analysis", tags=["analysis"])
+app.include_router(review_module.router, prefix="/api/review", tags=["review"])
 
 
 @app.get("/health")
