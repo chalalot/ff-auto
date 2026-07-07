@@ -463,3 +463,108 @@ def poll_comfy_video_task(self, prompt_id: str, image_path: str, batch_id=None):
     else:
         # Still running — retry
         raise self.retry()
+
+
+@celery_app.task(bind=True, name="backend.tasks.dispatch_generation_request_task")
+def dispatch_generation_request_task(self, request_id: str):
+    """Send ONE approved generation_requests row to its provider.
+
+    Returns instead of raising on provider errors so a failure affects only
+    this item (the rest of a dispatched selection proceeds), matching the
+    phase-2 spec. begin_dispatch() is the idempotency guard: a redelivered
+    task finds the row already 'dispatched' and no-ops.
+    """
+    from backend.database.generation_requests_storage import GenerationRequestsStorage
+
+    storage = GenerationRequestsStorage()
+    row = storage.begin_dispatch(request_id)
+    if row is None:
+        logger.info(f"[dispatch] {request_id} not in 'approved' state — skipping")
+        return {"request_id": request_id, "skipped": True}
+
+    provider = row["provider"]
+    settings = row["settings"] or {}
+    try:
+        if provider == "comfy_image":
+            _, client, image_storage = get_instances()
+            execution_id = asyncio.run(client.generate_image(
+                positive_prompt=row["prompt"],
+                negative_prompt=settings.get("negative_prompt", DEFAULT_NEGATIVE_PROMPT),
+                kol_persona=settings.get("persona"),
+                workflow_type=settings.get("workflow_type"),
+                strength_model=settings.get("strength_model"),
+                seed_strategy=settings.get("seed_strategy"),
+                base_seed=settings.get("base_seed"),
+                width=settings.get("width"),
+                height=settings.get("height"),
+                lora_name=settings.get("lora_name"),
+                clip_model_type=settings.get("clip_model_type", "qwen_image"),
+                pipeline_type=settings.get("pipeline_type", "image.subject_environment"),
+                workflow_overrides=settings.get("workflow_overrides") or {},
+                workflow_name=row["workflow_name"],
+            ))
+            if not execution_id:
+                raise RuntimeError("ComfyUI returned no execution id")
+            image_storage.log_execution(
+                execution_id=execution_id,
+                prompt=row["prompt"],
+                image_ref_path=row["source_image_path"],
+                persona=settings.get("persona"),
+            )
+            download_execution_task.apply_async(
+                args=[execution_id, row["source_image_path"]],
+                countdown=DOWNLOAD_POLL_INTERVAL,
+                queue="image",
+            )
+        elif provider == "kling":
+            from backend.services.video import VideoService
+            from backend.models.video import KlingSettings
+            execution_id = VideoService().queue_video(
+                image_path=row["source_image_path"],
+                prompt=row["prompt"],
+                kling_settings=KlingSettings(**settings),
+                batch_id=row["batch_id"],
+            )
+        elif provider == "comfy_video":
+            from backend.services.video import VideoService
+            from backend.models.video import ComfyKlingSettings
+            execution_id = VideoService().queue_video_comfy(
+                image_path=row["source_image_path"],
+                prompt=row["prompt"],
+                comfy_settings=ComfyKlingSettings(**settings),
+                batch_id=row["batch_id"],
+            )
+        else:
+            raise ValueError(f"Unknown provider {provider!r}")
+
+        storage.set_execution(request_id, execution_id)
+        return {"request_id": request_id, "execution_id": execution_id}
+    except Exception as e:
+        logger.error(f"[dispatch] {request_id} ({provider}) failed: {e}")
+        storage.mark_failed(request_id, str(e))
+        return {"request_id": request_id, "error": str(e)}
+
+
+@celery_app.task(
+    bind=True,
+    name="backend.tasks.poll_kling_video_task",
+    max_retries=120,
+    default_retry_delay=10,
+)
+def poll_kling_video_task(self, task_id: str):
+    """Poll the Kling API until a video task reaches a terminal state.
+
+    VideoService.get_video_status() already downloads the file and updates
+    video_logs; this task exists so completion does not depend on a browser
+    polling the status endpoint. (Fixes the pre-existing phantom import in
+    VideoService.queue_video — this task never existed.)
+    """
+    from backend.services.video import VideoService
+
+    status = VideoService().get_video_status(task_id)
+    if status.status == "completed":
+        return {"task_id": task_id, "status": "completed"}
+    if status.status in ("failed", "error"):
+        logger.error(f"[poll_kling_video_task] {task_id} -> {status.status}: {status.error_message}")
+        return {"task_id": task_id, "status": status.status}
+    raise self.retry()

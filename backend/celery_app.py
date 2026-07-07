@@ -45,6 +45,8 @@ celery_app.conf.update(
         "backend.tasks.analyze_music_task": {"queue": "video"},
         "backend.tasks.poll_comfy_video_task": {"queue": "video"},
         "backend.tasks.generate_storyboard_task": {"queue": "video"},
+        "backend.tasks.poll_kling_video_task": {"queue": "video"},
+        "backend.tasks.caption_export_task": {"queue": "image"},
     },
 )
 
