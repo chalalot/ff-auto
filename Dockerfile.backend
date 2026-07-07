@@ -16,8 +16,9 @@ COPY backend/ ./backend/
 COPY scripts/ ./scripts/
 COPY alembic.ini ./alembic.ini
 COPY prompts/ ./prompts/
-COPY workflow.json ./workflow.json
-COPY kling.json ./kling.json
+COPY workflows/ ./workflows/
+# Legacy default path for the kling video workflow (KLING_WORKFLOW_JSON_PATH).
+COPY workflows/kling.json ./kling.json
 
 # Directories that will be bind-mounted in production;
 # create them so the app starts cleanly without mounts too.
