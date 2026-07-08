@@ -8,6 +8,6 @@ export const evaluationsApi = {
   get: (id: number) =>
     apiClient.get<EvaluationResult>(`/evaluations/${id}`).then(r => r.data),
 
-  list: (params?: { limit?: number; media_path?: string }) =>
+  list: (params?: { limit?: number; media_path?: string; project_id?: string }) =>
     apiClient.get<EvaluationListResponse>('/evaluations', { params }).then(r => r.data),
 }
