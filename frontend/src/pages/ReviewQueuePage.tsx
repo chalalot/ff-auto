@@ -26,7 +26,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 
 const SELECTABLE: ReviewStatus[] = ['pending_review', 'failed']
 
-function settingsSummary(settings: Record<string, unknown>): string {
+function settingsEntries(settings: Record<string, unknown>): string[] {
   // Node overrides are applied last at dispatch, so they are the effective
   // values — show them and hide any top-level key they shadow.
   const overrides = (settings.workflow_overrides ?? {}) as Record<string, Record<string, unknown>>
@@ -40,8 +40,30 @@ function settingsSummary(settings: Record<string, unknown>): string {
   const over = Object.entries(overrides).flatMap(([nodeId, patch]) =>
     Object.entries(patch ?? {}).map(([k, v]) => `${k}[${nodeId}]=${String(v)}`),
   )
-  return [...top, ...over].join(' · ')
+  return [...top, ...over]
 }
+
+// Mirrors the backend's subject/environment split (backend/pipelines/image.py):
+// both markers present → the prompt is edited as two sections.
+const SUBJECT_RE = /#Subject\s*([\s\S]*?)(?=#Environment|$)/i
+const ENVIRONMENT_RE = /#Environment\s*([\s\S]*?)(?=#Subject|$)/i
+
+function parsePromptSections(prompt: string): { subject: string; environment: string } | null {
+  const sub = SUBJECT_RE.exec(prompt)
+  const env = ENVIRONMENT_RE.exec(prompt)
+  if (sub && env) return { subject: sub[1].trim(), environment: env[1].trim() }
+  return null
+}
+
+function joinPromptSections(subject: string, environment: string): string {
+  return `#Subject\n${subject.trim()}\n\n#Environment\n${environment.trim()}`
+}
+
+const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+    {children}
+  </p>
+)
 
 const RequestRow: React.FC<{
   item: ReviewRequestItem
@@ -49,17 +71,33 @@ const RequestRow: React.FC<{
   onToggle: (id: string) => void
 }> = ({ item, checked, onToggle }) => {
   const queryClient = useQueryClient()
-  const [prompt, setPrompt] = useState(item.prompt)
+  const sections = parsePromptSections(item.prompt)
+  const [subject, setSubject] = useState(sections?.subject ?? '')
+  const [environment, setEnvironment] = useState(sections?.environment ?? '')
+  const [plain, setPlain] = useState(sections ? '' : item.prompt)
   const editable = item.status === 'pending_review'
 
   const patchMutation = useMutation({
-    mutationFn: () => reviewApi.updateRequest(item.id, { prompt }),
+    mutationFn: (prompt: string) => reviewApi.updateRequest(item.id, { prompt }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['review-requests'] }),
   })
   const discardMutation = useMutation({
     mutationFn: () => reviewApi.discardRequest(item.id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['review-requests'] }),
   })
+
+  // Save on blur, only when content actually changed (canonical vs canonical).
+  const saveSections = () => {
+    if (!editable || !sections) return
+    const next = joinPromptSections(subject, environment)
+    if (next !== joinPromptSections(sections.subject, sections.environment)) {
+      patchMutation.mutate(next)
+    }
+  }
+  const savePlain = () => {
+    if (!editable || sections) return
+    if (plain !== item.prompt) patchMutation.mutate(plain)
+  }
 
   return (
     <div className="flex gap-3 rounded-md border p-3" data-testid="review-row">
@@ -88,20 +126,54 @@ const RequestRow: React.FC<{
             {item.source_image_path.split('/').pop()}
           </span>
         </div>
-        <Textarea
-          value={prompt}
-          onChange={e => setPrompt(e.target.value)}
-          onBlur={() => { if (editable && prompt !== item.prompt) patchMutation.mutate() }}
-          disabled={!editable}
-          rows={3}
-          className="text-sm"
-        />
-        {prompt !== item.original_prompt && (
+        {sections ? (
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <SectionLabel>Subject</SectionLabel>
+              <Textarea
+                value={subject}
+                onChange={e => setSubject(e.target.value)}
+                onBlur={saveSections}
+                disabled={!editable}
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <SectionLabel>Environment</SectionLabel>
+              <Textarea
+                value={environment}
+                onChange={e => setEnvironment(e.target.value)}
+                onBlur={saveSections}
+                disabled={!editable}
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+          </div>
+        ) : (
+          <Textarea
+            value={plain}
+            onChange={e => setPlain(e.target.value)}
+            onBlur={savePlain}
+            disabled={!editable}
+            rows={3}
+            className="text-sm"
+          />
+        )}
+        {item.prompt !== item.original_prompt && (
           <p className="text-xs text-muted-foreground">edited (original kept)</p>
         )}
-        <p className="text-xs text-muted-foreground truncate">
-          {settingsSummary(item.settings)}
-        </p>
+        <div className="flex flex-wrap gap-1">
+          {settingsEntries(item.settings).map(entry => (
+            <span
+              key={entry}
+              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground break-all"
+            >
+              {entry}
+            </span>
+          ))}
+        </div>
         {item.error && <p className="text-xs text-destructive break-words">{item.error}</p>}
       </div>
       {SELECTABLE.includes(item.status) && (

@@ -95,7 +95,7 @@ export const Layout: React.FC = () => {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 flex flex-col min-h-0">
+      <main className="flex-1 flex flex-col min-h-0 min-w-0">
         {workerBanner && (
           <div className="flex items-center gap-2.5 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-amber-700 dark:text-amber-400 text-sm shrink-0">
             <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
