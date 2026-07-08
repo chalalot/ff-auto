@@ -5,8 +5,6 @@ import type {
   StoryboardResponse,
   KlingPreset,
   MusicAnalysisResponse,
-  KlingSettings,
-  VideoBatchRequest,
 } from '@/types/video'
 
 export const videoApi = {
@@ -24,22 +22,6 @@ export const videoApi = {
       .get<{ task_id: string; state: string; progress: number; result: StoryboardResponse | null; error: string | null }>(
         `/video/storyboard/${taskId}/status`
       )
-      .then(r => r.data),
-
-  // Generate
-  generate: (body: {
-    image_path: string
-    prompt?: string
-    kling_settings: KlingSettings
-    batch_id?: string
-  }) =>
-    apiClient
-      .post<{ task_id: string; batch_id?: string; status: string }>('/video/generate', body)
-      .then(r => r.data),
-
-  generateBatch: (body: VideoBatchRequest) =>
-    apiClient
-      .post<{ batch_id: string; task_ids: string[] }>('/video/generate-batch', body)
       .then(r => r.data),
 
   // Status

@@ -25,28 +25,6 @@ export interface ComfyKlingSettings {
 
 export type VideoBackend = 'api' | 'comfy'
 
-export interface VideoGenerateRequest {
-  image_path: string
-  prompt?: string
-  kling_settings: KlingSettings
-  batch_id?: string
-  backend?: VideoBackend
-  comfy_settings?: ComfyKlingSettings
-}
-
-export interface VideoBatchItem {
-  image_path: string
-  prompt?: string
-  variation_count: number
-}
-
-export interface VideoBatchRequest {
-  items: VideoBatchItem[]
-  kling_settings: KlingSettings
-  backend?: VideoBackend
-  comfy_settings?: ComfyKlingSettings
-}
-
 export interface VideoItem {
   id: number
   execution_id: string

@@ -28,39 +28,6 @@ class ComfyKlingSettings(BaseModel):
     )
 
 
-class VideoGenerateRequest(BaseModel):
-    image_path: str
-    prompt: Optional[str] = None
-    kling_settings: KlingSettings = Field(default_factory=KlingSettings)
-    batch_id: Optional[str] = None
-    backend: str = "api"  # "api" or "comfy"
-    comfy_settings: Optional[ComfyKlingSettings] = None
-
-
-class VideoGenerateResponse(BaseModel):
-    task_id: str
-    batch_id: Optional[str] = None
-    status: str = "pending"
-
-
-class VideoBatchItem(BaseModel):
-    image_path: str
-    prompt: Optional[str] = None
-    variation_count: int = Field(default=1, ge=1, le=5)
-
-
-class VideoBatchRequest(BaseModel):
-    items: List[VideoBatchItem]
-    kling_settings: KlingSettings = Field(default_factory=KlingSettings)
-    backend: str = "api"  # "api" or "comfy"
-    comfy_settings: Optional[ComfyKlingSettings] = None
-
-
-class VideoBatchResponse(BaseModel):
-    batch_id: str
-    task_ids: List[str]
-
-
 class VideoStatusResponse(BaseModel):
     task_id: str
     status: str

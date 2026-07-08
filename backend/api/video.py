@@ -14,14 +14,9 @@ from backend.celery_app import celery_app
 from backend.config import GlobalConfig
 from backend.models.video import (
     KlingPreset,
-    KlingSettings,
     MusicAnalysisRequest,
     MusicAnalysisResponse,
     StoryboardRequest,
-    VideoBatchRequest,
-    VideoBatchResponse,
-    VideoGenerateRequest,
-    VideoGenerateResponse,
     VideoListResponse,
     VideoMergeRequest,
     VideoMergeResponse,
@@ -69,76 +64,6 @@ def get_storyboard_status(task_id: str):
         "result": meta if state == "SUCCESS" else None,
         "error": str(meta) if state == "FAILURE" else None,
     }
-
-
-# ------------------------------------------------------------------
-# Video generation
-# ------------------------------------------------------------------
-
-@router.post("/generate", response_model=VideoGenerateResponse)
-def generate_video(
-    body: VideoGenerateRequest,
-    svc: VideoService = Depends(get_video_service),
-):
-    """Queue a single Kling video generation task."""
-    try:
-        if body.backend == "comfy":
-            from backend.models.video import ComfyKlingSettings
-            comfy_settings = body.comfy_settings or ComfyKlingSettings()
-            task_id = svc.queue_video_comfy(
-                image_path=body.image_path,
-                prompt=body.prompt,
-                comfy_settings=comfy_settings,
-                batch_id=body.batch_id,
-            )
-        else:
-            task_id = svc.queue_video(
-                image_path=body.image_path,
-                prompt=body.prompt,
-                kling_settings=body.kling_settings,
-                batch_id=body.batch_id,
-            )
-        return VideoGenerateResponse(task_id=task_id, batch_id=body.batch_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/generate-batch", response_model=VideoBatchResponse)
-def generate_video_batch(
-    body: VideoBatchRequest,
-    svc: VideoService = Depends(get_video_service),
-):
-    """Queue multiple Kling video generation tasks as a batch."""
-    batch_id = uuid.uuid4().hex
-    task_ids: List[str] = []
-
-    for item in body.items:
-        for _ in range(item.variation_count):
-            try:
-                if body.backend == "comfy":
-                    from backend.models.video import ComfyKlingSettings
-                    comfy_settings = body.comfy_settings or ComfyKlingSettings()
-                    task_id = svc.queue_video_comfy(
-                        image_path=item.image_path,
-                        prompt=item.prompt,
-                        comfy_settings=comfy_settings,
-                        batch_id=batch_id,
-                    )
-                else:
-                    task_id = svc.queue_video(
-                        image_path=item.image_path,
-                        prompt=item.prompt,
-                        kling_settings=body.kling_settings,
-                        batch_id=batch_id,
-                    )
-                task_ids.append(task_id)
-            except Exception as e:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Failed to queue video for {item.image_path}: {e}",
-                )
-
-    return VideoBatchResponse(batch_id=batch_id, task_ids=task_ids)
 
 
 # ------------------------------------------------------------------
