@@ -95,3 +95,20 @@ def test_evaluations_list_scoped(client, two_projects):
     items = client.get("/api/evaluations",
                        params={"project_id": "unassigned"}).json()["items"]
     assert [i["media_path"] for i in items] == ["/c.png"]
+
+
+def test_gallery_stats_scoped(client, two_projects, _temp_dirs):
+    pa, _ = two_projects
+    out = _temp_dirs["OUTPUT_DIR"]
+    _clear_dir(out)
+    logs = ImageLogsStorage()
+    make_png(out, "st_a.png"); make_png(out, "st_loose.png")
+    logs.log_execution(execution_id="est", prompt="p", project_id=pa)
+    logs.update_result_path(execution_id="est", result_image_path=f"{out}/st_a.png")
+
+    totals = client.get("/api/gallery/stats", params={"project_id": pa}).json()["totals"]
+    assert totals["pending"] == 1 and totals["total"] == 1
+
+    totals = client.get("/api/gallery/stats",
+                        params={"project_id": "unassigned"}).json()["totals"]
+    assert totals["pending"] == 1

@@ -39,7 +39,7 @@ export const GalleryPage: React.FC<{ projectId?: string }> = ({ projectId }) => 
   const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
 
   const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE, projectId)
-  const { data: stats } = useGalleryStats()
+  const { data: stats } = useGalleryStats(projectId)
   const approveMutation = useApproveImages()
   const disapproveMutation = useDisapproveImages()
   const undoMutation = useUndoImages()

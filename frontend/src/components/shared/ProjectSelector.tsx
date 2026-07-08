@@ -1,4 +1,5 @@
 import React, { useSyncExternalStore } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -9,16 +10,23 @@ import { getProjectId, setProjectId, subscribeIdentity } from '@/lib/identity'
 const NONE = '__none__'
 
 export const ProjectSelector: React.FC = () => {
+  const navigate = useNavigate()
   const projectId = useSyncExternalStore(subscribeIdentity, getProjectId)
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
 
+  const handleChange = (v: string) => {
+    const id = v === NONE ? null : v
+    setProjectId(id)
+    if (id) navigate(`/projects/${id}`)
+  }
+
   return (
     <Select
       value={projectId ?? NONE}
-      onValueChange={v => setProjectId(v === NONE ? null : v)}
+      onValueChange={handleChange}
     >
       <SelectTrigger className="w-full text-xs">
         <SelectValue placeholder="No project" />

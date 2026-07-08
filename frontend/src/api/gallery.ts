@@ -37,8 +37,8 @@ export const galleryApi = {
   undo: (filenames: string[], fromStatus: 'approved' | 'disapproved') =>
     apiClient.post('/gallery/undo', { filenames, from_status: fromStatus }).then(r => r.data),
 
-  getStats: () =>
-    apiClient.get<GalleryStats>('/gallery/stats').then(r => r.data),
+  getStats: (params?: { project_id?: string }) =>
+    apiClient.get<GalleryStats>('/gallery/stats', { params }).then(r => r.data),
 
   downloadZip: (filenames: string[]) =>
     apiClient.post('/gallery/download-zip', { filenames }, { responseType: 'blob' }).then(r => r.data),

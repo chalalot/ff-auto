@@ -303,11 +303,22 @@ class GalleryService:
     # Stats
     # ------------------------------------------------------------------
 
-    def get_stats(self) -> dict:
+    def get_stats(self, project_id: Optional[str] = None) -> dict:
         stats: Dict[str, Dict[str, int]] = {}
+
+        allowed: Optional[set] = None
+        excluded: Optional[set] = None
+        if project_id == "unassigned":
+            excluded = self.storage.get_assigned_result_basenames()
+        elif project_id:
+            allowed = self.storage.get_project_result_basenames(project_id)
 
         def _scan(directory: Path, approved: bool = False):
             for fname, mtime in self._scan_dir(directory):
+                if allowed is not None and fname not in allowed:
+                    continue
+                if excluded is not None and fname in excluded:
+                    continue
                 date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
                 if date_str not in stats:
                     stats[date_str] = {"pending": 0, "approved": 0, "disapproved": 0}

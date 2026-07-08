@@ -93,8 +93,11 @@ def undo_action(body: UndoRequest, svc: GalleryService = Depends(get_gallery_ser
 
 
 @router.get("/stats", response_model=GalleryStats)
-def gallery_stats(svc: GalleryService = Depends(get_gallery_service)):
-    return svc.get_stats()
+def gallery_stats(
+    project_id: Optional[str] = Query(None),
+    svc: GalleryService = Depends(get_gallery_service),
+):
+    return svc.get_stats(project_id=project_id)
 
 
 @router.post("/download-zip")

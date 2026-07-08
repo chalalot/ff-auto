@@ -8,10 +8,10 @@ export const useGalleryImages = (status: GalleryStatus, page: number = 1, perPag
   })
 }
 
-export const useGalleryStats = () => {
+export const useGalleryStats = (projectId?: string) => {
   return useQuery({
-    queryKey: ['gallery', 'stats'],
-    queryFn: galleryApi.getStats,
+    queryKey: ['gallery', 'stats', projectId ?? 'all'],
+    queryFn: () => galleryApi.getStats({ project_id: projectId }),
     staleTime: 30000,
   })
 }
