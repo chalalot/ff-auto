@@ -30,7 +30,7 @@ const formatDimension = (dimension: string) =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 
-export const GalleryPage: React.FC = () => {
+export const GalleryPage: React.FC<{ projectId?: string }> = ({ projectId }) => {
   const [activeTab, setActiveTab] = useState<GalleryStatus>('pending')
   const [page, setPage] = useState(1)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
@@ -38,7 +38,7 @@ export const GalleryPage: React.FC = () => {
   const [columns, setColumns] = useState(4)
   const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
 
-  const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE)
+  const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE, projectId)
   const { data: stats } = useGalleryStats()
   const approveMutation = useApproveImages()
   const disapproveMutation = useDisapproveImages()

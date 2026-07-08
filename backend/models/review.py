@@ -39,6 +39,8 @@ class ReviewRequestItem(BaseModel):
     execution_id: Optional[str] = None
     result_path: Optional[str] = None
     error: Optional[str] = None
+    project_id: Optional[str] = None
+    created_by_member_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

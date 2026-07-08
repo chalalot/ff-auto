@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Loader2, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { reviewApi } from '@/api/review'
+import { projectsApi } from '@/api/projects'
 import type { ReviewRequestItem, ReviewStatus } from '@/types/review'
 
 const STATUS_BADGE: Record<ReviewStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -69,7 +70,8 @@ const RequestRow: React.FC<{
   item: ReviewRequestItem
   checked: boolean
   onToggle: (id: string) => void
-}> = ({ item, checked, onToggle }) => {
+  projectName?: string
+}> = ({ item, checked, onToggle, projectName }) => {
   const queryClient = useQueryClient()
   const sections = parsePromptSections(item.prompt)
   const [subject, setSubject] = useState(sections?.subject ?? '')
@@ -122,6 +124,9 @@ const RequestRow: React.FC<{
           <Badge variant="outline" className="text-xs">
             {PROVIDER_LABEL[item.provider] ?? item.provider}
           </Badge>
+          {projectName && (
+            <Badge variant="outline" className="text-xs">{projectName}</Badge>
+          )}
           <span className="text-xs text-muted-foreground truncate">
             {item.source_image_path.split('/').pop()}
           </span>
@@ -191,20 +196,28 @@ const RequestRow: React.FC<{
   )
 }
 
-export const ReviewQueuePage: React.FC = () => {
+export const ReviewQueuePage: React.FC<{ projectId?: string }> = ({ projectId }) => {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('pending_review')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const { data, isLoading } = useQuery({
-    queryKey: ['review-requests', statusFilter],
+    queryKey: ['review-requests', statusFilter, projectId ?? 'all'],
     queryFn: () =>
       reviewApi.listRequests({
         status: statusFilter === 'all' ? undefined : statusFilter,
         per_page: 200,
+        project_id: projectId,
       }),
     refetchInterval: 5000,
   })
+
+  const { data: allProjects = [] } = useQuery({
+    queryKey: ['projects', 'all'],
+    queryFn: () => projectsApi.list(true),
+    enabled: !projectId,
+  })
+  const projectNames = new Map(allProjects.map(p => [p.id, p.name]))
 
   const items = useMemo(() => data?.items ?? [], [data])
   const batches = useMemo(() => {
@@ -289,6 +302,7 @@ export const ReviewQueuePage: React.FC = () => {
                     item={item}
                     checked={selected.has(item.id)}
                     onToggle={toggle}
+                    projectName={!projectId && item.project_id ? projectNames.get(item.project_id) : undefined}
                   />
                 ))}
               </div>

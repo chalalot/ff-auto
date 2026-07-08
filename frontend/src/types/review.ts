@@ -21,6 +21,8 @@ export interface ReviewRequestItem {
   execution_id: string | null
   result_path: string | null
   error: string | null
+  project_id?: string | null
+  created_by_member_id?: string | null
   created_at: string | null
   updated_at: string | null
 }

@@ -26,6 +26,8 @@ class EvaluationsStorage:
         prompt: Optional[str],
         model: str,
         rubric_version: str,
+        project_id: Optional[str] = None,
+        created_by_member_id: Optional[str] = None,
     ) -> int:
         with session_scope() as session:
             row = Evaluation(
@@ -35,6 +37,8 @@ class EvaluationsStorage:
                 model=model,
                 rubric_version=rubric_version,
                 status="pending",
+                project_id=project_id,
+                created_by_member_id=created_by_member_id,
             )
             session.add(row)
             session.flush()
@@ -93,11 +97,16 @@ class EvaluationsStorage:
         self,
         limit: int = 50,
         media_path: Optional[str] = None,
+        project_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         with session_scope() as session:
             stmt = select(Evaluation).order_by(Evaluation.id.desc()).limit(limit)
             if media_path is not None:
                 stmt = stmt.where(Evaluation.media_path == media_path)
+            if project_id == "unassigned":
+                stmt = stmt.where(Evaluation.project_id.is_(None))
+            elif project_id is not None:
+                stmt = stmt.where(Evaluation.project_id == project_id)
             rows = session.execute(stmt).scalars().all()
             return [self._decode_row(row) for row in rows]
 

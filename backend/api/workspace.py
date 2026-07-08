@@ -33,6 +33,8 @@ from backend.models.workspace import (
 )
 from backend.services.image_processing import ImageProcessingService
 from backend.database.image_logs_storage import ImageLogsStorage
+from backend.api.identity import Identity, get_identity
+from backend.database.uploads_storage import UploadsStorage
 
 router = APIRouter()
 
@@ -133,21 +135,32 @@ def input_image_thumbnail(filename: str, svc: ImageProcessingService = Depends(g
 async def upload_images(
     files: List[UploadFile] = File(...),
     svc: ImageProcessingService = Depends(get_image_processing_service),
+    identity: Identity = Depends(get_identity),
 ):
     """Save uploaded images directly into PROCESSED_DIR (unified library)."""
     saved = []
+    uploads = UploadsStorage()
     for f in files:
         data = await f.read()
         try:
             path = svc.save_ref_image(f.filename or "upload", data)
             saved.append(Path(path).name)
+            uploads.add_upload(
+                filename=Path(path).name, path=str(path), kind="input",
+                project_id=identity.project_id,
+                created_by_member_id=identity.member_id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     return {"saved": saved, "count": len(saved)}
 
 
 @router.post("/process", response_model=DispatchResponse)
-def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depends(get_image_processing_service)):
+def process_image(
+    body: ProcessImageRequest,
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+    identity: Identity = Depends(get_identity),
+):
     _validate_image_pipeline_type(body.pipeline_type)
     try:
         task_id = svc.dispatch_processing(
@@ -166,6 +179,8 @@ def process_image(body: ProcessImageRequest, svc: ImageProcessingService = Depen
             pipeline_type=body.pipeline_type,
             workflow_overrides=body.workflow_overrides,
             workflow_name=body.workflow_name,
+            project_id=identity.project_id,
+            member_id=identity.member_id,
             prepare=not body.skip_prepare,
         )
         return {"task_id": task_id}
@@ -220,12 +235,19 @@ async def upload_ref_images(
     files: List[UploadFile] = File(...),
     svc: ImageProcessingService = Depends(get_image_processing_service),
     storage: ImageLogsStorage = Depends(get_image_logs_storage),
+    identity: Identity = Depends(get_identity),
 ):
     """Upload images directly into PROCESSED_DIR as reusable ref images."""
+    uploads = UploadsStorage()
     for f in files:
         data = await f.read()
         try:
-            svc.save_ref_image(f.filename or "upload", data)
+            path = svc.save_ref_image(f.filename or "upload", data)
+            uploads.add_upload(
+                filename=Path(path).name, path=str(path), kind="ref",
+                project_id=identity.project_id,
+                created_by_member_id=identity.member_id,
+            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     use_counts = storage.get_ref_path_use_counts()
@@ -525,6 +547,7 @@ def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
 def caption_export_manual_to_drive(
     body: ManualExportToDriveRequest,
     db: "CaptionExportsStorage" = Depends(get_caption_exports_storage),
+    identity: Identity = Depends(get_identity),
 ):
     """Build ZIP from manually-supplied captions and upload to Google Drive."""
     import time as _time
@@ -555,6 +578,8 @@ def caption_export_manual_to_drive(
             filename=zip_filename,
             public_url=public_url,
             image_count=len(body.entries),
+            project_id=identity.project_id,
+            created_by_member_id=identity.member_id,
         )
         return {
             "file_id": file_id,

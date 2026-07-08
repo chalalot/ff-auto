@@ -13,8 +13,10 @@ def list_analysis(
     evaluated: str = Query("all", pattern="^(all|yes|no)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    project_id: str | None = Query(None),
     svc: AnalysisService = Depends(get_analysis_service),
 ):
     return svc.get_analysis(
-        status=status, evaluated=evaluated, page=page, per_page=per_page
+        status=status, evaluated=evaluated, page=page, per_page=per_page,
+        project_id=project_id,
     )

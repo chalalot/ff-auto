@@ -99,15 +99,15 @@ function Lightbox({ row, onClose }: { row: AnalysisRow; onClose: () => void }) {
   )
 }
 
-export const AnalysisPage: React.FC = () => {
+export const AnalysisPage: React.FC<{ projectId?: string }> = ({ projectId }) => {
   const [status, setStatus] = useState<AnalysisStatusFilter>('all')
   const [evaluated, setEvaluated] = useState<EvaluatedFilter>('all')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<AnalysisRow | null>(null)
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['analysis', status, evaluated, page],
-    queryFn: () => analysisApi.list({ status, evaluated, page, per_page: 25 }),
+    queryKey: ['analysis', status, evaluated, page, projectId ?? 'all'],
+    queryFn: () => analysisApi.list({ status, evaluated, page, per_page: 25, project_id: projectId }),
     placeholderData: keepPreviousData,
   })
 

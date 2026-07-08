@@ -25,9 +25,10 @@ def list_images(
     status: str = Query("pending", pattern="^(pending|approved|disapproved)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    project_id: Optional[str] = Query(None),
     svc: GalleryService = Depends(get_gallery_service),
 ):
-    return svc.list_images(status=status, page=page, per_page=per_page)
+    return svc.list_images(status=status, page=page, per_page=per_page, project_id=project_id)
 
 
 @router.get("/images/{filename}/thumbnail")

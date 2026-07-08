@@ -96,13 +96,15 @@ class EvaluationService:
         self.evaluator_client = evaluator_client or LLMEvaluatorClient()
         self.model = getattr(self.evaluator_client, "model", GlobalConfig.EVALUATOR_MODEL)
 
-    def evaluate(self, request: EvaluationRequest) -> EvaluationResult:
+    def evaluate(self, request: EvaluationRequest, project_id=None, member_id=None) -> EvaluationResult:
         evaluation_id = self.storage.create_pending(
             media_type=request.media_type,
             media_path=request.media_path,
             prompt=request.prompt,
             model=self.model,
             rubric_version=RUBRIC_VERSION,
+            project_id=project_id,
+            created_by_member_id=member_id,
         )
 
         raw_response = None
@@ -151,10 +153,13 @@ class EvaluationService:
         self,
         limit: int = 50,
         media_path: Optional[str] = None,
+        project_id: Optional[str] = None,
     ) -> List[EvaluationResult]:
         return [
             self._result_from_row(row)
-            for row in self.storage.list_evaluations(limit=limit, media_path=media_path)
+            for row in self.storage.list_evaluations(
+                limit=limit, media_path=media_path, project_id=project_id
+            )
         ]
 
     def _rubric_for_media_type(self, media_type: str) -> Dict[str, Dict[str, Any]]:

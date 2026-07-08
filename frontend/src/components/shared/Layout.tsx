@@ -1,9 +1,11 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3, ListChecks } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3, ListChecks, FolderOpen } from 'lucide-react'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import type { ActiveTask } from '@/types'
+import { MemberPickerModal } from '@/components/shared/MemberPickerModal'
+import { ProjectSelector } from '@/components/shared/ProjectSelector'
 
 const TERMINAL = new Set(['SUCCESS', 'FAILURE', 'REVOKED'])
 
@@ -31,6 +33,7 @@ const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSV
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
   { to: '/review', label: 'Review', icon: ListChecks },
+  { to: '/projects', label: 'Projects', icon: FolderOpen },
   { to: '/analysis', label: 'Analysis', icon: BarChart3 },
   { to: '/archive', label: 'Archive', icon: Archive },
   { to: '/video', label: 'Video', icon: Video },
@@ -44,6 +47,7 @@ export const Layout: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-background">
+      <MemberPickerModal />
       {/* Sidebar */}
       <aside className="w-16 lg:w-56 flex flex-col border-r bg-card">
         <div className="p-4 border-b">
@@ -53,6 +57,10 @@ export const Layout: React.FC = () => {
             </div>
             <span className="hidden lg:block font-semibold text-sm">FF Auto</span>
           </div>
+        </div>
+
+        <div className="hidden lg:block p-2 border-b">
+          <ProjectSelector />
         </div>
 
         <nav className="flex-1 p-2 space-y-1">

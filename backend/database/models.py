@@ -40,6 +40,7 @@ class Evaluation(Base):
     """Media evaluation attempts (legacy: evaluations.db / evaluations table)."""
 
     __tablename__ = "evaluations"
+    __table_args__ = (Index("idx_evaluations_project_id", "project_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     media_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -63,12 +64,19 @@ class Evaluation(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True)
     )
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class ImageLog(Base):
     """Image generation logs (legacy: image_logs.db / image_logs table)."""
 
     __tablename__ = "image_logs"
+    __table_args__ = (Index("idx_image_logs_project_id", "project_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     execution_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -80,12 +88,19 @@ class ImageLog(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class VideoLog(Base):
     """Video generation logs (legacy: video_logs.db / video_logs table)."""
 
     __tablename__ = "video_logs"
+    __table_args__ = (Index("idx_video_logs_project_id", "project_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     batch_id: Mapped[Optional[str]] = mapped_column(Text)
@@ -98,6 +113,12 @@ class VideoLog(Base):
         TIMESTAMP(timezone=True), server_default=func.now()
     )
     filename_id: Mapped[Optional[str]] = mapped_column(Text)
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class RunpodJob(Base):
@@ -121,6 +142,7 @@ class CaptionExport(Base):
     """Caption sheet exports (legacy: image_logs.db / caption_exports table)."""
 
     __tablename__ = "caption_exports"
+    __table_args__ = (Index("idx_caption_exports_project_id", "project_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     file_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -130,13 +152,22 @@ class CaptionExport(Base):
         Integer, nullable=False, server_default="0"
     )
     exported_at: Mapped[str] = mapped_column(Text, nullable=False)
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class Run(Base):
     """Campaign runs (already Postgres; legacy DDL in runs_posts_storage)."""
 
     __tablename__ = "runs"
-    __table_args__ = (Index("idx_runs_created_at", "created_at"),)
+    __table_args__ = (
+        Index("idx_runs_created_at", "created_at"),
+        Index("idx_runs_project_id", "project_id"),
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     persona_name: Mapped[str] = mapped_column(Text, nullable=False)
@@ -148,6 +179,12 @@ class Run(Base):
     metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB)
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class Post(Base):
@@ -160,7 +197,10 @@ class Post(Base):
     """
 
     __tablename__ = "posts"
-    __table_args__ = (Index("idx_posts_run_id", "run_id"),)
+    __table_args__ = (
+        Index("idx_posts_run_id", "run_id"),
+        Index("idx_posts_project_id", "project_id"),
+    )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     run_id: Mapped[str] = mapped_column(
@@ -181,6 +221,12 @@ class Post(Base):
     current_version: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
     updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
 
 
 class GenerationRequest(Base):
@@ -191,6 +237,7 @@ class GenerationRequest(Base):
         Index("idx_generation_requests_status", "status"),
         Index("idx_generation_requests_batch_id", "batch_id"),
         Index("idx_generation_requests_execution_id", "execution_id"),
+        Index("idx_generation_requests_project_id", "project_id"),
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
@@ -213,5 +260,74 @@ class GenerationRequest(Base):
         TIMESTAMP(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
+
+
+class Member(Base):
+    """Lightweight identity (phase 3). No passwords — name is the login."""
+
+    __tablename__ = "members"
+    __table_args__ = (UniqueConstraint("name", name="uq_members_name"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
+class Project(Base):
+    """Project grouping (phase 3). DB grouping only — no physical folders."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    owner_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    archived_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class ProjectMember(Base):
+    __tablename__ = "project_members"
+
+    project_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    member_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class Upload(Base):
+    """Uploaded source/ref images (phase 3). Files already on disk before this
+    table existed have no row and simply don't appear in project Assets."""
+
+    __tablename__ = "uploads"
+    __table_args__ = (Index("idx_uploads_project_id", "project_id"),)
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)  # "input" | "ref"
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )

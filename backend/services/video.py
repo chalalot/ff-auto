@@ -55,6 +55,8 @@ class VideoService:
         prompt: Optional[str],
         kling_settings: KlingSettings,
         batch_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        created_by_member_id: Optional[str] = None,
     ) -> str:
         """Queue a video generation task on Kling and log it to DB."""
         task_id = self.kling_client.generate_video(
@@ -75,6 +77,8 @@ class VideoService:
             prompt=prompt or "",
             source_image_path=image_path,
             batch_id=batch_id,
+            project_id=project_id,
+            created_by_member_id=created_by_member_id,
         )
 
         logger.info(f"[VideoService] Queued Kling task {task_id} for {image_path}")
@@ -90,6 +94,8 @@ class VideoService:
         prompt: Optional[str],
         comfy_settings: "ComfyKlingSettings",
         batch_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        created_by_member_id: Optional[str] = None,
     ) -> str:
         """
         Submit a video job to ComfyUI via kling.json workflow and dispatch a
@@ -119,6 +125,8 @@ class VideoService:
             source_image_path=image_path,
             batch_id=batch_id,
             filename_id="comfy",
+            project_id=project_id,
+            created_by_member_id=created_by_member_id,
         )
         logger.info(f"[VideoService] Queued ComfyUI Kling job {prompt_id} for {image_path}")
 

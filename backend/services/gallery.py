@@ -84,9 +84,16 @@ class GalleryService:
         status: str = "pending",
         page: int = 1,
         per_page: int = 20,
+        project_id: Optional[str] = None,
     ) -> dict:
         directory = self._dir_for_status(status)
         all_files = self._scan_dir(directory)
+        if project_id == "unassigned":
+            assigned = self.storage.get_assigned_result_basenames()
+            all_files = [(f, m) for f, m in all_files if f not in assigned]
+        elif project_id:
+            allowed = self.storage.get_project_result_basenames(project_id)
+            all_files = [(f, m) for f, m in all_files if f in allowed]
         total = len(all_files)
         pages = math.ceil(total / per_page) if total else 1
         page = max(1, min(page, pages))

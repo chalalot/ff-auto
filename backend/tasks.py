@@ -152,6 +152,8 @@ def process_image_task(
     pipeline_type="image.subject_environment",
     workflow_overrides=None,
     workflow_name=None,
+    project_id=None,
+    created_by_member_id=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -173,6 +175,8 @@ def process_image_task(
                 pipeline_type=pipeline_type,
                 workflow_overrides=workflow_overrides or {},
                 workflow_name=workflow_name,
+                project_id=project_id,
+                created_by_member_id=created_by_member_id,
                 task=self,
             )
         )
@@ -185,7 +189,7 @@ async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
     strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
     task, pipeline_type="image.subject_environment", workflow_overrides=None,
-    workflow_name=None,
+    workflow_name=None, project_id=None, created_by_member_id=None,
 ):
     workflow, client, storage = get_instances()
 
@@ -258,16 +262,20 @@ async def async_process_image(
         "workflow_overrides": workflow_overrides or {},
         "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
     }
-    created = GenerationRequestsStorage().create_requests([
-        {
-            "source_image_path": dest_image_path,
-            "prompt": prompt_content,
-            "provider": "comfy_image",
-            "workflow_name": workflow_name,
-            "settings": settings,
-        }
-        for prompt_content in prompts
-    ])
+    created = GenerationRequestsStorage().create_requests(
+        [
+            {
+                "source_image_path": dest_image_path,
+                "prompt": prompt_content,
+                "provider": "comfy_image",
+                "workflow_name": workflow_name,
+                "settings": settings,
+            }
+            for prompt_content in prompts
+        ],
+        project_id=project_id,
+        created_by_member_id=created_by_member_id,
+    )
 
     task.update_state(
         state="SUCCESS",
@@ -519,6 +527,8 @@ def dispatch_generation_request_task(self, request_id: str):
                 prompt=row["prompt"],
                 image_ref_path=row["source_image_path"],
                 persona=settings.get("persona"),
+                project_id=row.get("project_id"),
+                created_by_member_id=row.get("created_by_member_id"),
             )
             download_execution_task.apply_async(
                 args=[execution_id, row["source_image_path"]],
@@ -533,6 +543,8 @@ def dispatch_generation_request_task(self, request_id: str):
                 prompt=row["prompt"],
                 kling_settings=KlingSettings(**settings),
                 batch_id=row["batch_id"],
+                project_id=row.get("project_id"),
+                created_by_member_id=row.get("created_by_member_id"),
             )
         elif provider == "comfy_video":
             from backend.services.video import VideoService
@@ -542,6 +554,8 @@ def dispatch_generation_request_task(self, request_id: str):
                 prompt=row["prompt"],
                 comfy_settings=ComfyKlingSettings(**settings),
                 batch_id=row["batch_id"],
+                project_id=row.get("project_id"),
+                created_by_member_id=row.get("created_by_member_id"),
             )
         else:
             raise ValueError(f"Unknown provider {provider!r}")

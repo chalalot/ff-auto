@@ -158,3 +158,21 @@ def test_thumbnail_refuses_row_with_escaped_path(client, storage, tmp_path):
     ])
     rid = created["request_ids"][0]
     assert client.get(f"/api/review/requests/{rid}/thumbnail").status_code == 404
+
+
+def test_create_requests_stamped_from_headers(client, storage):
+    from backend.database.projects_storage import ProjectsStorage
+    pid = ProjectsStorage().create_project("rev-proj")["id"]
+    r = client.post("/api/review/requests", json=_payload(),
+                    headers={"X-Member-Name": "Reviewer", "X-Project-Id": pid})
+    assert r.status_code == 200
+    item = client.get("/api/review/requests").json()["items"][0]
+    assert item["project_id"] == pid
+    assert item["created_by_member_id"] is not None
+
+
+def test_create_requests_without_headers_unstamped(client, storage):
+    client.post("/api/review/requests", json=_payload())
+    item = client.get("/api/review/requests").json()["items"][0]
+    assert item["project_id"] is None
+    assert item["created_by_member_id"] is None

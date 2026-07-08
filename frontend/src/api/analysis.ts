@@ -7,6 +7,7 @@ export const analysisApi = {
     evaluated?: EvaluatedFilter
     page?: number
     per_page?: number
+    project_id?: string
   }) =>
     apiClient.get<AnalysisResponse>('/analysis', { params }).then(r => r.data),
 }

@@ -120,6 +120,8 @@ class ImageProcessingService:
         pipeline_type: str = "image.subject_environment",
         workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         workflow_name: Optional[str] = None,
+        project_id: Optional[str] = None,
+        member_id: Optional[str] = None,
         prepare: bool = True,
     ) -> str:
         """
@@ -146,6 +148,8 @@ class ImageProcessingService:
                 "pipeline_type": pipeline_type,
                 "workflow_overrides": workflow_overrides or {},
                 "workflow_name": workflow_name,
+                "project_id": project_id,
+                "created_by_member_id": member_id,
             },
             queue="image",
         )

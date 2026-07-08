@@ -10,6 +10,7 @@ export const galleryApi = {
     per_page?: number
     group_by?: string
     sort?: string
+    project_id?: string
   }) =>
     apiClient.get<GalleryResponse>('/gallery/images', { params }).then(r => r.data),
 

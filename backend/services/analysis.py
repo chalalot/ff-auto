@@ -44,10 +44,18 @@ class AnalysisService:
         evaluated: str = "all",
         page: int = 1,
         per_page: int = 20,
+        project_id: Optional[str] = None,
     ) -> AnalysisResponse:
         all_rows = self._scan_all()
         if status in _STATUSES:
             all_rows = [r for r in all_rows if r[1] == status]
+
+        if project_id == "unassigned":
+            assigned = self.gallery.storage.get_assigned_result_basenames()
+            all_rows = [r for r in all_rows if r[0] not in assigned]
+        elif project_id:
+            allowed = self.gallery.storage.get_project_result_basenames(project_id)
+            all_rows = [r for r in all_rows if r[0] in allowed]
 
         score_summary = self.storage.get_score_summary()
         evaluated_paths = score_summary["evaluated_paths"]

@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from backend.api.identity import Identity, get_identity
 from backend.database.generation_requests_storage import (
     GenerationRequestsStorage,
     InvalidStateError,
@@ -57,12 +58,14 @@ def _source_path_in_roots(raw: str) -> Optional[Path]:
 def list_requests(
     status: ReviewStatus | None = Query(default=None),
     batch_id: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
     return storage.list_requests(
-        status=status, batch_id=batch_id, page=page, per_page=per_page
+        status=status, batch_id=batch_id, project_id=project_id,
+        page=page, per_page=per_page
     )
 
 
@@ -70,6 +73,7 @@ def list_requests(
 def create_requests(
     body: ReviewCreateRequest,
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
+    identity: Identity = Depends(get_identity),
 ):
     for item in body.items:
         if _source_path_in_roots(item.source_image_path) is None:
@@ -78,7 +82,10 @@ def create_requests(
                 detail="source_image_path is outside the allowed image directories",
             )
     return storage.create_requests(
-        [item.model_dump() for item in body.items], batch_id=body.batch_id
+        [item.model_dump() for item in body.items],
+        batch_id=body.batch_id,
+        project_id=identity.project_id,
+        created_by_member_id=identity.member_id,
     )
 
 

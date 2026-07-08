@@ -16,6 +16,9 @@ from backend.api import (
     evaluations as evaluations_module,
     analysis as analysis_module,
     review as review_module,
+    members as members_module,
+    projects as projects_module,
+    uploads as uploads_module,
 )
 from backend.database.engine import assert_database_ready
 
@@ -58,6 +61,9 @@ app.include_router(archive_module.router, prefix="/api/archive", tags=["archive"
 app.include_router(evaluations_module.router, prefix="/api/evaluations", tags=["evaluations"])
 app.include_router(analysis_module.router, prefix="/api/analysis", tags=["analysis"])
 app.include_router(review_module.router, prefix="/api/review", tags=["review"])
+app.include_router(members_module.router, prefix="/api/members", tags=["members"])
+app.include_router(projects_module.router, prefix="/api/projects", tags=["projects"])
+app.include_router(uploads_module.router, prefix="/api/uploads", tags=["uploads"])
 
 
 @app.get("/health")

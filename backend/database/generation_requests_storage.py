@@ -49,6 +49,8 @@ def _row_dict(row: GenerationRequest) -> dict:
         "execution_id": row.execution_id,
         "result_path": row.result_path,
         "error": row.error,
+        "project_id": row.project_id,
+        "created_by_member_id": row.created_by_member_id,
         "created_at": _format_ts(row.created_at),
         "updated_at": _format_ts(row.updated_at),
     }
@@ -57,7 +59,13 @@ def _row_dict(row: GenerationRequest) -> dict:
 class GenerationRequestsStorage:
     """Schema is owned by Alembic; this class only reads/writes rows."""
 
-    def create_requests(self, items: list, batch_id: Optional[str] = None) -> dict:
+    def create_requests(
+        self,
+        items: list,
+        batch_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        created_by_member_id: Optional[str] = None,
+    ) -> dict:
         batch = batch_id or uuid.uuid4().hex
         ids = []
         with session_scope() as session:
@@ -72,6 +80,8 @@ class GenerationRequestsStorage:
                     workflow_name=item.get("workflow_name"),
                     settings=item.get("settings") or {},
                     status=PENDING_REVIEW,
+                    project_id=project_id,
+                    created_by_member_id=created_by_member_id,
                 )
                 session.add(row)
                 ids.append(row.id)
@@ -86,6 +96,7 @@ class GenerationRequestsStorage:
         self,
         status: Optional[str] = None,
         batch_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         page: int = 1,
         per_page: int = 50,
     ) -> dict:
@@ -95,6 +106,10 @@ class GenerationRequestsStorage:
                 query = query.where(GenerationRequest.status == status)
             if batch_id:
                 query = query.where(GenerationRequest.batch_id == batch_id)
+            if project_id == "unassigned":
+                query = query.where(GenerationRequest.project_id.is_(None))
+            elif project_id:
+                query = query.where(GenerationRequest.project_id == project_id)
             total = session.execute(
                 select(func.count()).select_from(query.subquery())
             ).scalar() or 0

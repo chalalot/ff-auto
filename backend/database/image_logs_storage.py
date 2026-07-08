@@ -34,7 +34,7 @@ class ImageLogsStorage:
         """Initialize storage. Schema is owned by Alembic."""
         pass
 
-    def log_execution(self, execution_id: str, prompt: str, image_ref_path: str = None, persona: str = None) -> int:
+    def log_execution(self, execution_id: str, prompt: str, image_ref_path: str = None, persona: str = None, project_id: str = None, created_by_member_id: str = None) -> int:
         """
         Log a new execution.
 
@@ -50,6 +50,8 @@ class ImageLogsStorage:
                     image_ref_path=image_ref_path,
                     result_image_path=None,
                     status="pending",
+                    project_id=project_id,
+                    created_by_member_id=created_by_member_id,
                 )
                 session.add(row)
                 session.flush()
@@ -57,6 +59,37 @@ class ImageLogsStorage:
         except Exception as e:
             logger.error(f"Failed to log execution: {e}")
             raise
+
+    def _basenames(self, values) -> set:
+        names = set()
+        for value in values:
+            for part in (value or "").split(","):
+                part = part.strip()
+                if part:
+                    names.add(os.path.basename(part))
+        return names
+
+    def get_project_result_basenames(self, project_id: str) -> set:
+        """Basenames of result images logged under ``project_id``."""
+        with session_scope() as session:
+            values = session.execute(
+                select(ImageLog.result_image_path).where(
+                    ImageLog.result_image_path.isnot(None),
+                    ImageLog.project_id == project_id,
+                )
+            ).scalars().all()
+            return self._basenames(values)
+
+    def get_assigned_result_basenames(self) -> set:
+        """Basenames of result images that belong to ANY project."""
+        with session_scope() as session:
+            values = session.execute(
+                select(ImageLog.result_image_path).where(
+                    ImageLog.result_image_path.isnot(None),
+                    ImageLog.project_id.isnot(None),
+                )
+            ).scalars().all()
+            return self._basenames(values)
 
     def get_pending_executions(self):
         """

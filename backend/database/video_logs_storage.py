@@ -33,7 +33,7 @@ class VideoLogsStorage:
         """Initialize storage. Schema is owned by Alembic."""
         pass
 
-    def log_execution(self, execution_id: str, prompt: str, source_image_path: str = None, batch_id: str = None, filename_id: str = None) -> int:
+    def log_execution(self, execution_id: str, prompt: str, source_image_path: str = None, batch_id: str = None, filename_id: str = None, project_id: str = None, created_by_member_id: str = None) -> int:
         """
         Log a new execution.
 
@@ -50,6 +50,8 @@ class VideoLogsStorage:
                     status="pending",
                     batch_id=batch_id,
                     filename_id=filename_id,
+                    project_id=project_id,
+                    created_by_member_id=created_by_member_id,
                 )
                 session.add(row)
                 session.flush()

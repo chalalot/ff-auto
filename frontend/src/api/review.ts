@@ -12,6 +12,7 @@ export const reviewApi = {
   listRequests: (params?: {
     status?: ReviewStatus
     batch_id?: string
+    project_id?: string
     page?: number
     per_page?: number
   }) =>

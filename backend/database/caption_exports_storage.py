@@ -31,6 +31,8 @@ class CaptionExportsStorage:
         filename: str,
         public_url: str,
         image_count: int,
+        project_id: str = None,
+        created_by_member_id: str = None,
     ) -> int:
         try:
             with session_scope() as session:
@@ -40,6 +42,8 @@ class CaptionExportsStorage:
                     public_url=public_url,
                     image_count=image_count,
                     exported_at=datetime.utcnow().isoformat(),
+                    project_id=project_id,
+                    created_by_member_id=created_by_member_id,
                 )
                 session.add(row)
                 session.flush()
