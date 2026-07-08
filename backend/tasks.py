@@ -237,63 +237,50 @@ async def async_process_image(
             for i, p in enumerate(prompts)
         )
     )
-    successful_queues_for_image = 0
-    execution_ids = []
+    from backend.database.generation_requests_storage import GenerationRequestsStorage
 
-    for i, prompt_content in enumerate(prompts):
-        logger.info(f"Queueing execution for {dest_image_path} (Variation {i+1}/{len(prompts)})...")
-        prog = int(60 + (30 * (i / len(prompts))))
-        task.update_state(
-            state="QUEUEING_COMFY",
-            meta={"status": f"🎨 Sending variation {i+1}/{len(prompts)} to ComfyUI...", "progress": prog},
-        )
+    task.update_state(
+        state="QUEUEING_REVIEW",
+        meta={"status": f"📋 Sending {len(prompts)} prompt(s) to the review queue...", "progress": 80},
+    )
 
-        execution_id = await client.generate_image(
-            positive_prompt=prompt_content,
-            negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-            kol_persona=persona,
-            workflow_type=workflow_type,
-            strength_model=strength_model,
-            seed_strategy=seed_strategy,
-            base_seed=base_seed,
-            width=width,
-            height=height,
-            lora_name=lora_name,
-            clip_model_type=clip_model_type,
-            pipeline_type=pipeline_type,
-            workflow_overrides=workflow_overrides or {},
-            workflow_name=workflow_name,
-        )
-
-        if execution_id:
-            logger.info(f"✅ Queued Variation {i+1} - Execution ID: {execution_id}")
-            storage.log_execution(
-                execution_id=execution_id,
-                prompt=prompt_content,
-                image_ref_path=dest_image_path,
-                persona=persona,
-            )
-            download_execution_task.apply_async(
-                args=[execution_id, dest_image_path],
-                countdown=DOWNLOAD_POLL_INTERVAL,
-                queue="image",
-            )
-            successful_queues_for_image += 1
-            execution_ids.append(execution_id)
-        else:
-            logger.error(f"Failed to get execution ID for variation {i+1}.")
+    settings = {
+        "persona": persona,
+        "workflow_type": workflow_type,
+        "strength_model": strength_model,
+        "seed_strategy": seed_strategy,
+        "base_seed": base_seed,
+        "width": width,
+        "height": height,
+        "lora_name": lora_name,
+        "clip_model_type": clip_model_type,
+        "pipeline_type": pipeline_type,
+        "workflow_overrides": workflow_overrides or {},
+        "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
+    }
+    created = GenerationRequestsStorage().create_requests([
+        {
+            "source_image_path": dest_image_path,
+            "prompt": prompt_content,
+            "provider": "comfy_image",
+            "workflow_name": workflow_name,
+            "settings": settings,
+        }
+        for prompt_content in prompts
+    ])
 
     task.update_state(
         state="SUCCESS",
-        meta={"status": f"✅ Finished processing {dest_image_path}", "progress": 100},
+        meta={"status": f"✅ {len(prompts)} prompt(s) awaiting review for {dest_image_path}", "progress": 100},
     )
 
     return {
         "success": True,
         "image_path": dest_image_path,
-        "queued_variations": successful_queues_for_image,
+        "queued_for_review": len(prompts),
         "total_variations": len(prompts),
-        "execution_ids": execution_ids,
+        "batch_id": created["batch_id"],
+        "request_ids": created["request_ids"],
     }
 
 

@@ -7,6 +7,8 @@ carry the value to the generator: the Celery dispatch and async_process_image.
 Self-contained: Celery, Redis, CrewAI, and the ComfyUI client are all faked, so
 no broker, network, or real data dir is touched.
 """
+from unittest.mock import MagicMock
+
 import pytest
 
 
@@ -104,58 +106,58 @@ def test_dispatch_processing_forwards_pipeline_type(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Deepest hop: async_process_image -> client.generate_image
+# Deepest hop: async_process_image -> review queue row
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_async_process_image_forwards_pipeline_type_to_generate_image(monkeypatch):
-    from backend import tasks
+async def test_async_process_image_writes_review_request_with_pipeline_type(
+    monkeypatch, clean_tables
+):
+    from backend import tasks as tasks_module
+    from backend.database.generation_requests_storage import GenerationRequestsStorage
 
-    captured = {}
-
-    class _FakeWorkflow:
+    class FakeWorkflow:
         async def process(self, **kwargs):
             return {"generated_prompts": ["a prompt"]}
 
-    class _FakeClient:
+    class FakeClient:
         async def generate_image(self, **kwargs):
-            captured.update(kwargs)
-            return "exec-1"
-
-    class _FakeStorage:
-        def log_execution(self, **k):
-            pass
-
-        def log_failed_execution(self, **k):
-            pass
-
-    class _FakeTask:
-        def update_state(self, **k):
-            pass
+            raise AssertionError("pipeline must NOT dispatch — review queue only")
 
     monkeypatch.setattr(
-        tasks, "get_instances", lambda: (_FakeWorkflow(), _FakeClient(), _FakeStorage())
+        tasks_module, "get_instances",
+        lambda: (FakeWorkflow(), FakeClient(), MagicMock()),
     )
-    monkeypatch.setattr(tasks.download_execution_task, "apply_async", lambda *a, **k: None)
 
-    await tasks.async_process_image(
-        dest_image_path="/x/y.png",
-        persona="Jennie",
+    result = await tasks_module.async_process_image(
+        dest_image_path="/tmp/img.png",
+        persona="p1",
         workflow_type="turbo",
         vision_model="gpt-4o",
         variation_count=1,
-        strength_model=0.8,
+        strength_model=1.0,
         seed_strategy="random",
         base_seed=0,
         width=1024,
-        height=1600,
-        lora_name="",
+        height=1024,
+        lora_name="lora",
         clip_model_type="qwen_image",
-        pipeline_type="image.unified",
-        task=_FakeTask(),
+        pipeline_type="image.pose_transfer",
+        workflow_overrides={"steps": 20},
+        workflow_name="pose.json",
+        task=MagicMock(),
     )
 
-    assert captured["pipeline_type"] == "image.unified"
+    assert result["success"] is True
+    assert result["queued_for_review"] == 1
+    row = GenerationRequestsStorage().get_request(result["request_ids"][0])
+    assert row["status"] == "pending_review"
+    assert row["provider"] == "comfy_image"
+    assert row["prompt"] == "a prompt"
+    assert row["workflow_name"] == "pose.json"
+    assert row["settings"]["pipeline_type"] == "image.pose_transfer"
+    assert row["settings"]["workflow_overrides"] == {"steps": 20}
+    assert row["settings"]["persona"] == "p1"
 
 
 # ---------------------------------------------------------------------------
@@ -226,42 +228,35 @@ def test_dispatch_forwards_workflow_overrides(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_process_image_forwards_workflow_overrides(monkeypatch):
-    from backend import tasks
-
-    calls = {}
+async def test_async_process_image_writes_workflow_overrides_to_settings(
+    monkeypatch, clean_tables
+):
+    from backend import tasks as tasks_module
+    from backend.database.generation_requests_storage import GenerationRequestsStorage
 
     class _FakeClient:
         async def generate_image(self, **kwargs):
-            calls.update(kwargs)
-            return "exec-1"
+            raise AssertionError("pipeline must NOT dispatch — review queue only")
 
     class _FakeWorkflow:
         async def process(self, **kwargs):
             return {"generated_prompts": ["a prompt"]}
 
-    class _FakeStorage:
-        def log_execution(self, **kwargs):
-            pass
-
-        def log_failed_execution(self, **kwargs):
-            pass
-
-    class _FakeTask:
-        def update_state(self, **kwargs):
-            pass
-
     monkeypatch.setattr(
-        tasks, "get_instances", lambda: (_FakeWorkflow(), _FakeClient(), _FakeStorage())
+        tasks_module, "get_instances",
+        lambda: (_FakeWorkflow(), _FakeClient(), MagicMock()),
     )
-    monkeypatch.setattr(tasks.download_execution_task, "apply_async", lambda *a, **k: None)
 
-    await tasks.async_process_image(
+    result = await tasks_module.async_process_image(
         dest_image_path="/x.png", persona="emi", workflow_type="turbo",
         vision_model="gpt-4o", variation_count=1, strength_model=0.8,
         seed_strategy="random", base_seed=0, width=1024, height=1600,
-        lora_name="", clip_model_type="qwen_image", task=_FakeTask(),
+        lora_name="", clip_model_type="qwen_image", task=MagicMock(),
         pipeline_type="image.unified",
         workflow_overrides={"125": {"strength_model": 1.3}},
     )
-    assert calls["workflow_overrides"] == {"125": {"strength_model": 1.3}}
+
+    assert result["success"] is True
+    assert result["queued_for_review"] == 1
+    row = GenerationRequestsStorage().get_request(result["request_ids"][0])
+    assert row["settings"]["workflow_overrides"] == {"125": {"strength_model": 1.3}}
