@@ -6,6 +6,7 @@ pending_review, and dispatched to providers only via POST /dispatch.
 import io
 import logging
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
@@ -30,6 +31,28 @@ router = APIRouter()
 THUMBNAIL_SIZE = (256, 256)
 
 
+def _allowed_image_roots() -> list[Path]:
+    from backend.config import GlobalConfig
+
+    return [
+        Path(GlobalConfig.INPUT_DIR).resolve(),
+        Path(GlobalConfig.PROCESSED_DIR).resolve(),
+        Path(GlobalConfig.OUTPUT_DIR).resolve(),
+    ]
+
+
+def _source_path_in_roots(raw: str) -> Optional[Path]:
+    """Resolved path if it stays within the app's image directories, else None."""
+    path = Path(raw).resolve()
+    for root in _allowed_image_roots():
+        try:
+            path.relative_to(root)
+            return path
+        except ValueError:
+            continue
+    return None
+
+
 @router.get("/requests", response_model=ReviewListResponse)
 def list_requests(
     status: ReviewStatus | None = Query(default=None),
@@ -48,6 +71,12 @@ def create_requests(
     body: ReviewCreateRequest,
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
+    for item in body.items:
+        if _source_path_in_roots(item.source_image_path) is None:
+            raise HTTPException(
+                status_code=422,
+                detail="source_image_path is outside the allowed image directories",
+            )
     return storage.create_requests(
         [item.model_dump() for item in body.items], batch_id=body.batch_id
     )
@@ -105,21 +134,23 @@ def request_thumbnail(
     request_id: str,
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
-    """Thumbnail of the row's source image. Only the DB-stored path is ever
-    opened — the client cannot supply a path, so no traversal surface."""
+    """Thumbnail of the row's source image. The DB-stored path is validated
+    against the app's image directories both here and at row creation, so a
+    row can never expose a file outside INPUT/PROCESSED/OUTPUT."""
     from PIL import Image
 
     row = storage.get_request(request_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Request not found")
-    source = Path(row["source_image_path"])
-    if not source.is_file():
+    source = _source_path_in_roots(row["source_image_path"])
+    if source is None or not source.is_file():
         raise HTTPException(status_code=404, detail="Source image not found")
     try:
         with Image.open(source) as img:
             img.thumbnail(THUMBNAIL_SIZE)
             buf = io.BytesIO()
             img.convert("RGB").save(buf, format="JPEG", quality=80)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Thumbnail failed: {e}")
+    except Exception:
+        logger.exception("Thumbnail generation failed for request %s", request_id)
+        raise HTTPException(status_code=500, detail="Thumbnail generation failed")
     return Response(content=buf.getvalue(), media_type="image/jpeg")

@@ -2,6 +2,7 @@
 /api/review/* endpoint tests. Real throwaway Postgres (clean_tables); Celery
 dispatch is mocked — no broker, no providers.
 """
+import os
 from unittest.mock import patch
 
 import pytest
@@ -16,8 +17,10 @@ def storage(clean_tables):
 
 
 def _payload(**overrides):
+    # Must live under an allowed image root (PROCESSED_DIR here) — the API
+    # rejects paths outside INPUT/PROCESSED/OUTPUT.
     item = {
-        "source_image_path": "/app/processed/img.png",
+        "source_image_path": os.path.join(os.environ["PROCESSED_DIR"], "img.png"),
         "prompt": "a prompt",
         "provider": "comfy_image",
         "workflow_name": "wf.json",
@@ -116,8 +119,8 @@ def test_dispatch_is_idempotent(client, storage):
     assert mock_aa.call_count == 1
 
 
-def test_thumbnail_serves_source_image(client, storage, tmp_path):
-    png = make_png(str(tmp_path), "src.png")
+def test_thumbnail_serves_source_image(client, storage, _temp_dirs):
+    png = make_png(_temp_dirs["PROCESSED_DIR"], "src.png")
     rid = client.post(
         "/api/review/requests",
         json={"items": [dict(_payload()["items"][0], source_image_path=str(png))]},
@@ -129,4 +132,29 @@ def test_thumbnail_serves_source_image(client, storage, tmp_path):
 
 def test_thumbnail_missing_file_404(client, storage):
     rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    assert client.get(f"/api/review/requests/{rid}/thumbnail").status_code == 404
+
+
+def test_create_rejects_path_outside_image_roots(client, storage):
+    r = client.post(
+        "/api/review/requests",
+        json={"items": [dict(_payload()["items"][0], source_image_path="/etc/passwd")]},
+    )
+    assert r.status_code == 422
+
+
+def test_thumbnail_refuses_row_with_escaped_path(client, storage, tmp_path):
+    # A row written outside the API (no ingress validation) must still not
+    # leak files outside the image roots via the thumbnail endpoint.
+    png = make_png(str(tmp_path), "outside.png")
+    created = storage.create_requests([
+        {
+            "source_image_path": str(png),
+            "prompt": "p",
+            "provider": "comfy_image",
+            "workflow_name": None,
+            "settings": {},
+        }
+    ])
+    rid = created["request_ids"][0]
     assert client.get(f"/api/review/requests/{rid}/thumbnail").status_code == 404
