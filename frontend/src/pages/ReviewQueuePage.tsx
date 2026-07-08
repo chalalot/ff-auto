@@ -27,10 +27,20 @@ const PROVIDER_LABEL: Record<string, string> = {
 const SELECTABLE: ReviewStatus[] = ['pending_review', 'failed']
 
 function settingsSummary(settings: Record<string, unknown>): string {
-  return Object.entries(settings)
-    .filter(([k, v]) => v != null && v !== '' && k !== 'workflow_overrides' && k !== 'negative_prompt')
+  // Node overrides are applied last at dispatch, so they are the effective
+  // values — show them and hide any top-level key they shadow.
+  const overrides = (settings.workflow_overrides ?? {}) as Record<string, Record<string, unknown>>
+  const overriddenKeys = new Set(
+    Object.values(overrides).flatMap(patch => Object.keys(patch ?? {})),
+  )
+  const top = Object.entries(settings)
+    .filter(([k, v]) =>
+      v != null && v !== '' && k !== 'workflow_overrides' && k !== 'negative_prompt' && !overriddenKeys.has(k))
     .map(([k, v]) => `${k}=${String(v)}`)
-    .join(' · ')
+  const over = Object.entries(overrides).flatMap(([nodeId, patch]) =>
+    Object.entries(patch ?? {}).map(([k, v]) => `${k}[${nodeId}]=${String(v)}`),
+  )
+  return [...top, ...over].join(' · ')
 }
 
 const RequestRow: React.FC<{

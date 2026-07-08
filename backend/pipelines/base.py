@@ -22,7 +22,6 @@ LOCKED_INPUT_KEYS: Dict[str, str] = {
     "seed": "Controlled by the Seed strategy",
     "noise_seed": "Controlled by the Seed strategy",
     "text": "Set from the generated prompt",
-    "lora_name": "Controlled by the LoRA selector",
     "device": "Controlled by deployment (COMFYUI_CLIP_DEVICE)",
 }
 

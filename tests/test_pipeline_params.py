@@ -61,9 +61,9 @@ def test_describe_marks_locked_inputs():
     assert _inputs(nodes, "3")["seed"]["locked"] is True
     assert "Seed strategy" in _inputs(nodes, "3")["seed"]["locked_reason"]
     assert _inputs(nodes, "4")["text"]["locked"] is True
-    assert _inputs(nodes, "1")["lora_name"]["locked"] is True
     assert _inputs(nodes, "5")["device"]["locked"] is True
-    # editable ones are not locked
+    # editable ones are not locked (lora_name is panel-controlled per node)
+    assert _inputs(nodes, "1")["lora_name"]["locked"] is False
     assert _inputs(nodes, "1")["strength_model"]["locked"] is False
     assert _inputs(nodes, "2")["width"]["locked"] is False
 
@@ -92,11 +92,11 @@ def test_apply_overrides_skips_locked_keys():
     wf = copy.deepcopy(SAMPLE_WF)
     apply_workflow_overrides(wf, {"3": {"seed": 999, "steps": 12},
                                   "4": {"text": "HACK"},
-                                  "1": {"lora_name": "evil.safetensors"}})
+                                  "1": {"lora_name": "other.safetensors"}})
     assert wf["3"]["inputs"]["seed"] == 42             # locked, untouched
     assert wf["3"]["inputs"]["steps"] == 12            # editable, applied
     assert wf["4"]["inputs"]["text"] == "hello"        # locked, untouched
-    assert wf["1"]["inputs"]["lora_name"] == "x.safetensors"  # locked
+    assert wf["1"]["inputs"]["lora_name"] == "other.safetensors"  # panel-controlled
 
 
 def test_apply_overrides_ignores_unknown_nodes_and_keys():
@@ -151,6 +151,15 @@ def test_build_workflow_override_sets_strength(patched_template):
     wf = pipe.build_workflow(GenerationInputs(
         prompt="hi", workflow_overrides={"lora": {"strength_model": 1.4}}))
     assert wf["lora"]["inputs"]["strength_model"] == 1.4
+
+
+def test_build_workflow_override_lora_beats_selector(patched_template):
+    """Per-node panel override wins over the legacy top-level lora_name."""
+    pipe = get_pipeline("image.unified")
+    wf = pipe.build_workflow(GenerationInputs(
+        prompt="hi", lora_name="selector.safetensors",
+        workflow_overrides={"lora": {"lora_name": "panel.safetensors"}}))
+    assert wf["lora"]["inputs"]["lora_name"] == "panel.safetensors"
 
 
 def test_build_workflow_does_not_override_locked_seed(patched_template):

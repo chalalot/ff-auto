@@ -21,11 +21,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { WorkflowParametersPanel, buildInitialOverrides } from '@/components/workspace/WorkflowParametersPanel'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, WorkflowParameters } from '@/types'
 
-// "owner__repo__name_v7.safetensors" → "name_v7"
-const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
-// "owner__repo__name_v7.safetensors" → "owner__repo"
-const loraPrefix = (name: string) => name.split('__').slice(0, -1).join('__')
-
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   persona: '',
@@ -34,7 +29,6 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   variation_count: 1,
   seed_strategy: 'random',
   base_seed: 0,
-  lora_name: '',
   workflow_name: 'workflow.json',
 }
 
@@ -101,7 +95,6 @@ export const WorkspacePage: React.FC = () => {
         persona: lastUsed.persona || prev.persona,
         vision_model: lastUsed.vision_model || prev.vision_model,
         variation_count: lastUsed.variations ?? prev.variation_count,
-        lora_name: lastUsed.lora_name ?? prev.lora_name,
         seed_strategy: lastUsed.seed_strategy || prev.seed_strategy,
         base_seed: lastUsed.base_seed ?? prev.base_seed,
         workflow_type: lastUsed.workflow_type || prev.workflow_type,
@@ -118,7 +111,6 @@ export const WorkspacePage: React.FC = () => {
         persona: config.persona,
         vision_model: config.vision_model,
         variations: config.variation_count,
-        lora_name: config.lora_name,
         seed_strategy: config.seed_strategy,
         base_seed: config.base_seed,
         workflow_type: config.workflow_type,
@@ -296,7 +288,7 @@ export const WorkspacePage: React.FC = () => {
               <button
                 className="text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => {
-                  setAddLoraValue(config.lora_name || '')
+                  setAddLoraValue('')
                   setAddLoraOpen(v => !v)
                 }}
               >
@@ -331,24 +323,9 @@ export const WorkspacePage: React.FC = () => {
                 </div>
               </div>
             )}
-            <Select value={config.lora_name} onValueChange={(v) => setConfig(p => ({ ...p, lora_name: v }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select LoRA">
-                  {config.lora_name ? loraShortLabel(config.lora_name) : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {loraOptions.map(l => (
-                  <SelectItem key={l} value={l}>
-                    <span className="font-medium">{loraShortLabel(l)}</span>
-                    <span className="text-xs text-muted-foreground ml-1.5 font-mono">{loraPrefix(l)}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {config.lora_name && (
-              <p className="text-xs text-muted-foreground font-mono break-all leading-relaxed">{config.lora_name}</p>
-            )}
+            <p className="text-xs text-muted-foreground">
+              Pick LoRA models per node in Workflow Parameters below. "+ add new" registers a file for those dropdowns.
+            </p>
           </div>
 
           <Separator />
@@ -357,6 +334,7 @@ export const WorkspacePage: React.FC = () => {
             params={workflowParams}
             loading={paramsLoading}
             error={paramsError ? 'Failed to load workflow parameters' : null}
+            loraOptions={loraOptions}
             values={overrides}
             onChange={(nodeId, key, value) =>
               setOverrides(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], [key]: value } }))

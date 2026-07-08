@@ -82,7 +82,8 @@ export interface ProcessImageConfig {
   variation_count: number
   seed_strategy: string
   base_seed: number
-  lora_name: string
+  // Legacy single-LoRA override; per-node values now come via workflow_overrides.
+  lora_name?: string
   // Which workflows/*.json graph to build from (backend defaults to workflow.json).
   workflow_name?: string
   // Per-run node-input overrides: { node_id: { input_key: value } }.
