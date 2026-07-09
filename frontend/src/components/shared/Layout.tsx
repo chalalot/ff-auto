@@ -1,7 +1,7 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3, ListChecks, FolderOpen } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3, ListChecks } from 'lucide-react'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import type { ActiveTask } from '@/types'
 import { MemberPickerModal } from '@/components/shared/MemberPickerModal'
@@ -33,7 +33,6 @@ const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSV
   { to: '/workspace', label: 'Workspace', icon: Image },
   { to: '/gallery', label: 'Gallery', icon: Grid },
   { to: '/review', label: 'Review', icon: ListChecks },
-  { to: '/projects', label: 'Projects', icon: FolderOpen },
   { to: '/analysis', label: 'Analysis', icon: BarChart3 },
   { to: '/archive', label: 'Archive', icon: Archive },
   { to: '/video', label: 'Video', icon: Video },

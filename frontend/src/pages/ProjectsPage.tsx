@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,8 +8,10 @@ import { projectsApi } from '@/api/projects'
 import { getProjectId, setProjectId } from '@/lib/identity'
 
 export const ProjectsPage: React.FC = () => {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
+  const openProject = (id: string) => { setProjectId(id); navigate('/gallery') }
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
@@ -62,9 +64,13 @@ export const ProjectsPage: React.FC = () => {
               <div key={p.id} className="flex items-center gap-3 rounded-md border p-3">
                 <FolderOpen className="w-5 h-5 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <Link to={`/projects/${p.id}`} className="font-medium hover:underline">
+                  <button
+                    type="button"
+                    onClick={() => openProject(p.id)}
+                    className="font-medium hover:underline text-left"
+                  >
                     {p.name}
-                  </Link>
+                  </button>
                   {p.description && (
                     <p className="text-sm text-muted-foreground truncate">{p.description}</p>
                   )}
