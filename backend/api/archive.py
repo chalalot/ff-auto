@@ -20,10 +20,11 @@ def list_archive(
     server: Optional[str] = Query(None, description="Filter by server name"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    project_id: Optional[str] = Query(None),
     svc: ArchiveService = Depends(get_archive_service),
 ):
     """Paginated list of result images from archive directories."""
-    return svc.list_images(server=server, page=page, per_page=per_page)
+    return svc.list_images(server=server, page=page, per_page=per_page, project_id=project_id)
 
 
 @router.get("/thumbnail")

@@ -20,6 +20,7 @@ from typing import List, Optional
 from PIL import Image
 
 from backend.config import GlobalConfig
+from backend.database.image_logs_storage import ImageLogsStorage
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ class ArchiveService:
         # Writable cache for generated thumbnails
         self.cache_dir = Path(GlobalConfig.OUTPUT_DIR) / ".archive_thumbnails"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.image_logs = ImageLogsStorage()
 
     # ------------------------------------------------------------------
     # Server discovery
@@ -81,6 +83,7 @@ class ArchiveService:
         server: Optional[str] = None,
         page: int = 1,
         per_page: int = 20,
+        project_id: Optional[str] = None,
     ) -> dict:
         servers = [server] if server else self.list_servers()
 
@@ -89,6 +92,10 @@ class ArchiveService:
         for srv in servers:
             for fname, mtime in self._scan_dir(self._results_dir(srv)):
                 all_files.append((srv, fname, mtime))
+
+        if project_id:
+            allowed = self.image_logs.get_project_result_basenames(project_id)
+            all_files = [t for t in all_files if t[1] in allowed]
 
         # Global newest-first sort
         all_files.sort(key=lambda x: x[2], reverse=True)
