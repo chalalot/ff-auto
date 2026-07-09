@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Loader2, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { reviewApi } from '@/api/review'
 import { projectsApi } from '@/api/projects'
+import { useProjectId } from '@/hooks/useProjectId'
 import type { ReviewRequestItem, ReviewStatus } from '@/types/review'
 
 const STATUS_BADGE: Record<ReviewStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
@@ -196,7 +197,8 @@ const RequestRow: React.FC<{
   )
 }
 
-export const ReviewQueuePage: React.FC<{ projectId?: string }> = ({ projectId }) => {
+export const ReviewQueuePage: React.FC = () => {
+  const projectId = useProjectId() ?? undefined
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('pending_review')
   const [selected, setSelected] = useState<Set<string>>(new Set())

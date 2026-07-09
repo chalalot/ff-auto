@@ -37,9 +37,9 @@ export const ProjectWorkspacePage: React.FC = () => {
         </Tabs>
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        {tab === 'gallery' && <GalleryPage projectId={projectId} />}
-        {tab === 'review' && <ReviewQueuePage projectId={projectId} />}
-        {tab === 'analysis' && <AnalysisPage projectId={projectId} />}
+        {tab === 'gallery' && <GalleryPage />}
+        {tab === 'review' && <ReviewQueuePage />}
+        {tab === 'analysis' && <AnalysisPage />}
         {tab === 'assets' && <AssetsPanel projectId={projectId} />}
       </div>
     </div>

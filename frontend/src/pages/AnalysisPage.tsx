@@ -11,6 +11,7 @@ import type {
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useProjectId } from '@/hooks/useProjectId'
 
 const pct = (rate: number) => `${(rate * 100).toFixed(0)}%`
 const STATUS_VARIANT: Record<string, string> = {
@@ -99,7 +100,8 @@ function Lightbox({ row, onClose }: { row: AnalysisRow; onClose: () => void }) {
   )
 }
 
-export const AnalysisPage: React.FC<{ projectId?: string }> = ({ projectId }) => {
+export const AnalysisPage: React.FC = () => {
+  const projectId = useProjectId() ?? undefined
   const [status, setStatus] = useState<AnalysisStatusFilter>('all')
   const [evaluated, setEvaluated] = useState<EvaluatedFilter>('all')
   const [page, setPage] = useState(1)

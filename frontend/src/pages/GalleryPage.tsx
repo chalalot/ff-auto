@@ -11,6 +11,7 @@ import {
   useApproveImages, useDisapproveImages, useUndoImages
 } from '@/hooks/useGalleryImages'
 import { galleryApi, type GalleryStatus } from '@/api/gallery'
+import { useProjectId } from '@/hooks/useProjectId'
 import { useMutation } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -30,7 +31,8 @@ const formatDimension = (dimension: string) =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 
-export const GalleryPage: React.FC<{ projectId?: string }> = ({ projectId }) => {
+export const GalleryPage: React.FC = () => {
+  const projectId = useProjectId() ?? undefined
   const [activeTab, setActiveTab] = useState<GalleryStatus>('pending')
   const [page, setPage] = useState(1)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
