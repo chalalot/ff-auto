@@ -40,6 +40,10 @@ export const GalleryPage: React.FC = () => {
   const [columns, setColumns] = useState(4)
   const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
 
+  // Switching projects re-scopes the list; snap back to page 1 so we never
+  // land on a now-out-of-range page (e.g. page 3 of a much smaller project).
+  React.useEffect(() => { setPage(1) }, [projectId])
+
   const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE, projectId)
   const { data: stats } = useGalleryStats(projectId)
   const approveMutation = useApproveImages()

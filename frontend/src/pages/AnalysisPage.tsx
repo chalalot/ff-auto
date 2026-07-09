@@ -107,6 +107,9 @@ export const AnalysisPage: React.FC = () => {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<AnalysisRow | null>(null)
 
+  // Re-scoping to another project can shrink the result set; reset to page 1.
+  React.useEffect(() => { setPage(1) }, [projectId])
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['analysis', status, evaluated, page, projectId ?? 'all'],
     queryFn: () => analysisApi.list({ status, evaluated, page, per_page: 25, project_id: projectId }),

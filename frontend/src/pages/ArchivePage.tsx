@@ -54,6 +54,9 @@ export const ArchivePage: React.FC = () => {
   const [columns, setColumns] = useState(4)
   const projectId = useProjectId() ?? undefined
 
+  // Re-scoping to another project can shrink the result set; reset to page 1.
+  React.useEffect(() => { setPage(1) }, [projectId])
+
   const { data, isLoading, refetch } = useArchiveImages(activeServer, page, projectId)
 
   const servers = data?.servers ?? []

@@ -19,6 +19,9 @@ export const VideoLibrary: React.FC = () => {
   const qc = useQueryClient()
   const projectId = useProjectId() ?? undefined
 
+  // Re-scoping to another project can shrink the result set; reset to page 1.
+  React.useEffect(() => { setPage(1) }, [projectId])
+
   const { data, isLoading, refetch } = useVideoList(page, PER_PAGE, projectId)
 
   const uploadMutation = useMutation({

@@ -2,31 +2,26 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Archive, FolderOpen, Loader2, Plus } from 'lucide-react'
 import { projectsApi } from '@/api/projects'
 import { getProjectId, setProjectId } from '@/lib/identity'
+import { CreateProjectModal } from '@/components/shared/CreateProjectModal'
 
 export const ProjectsPage: React.FC = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [name, setName] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
   const openProject = (id: string) => { setProjectId(id); navigate('/gallery') }
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
 
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['projects'] })
-  const createMutation = useMutation({
-    mutationFn: (n: string) => projectsApi.create(n),
-    onSuccess: () => { setName(''); invalidate() },
-  })
   const archiveMutation = useMutation({
     mutationFn: (id: string) => projectsApi.patch(id, { archived: true }),
     onSuccess: (_data, id) => {
       if (getProjectId() === id) setProjectId(null)
-      invalidate()
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
   })
 
@@ -34,20 +29,9 @@ export const ProjectsPage: React.FC = () => {
     <div className="flex flex-col h-full">
       <div className="p-4 border-b flex items-center justify-between gap-4">
         <h1 className="text-xl font-bold">Projects</h1>
-        <form
-          className="flex gap-2"
-          onSubmit={e => { e.preventDefault(); if (name.trim()) createMutation.mutate(name.trim()) }}
-        >
-          <Input
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="New project name"
-            className="w-56"
-          />
-          <Button type="submit" disabled={!name.trim() || createMutation.isPending}>
-            <Plus className="w-4 h-4 mr-2" />Create
-          </Button>
-        </form>
+        <Button onClick={() => setShowCreate(true)}>
+          <Plus className="w-4 h-4 mr-2" />New project
+        </Button>
       </div>
       <div className="flex-1 overflow-auto p-4">
         {isLoading ? (
@@ -89,6 +73,7 @@ export const ProjectsPage: React.FC = () => {
           </div>
         )}
       </div>
+      <CreateProjectModal open={showCreate} onClose={() => setShowCreate(false)} />
     </div>
   )
 }
