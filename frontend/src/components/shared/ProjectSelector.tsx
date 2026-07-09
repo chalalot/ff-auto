@@ -1,42 +1,57 @@
-import React, { useSyncExternalStore } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { Plus, Settings2 } from 'lucide-react'
 import { projectsApi } from '@/api/projects'
-import { getProjectId, setProjectId, subscribeIdentity } from '@/lib/identity'
+import { useProjectId } from '@/hooks/useProjectId'
+import { setProjectId } from '@/lib/identity'
+import { CreateProjectModal } from '@/components/shared/CreateProjectModal'
 
 const NONE = '__none__'
+const CREATE = '__create__'
+const MANAGE = '__manage__'
 
 export const ProjectSelector: React.FC = () => {
   const navigate = useNavigate()
-  const projectId = useSyncExternalStore(subscribeIdentity, getProjectId)
+  const projectId = useProjectId()
+  const [showCreate, setShowCreate] = useState(false)
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: () => projectsApi.list(),
   })
 
   const handleChange = (v: string) => {
-    const id = v === NONE ? null : v
-    setProjectId(id)
-    if (id) navigate(`/projects/${id}`)
+    if (v === CREATE) { setShowCreate(true); return }
+    if (v === MANAGE) { navigate('/projects'); return }
+    // Select the project (or clear to global). No navigation — the current
+    // page re-scopes in place via useProjectId.
+    setProjectId(v === NONE ? null : v)
   }
 
   return (
-    <Select
-      value={projectId ?? NONE}
-      onValueChange={handleChange}
-    >
-      <SelectTrigger className="w-full text-xs">
-        <SelectValue placeholder="No project" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={NONE}>No project</SelectItem>
-        {projects.map(p => (
-          <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Select value={projectId ?? NONE} onValueChange={handleChange}>
+        <SelectTrigger className="w-full text-xs">
+          <SelectValue placeholder="No project" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE}>No project (global)</SelectItem>
+          {projects.map(p => (
+            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+          ))}
+          <div className="my-1 h-px bg-border" />
+          <SelectItem value={CREATE}>
+            <span className="flex items-center gap-2"><Plus className="w-3.5 h-3.5" />New project</span>
+          </SelectItem>
+          <SelectItem value={MANAGE}>
+            <span className="flex items-center gap-2"><Settings2 className="w-3.5 h-3.5" />Manage projects…</span>
+          </SelectItem>
+        </SelectContent>
+      </Select>
+      <CreateProjectModal open={showCreate} onClose={() => setShowCreate(false)} />
+    </>
   )
 }
