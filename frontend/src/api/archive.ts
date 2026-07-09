@@ -2,7 +2,7 @@ import { apiClient } from '@/lib/api-client'
 import type { ArchiveListResponse, ImageMetadata } from '@/types'
 
 export const archiveApi = {
-  list: (params: { server?: string; page?: number; per_page?: number }) =>
+  list: (params: { server?: string; page?: number; per_page?: number; project_id?: string }) =>
     apiClient
       .get<ArchiveListResponse>('/archive/list', { params })
       .then((r) => r.data),

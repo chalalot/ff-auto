@@ -5,6 +5,7 @@ import { VideoCard } from './VideoCard'
 import { VideoPlayerModal } from './VideoPlayerModal'
 import { useVideoList } from '@/hooks/useVideoLibrary'
 import { videoApi } from '@/api/video'
+import { useProjectId } from '@/hooks/useProjectId'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import type { VideoItem } from '@/types/video'
 
@@ -16,8 +17,9 @@ export const VideoLibrary: React.FC = () => {
   const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qc = useQueryClient()
+  const projectId = useProjectId() ?? undefined
 
-  const { data, isLoading, refetch } = useVideoList(page, PER_PAGE)
+  const { data, isLoading, refetch } = useVideoList(page, PER_PAGE, projectId)
 
   const uploadMutation = useMutation({
     mutationFn: (file: File) => videoApi.uploadVideo(file),

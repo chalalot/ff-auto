@@ -2,10 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { videoApi } from '@/api/video'
 import type { KlingPreset } from '@/types/video'
 
-export function useVideoList(page = 1, perPage = 20) {
+export function useVideoList(page = 1, perPage = 20, projectId?: string) {
   return useQuery({
-    queryKey: ['videos', page, perPage],
-    queryFn: () => videoApi.listVideos({ page, per_page: perPage }),
+    queryKey: ['videos', page, perPage, projectId ?? 'all'],
+    queryFn: () => videoApi.listVideos({ page, per_page: perPage, project_id: projectId }),
     refetchInterval: (query) => {
       const items = query.state.data?.items || []
       const hasPending = items.some((item) => 

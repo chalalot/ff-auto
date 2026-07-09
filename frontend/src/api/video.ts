@@ -50,7 +50,7 @@ export const videoApi = {
       }),
 
   // List
-  listVideos: (params?: { page?: number; per_page?: number }) =>
+  listVideos: (params?: { page?: number; per_page?: number; project_id?: string }) =>
     apiClient.get<VideoListResponse>('/video/list', { params }).then(r => r.data),
 
   // File URLs (direct browser URLs)

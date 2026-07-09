@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
 import { archiveApi } from '@/api/archive'
+import { useProjectId } from '@/hooks/useProjectId'
 import { formatDistanceToNow } from 'date-fns'
 import {
   RefreshCw,
@@ -30,14 +31,15 @@ function serverLabel(name: string): string {
 // Hooks
 // ------------------------------------------------------------------
 
-function useArchiveImages(server: string | null, page: number) {
+function useArchiveImages(server: string | null, page: number, projectId?: string) {
   return useQuery({
-    queryKey: ['archive', 'list', server, page],
+    queryKey: ['archive', 'list', server, page, projectId ?? 'all'],
     queryFn: () =>
       archiveApi.list({
         server: server ?? undefined,
         page,
         per_page: ITEMS_PER_PAGE,
+        project_id: projectId,
       }),
   })
 }
@@ -50,8 +52,9 @@ export const ArchivePage: React.FC = () => {
   const [activeServer, setActiveServer] = useState<string | null>(null) // null = "All"
   const [page, setPage] = useState(1)
   const [columns, setColumns] = useState(4)
+  const projectId = useProjectId() ?? undefined
 
-  const { data, isLoading, refetch } = useArchiveImages(activeServer, page)
+  const { data, isLoading, refetch } = useArchiveImages(activeServer, page, projectId)
 
   const servers = data?.servers ?? []
 

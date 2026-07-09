@@ -4,6 +4,7 @@ import { Loader2, Play, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useVideoList } from '@/hooks/useVideoLibrary'
 import { videoApi } from '@/api/video'
+import { useProjectId } from '@/hooks/useProjectId'
 import { formatDistanceToNow } from 'date-fns'
 import type { VideoItem } from '@/types/video'
 
@@ -30,7 +31,8 @@ const timeAgo = (dateStr: string) => {
 }
 
 export const VideoGenerationHistory: React.FC = () => {
-  const { data, isLoading, refetch } = useVideoList(1, 50)
+  const projectId = useProjectId() ?? undefined
+  const { data, isLoading, refetch } = useVideoList(1, 50, projectId)
 
   if (isLoading) {
     return (
