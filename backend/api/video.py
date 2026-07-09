@@ -87,10 +87,11 @@ def get_video_status(
 def list_videos(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    project_id: Optional[str] = Query(None),
     svc: VideoService = Depends(get_video_service),
 ):
-    """List all video generation records with pagination."""
-    return svc.list_videos(page=page, per_page=per_page)
+    """List video generation records with pagination, optionally scoped."""
+    return svc.list_videos(page=page, per_page=per_page, project_id=project_id)
 
 
 # ------------------------------------------------------------------

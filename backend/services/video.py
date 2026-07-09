@@ -206,9 +206,10 @@ class VideoService:
     # Listing
     # ------------------------------------------------------------------
 
-    def list_videos(self, page: int = 1, per_page: int = 20) -> dict:
+    def list_videos(self, page: int = 1, per_page: int = 20,
+                    project_id: Optional[str] = None) -> dict:
         """Paginate video execution records from DB."""
-        all_records = self.storage.get_recent_executions(limit=1000)
+        all_records = self.storage.get_recent_executions(limit=1000, project_id=project_id)
         total = len(all_records)
         pages = math.ceil(total / per_page) if total else 1
         page = max(1, min(page, pages))
