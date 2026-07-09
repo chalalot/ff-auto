@@ -5,6 +5,7 @@ import { configApi } from '@/api/config'
 import { usePersonas, useVisionModels, useLoraOptions, useLastUsed } from '@/hooks/usePersonas'
 import { useTaskProgress } from '@/hooks/useTaskProgress'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
+import { useProjectId } from '@/hooks/useProjectId'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -34,6 +35,7 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
 
 export const WorkspacePage: React.FC = () => {
   const queryClient = useQueryClient()
+  const projectId = useProjectId() ?? undefined
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
@@ -77,13 +79,13 @@ export const WorkspacePage: React.FC = () => {
   })
   const { data: lastUsed, isSuccess: lastUsedLoaded } = useLastUsed()
   const { data: executions = [] } = useQuery({
-    queryKey: ['workspace', 'executions'],
-    queryFn: () => workspaceApi.getExecutions({ limit: 20 }),
+    queryKey: ['workspace', 'executions', projectId ?? 'all'],
+    queryFn: () => workspaceApi.getExecutions({ limit: 20, project_id: projectId }),
   })
 
   const { data: library = [], refetch: refetchLibrary } = useQuery({
-    queryKey: ['workspace', 'ref-images'],
-    queryFn: workspaceApi.getRefImages,
+    queryKey: ['workspace', 'ref-images', projectId ?? 'all'],
+    queryFn: () => workspaceApi.getRefImages({ project_id: projectId }),
   })
 
   // Load last used config on mount — runs once when query resolves

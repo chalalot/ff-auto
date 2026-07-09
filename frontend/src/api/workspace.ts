@@ -46,12 +46,12 @@ export const workspaceApi = {
   getActiveTasks: () =>
     apiClient.get<ActiveTask[]>('/workspace/active-tasks').then(r => r.data),
 
-  getExecutions: (params?: { limit?: number; status?: string }) =>
+  getExecutions: (params?: { limit?: number; status?: string; project_id?: string }) =>
     apiClient.get<ExecutionRecord[]>('/workspace/executions', { params }).then(r => r.data),
 
   // Ref image library
-  getRefImages: () =>
-    apiClient.get<RefImage[]>('/workspace/ref-images').then(r => r.data),
+  getRefImages: (params?: { project_id?: string }) =>
+    apiClient.get<RefImage[]>('/workspace/ref-images', { params }).then(r => r.data),
 
   getRefImageThumbnailUrl: (filename: string) =>
     `/api/workspace/ref-images/${encodeURIComponent(filename)}/thumbnail`,

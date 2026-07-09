@@ -77,3 +77,18 @@ class UploadsStorage:
                 "page": page,
                 "pages": max(1, math.ceil(total / per_page)),
             }
+
+    def get_project_ref_basenames(self, project_id: str) -> set:
+        """Filenames of ``kind='ref'`` uploads belonging to a project.
+
+        Used to scope the Workspace ref-image library: a ref image is shown
+        under a project only if it was uploaded while that project was active.
+        """
+        with session_scope() as session:
+            rows = session.execute(
+                select(Upload.filename).where(
+                    Upload.project_id == project_id,
+                    Upload.kind == "ref",
+                )
+            ).scalars().all()
+            return set(rows)

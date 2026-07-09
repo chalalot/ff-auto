@@ -33,7 +33,7 @@ export const ImageSelector: React.FC<ImageSelectorProps> = ({ selected, onToggle
   // Uploads query
   const { data: uploadsData, isLoading: isLoadingUploads } = useQuery<RefImage[]>({
     queryKey: ['refImages'],
-    queryFn: workspaceApi.getRefImages,
+    queryFn: () => workspaceApi.getRefImages(),
     enabled: status === 'uploads',
   })
 

@@ -223,11 +223,16 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
 
 @router.get("/ref-images", response_model=List[RefImage])
 def list_ref_images(
+    project_id: Optional[str] = Query(None),
     svc: ImageProcessingService = Depends(get_image_processing_service),
     storage: ImageLogsStorage = Depends(get_image_logs_storage),
 ):
     use_counts = storage.get_ref_path_use_counts()
-    return svc.scan_ref_images(use_counts)
+    images = svc.scan_ref_images(use_counts)
+    if project_id:
+        allowed = UploadsStorage().get_project_ref_basenames(project_id)
+        images = [im for im in images if im["filename"] in allowed]
+    return images
 
 
 @router.post("/ref-images/upload", response_model=List[RefImage])
@@ -299,9 +304,10 @@ def task_status(task_id: str, svc: ImageProcessingService = Depends(get_image_pr
 @router.get("/executions", response_model=List[ExecutionRecord])
 def list_executions(
     limit: int = Query(50, ge=1, le=500),
+    project_id: Optional[str] = Query(None),
     storage: ImageLogsStorage = Depends(get_image_logs_storage),
 ):
-    rows = storage.get_recent_executions(limit=limit)
+    rows = storage.get_recent_executions(limit=limit, project_id=project_id)
     return rows
 
 

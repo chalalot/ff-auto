@@ -205,13 +205,18 @@ class ImageLogsStorage:
             logger.error(f"Failed to fetch execution by path: {e}")
             return None
 
-    def get_recent_executions(self, limit: int = 50):
-        """Get recent executions ordered by creation time descending."""
+    def get_recent_executions(self, limit: int = 50, project_id: str = None):
+        """Get recent executions ordered by creation time descending.
+
+        When ``project_id`` is given, only that project's rows are returned;
+        ``None`` returns rows from every project (global view).
+        """
         try:
             with session_scope() as session:
-                rows = session.execute(
-                    select(ImageLog).order_by(ImageLog.id.desc()).limit(limit)
-                ).scalars().all()
+                stmt = select(ImageLog).order_by(ImageLog.id.desc())
+                if project_id is not None:
+                    stmt = stmt.where(ImageLog.project_id == project_id)
+                rows = session.execute(stmt.limit(limit)).scalars().all()
                 return [_row_dict(row) for row in rows]
         except Exception as e:
             logger.error(f"Failed to fetch recent executions: {e}")
