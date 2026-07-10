@@ -34,6 +34,7 @@ from .base import (
     GenerationPipeline,
     PipelineInputError,
     apply_workflow_overrides,
+    clean_lora_name,
     register,
 )
 
@@ -53,12 +54,15 @@ def _clean_prompt(prompt: str) -> str:
 
 def _resolve_lora(lora_name: Optional[str], kol_persona: Optional[str]) -> Optional[str]:
     """Explicit override wins; otherwise map the persona to its turbo LoRA."""
-    if lora_name:
-        return lora_name
+    cleaned = clean_lora_name(lora_name)
+    if cleaned:
+        return cleaned
+    if lora_name and lora_name.strip().lower() == "none":
+        return None
     if kol_persona:
         for persona_key, lora in PERSONA_LORA_MAPPING_TURBO.items():
             if persona_key.lower() == kol_persona.lower():
-                return lora
+                return clean_lora_name(lora)
     return None
 
 

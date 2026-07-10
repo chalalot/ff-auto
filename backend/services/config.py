@@ -182,9 +182,9 @@ class ConfigService:
 
     _BUILTIN_LORA_OPTIONS = [
         "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
-        "khiemle__xz-comfy__jennie_turbo_outdoor_v1.safetensors",
-        "khiemle__xz-comfy__jennie_turbo_indoor_v1.safetensors",
-        "khiemle__xz-comfy__jennie_turbo_selfie_v2.safetensors",
+        "khiemle__xz-comfy__jennie_outdoor_v1.safetensors",
+        "khiemle__xz-comfy__jennie_indoor_v1.safetensors",
+        "khiemle__xz-comfy__jennie_selfie_v2.safetensors",
         "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
         "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
         "khiemle__xz-comfy__emi_turbo_v2.safetensors",
@@ -195,7 +195,7 @@ class ConfigService:
         "Macincesht__ff-loras__emi_v7.safetensors",
         "khiemle__xz-comfy__roxie_v3.safetensors",
         "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
-        "khiemle__xz-comfy__Sephera%20v7.safetensors",
+        "khiemle__xz-comfy__Sephera_v7.safetensors",
     ]
 
     @property

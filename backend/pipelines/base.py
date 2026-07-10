@@ -13,9 +13,36 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import html
+import re
+from urllib.parse import unquote
 from typing import Any, Dict, List, Optional
 
 from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
+
+
+def clean_lora_name(val: Optional[str]) -> Optional[str]:
+    """Normalize a LoRA filename: unescape HTML/URL encoding iteratively and ensure .safetensors suffix."""
+    if not val or not isinstance(val, str):
+        return None
+    cleaned = val.strip()
+    if not cleaned or cleaned.lower() == "none":
+        return None
+    for _ in range(5):
+        prev = cleaned
+        cleaned = html.unescape(cleaned)
+        cleaned = unquote(cleaned)
+        if cleaned == prev:
+            break
+    cleaned = cleaned.strip()
+    if not cleaned or cleaned.lower() == "none":
+        return None
+    # Normalize ComfyUI Cloud repository separator convention (__ instead of / or -)
+    cleaned = re.sub(r"^khiemle[/\s_-]+xz-comfy[/\s_-]+", "khiemle__xz-comfy__", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"^Macincesht[/\s_-]+ff-loras[/\s_-]+", "Macincesht__ff-loras__", cleaned, flags=re.IGNORECASE)
+    if not cleaned.lower().endswith(".safetensors"):
+        cleaned += ".safetensors"
+    return cleaned
 
 
 LOCKED_INPUT_KEYS: Dict[str, str] = {
@@ -107,7 +134,12 @@ def apply_workflow_overrides(
                 continue
             if key not in node_inputs or isinstance(node_inputs[key], list):
                 continue
-            node_inputs[key] = _coerce_to(node_inputs[key], value)
+            if key == "lora_name" and isinstance(value, str):
+                cleaned = clean_lora_name(value)
+                if cleaned:
+                    node_inputs[key] = cleaned
+            else:
+                node_inputs[key] = _coerce_to(node_inputs[key], value)
 
 
 @dataclass
