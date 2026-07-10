@@ -11,6 +11,7 @@ import { ArchivePage } from '@/pages/ArchivePage'
 import { AnalysisPage } from '@/pages/AnalysisPage'
 import { ReviewQueuePage } from '@/pages/ReviewQueuePage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
+import { PipelineRunPage } from '@/pages/PipelineRunPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,6 +70,7 @@ function App() {
               <Route path="archive" element={<ArchivePage />} />
               <Route path="analysis" element={<AnalysisPage />} />
               <Route path="projects" element={<ProjectsPage />} />
+              <Route path="pipeline-runs/:runId" element={<PipelineRunPage />} />
             </Route>
           </Routes>
         </BrowserRouter>
