@@ -1,5 +1,5 @@
 import { ArrowLeft, Loader2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PipelineRunTimeline } from '@/components/pipeline/PipelineRunTimeline'
 import { PipelineStepInspector } from '@/components/pipeline/PipelineStepInspector'
@@ -22,18 +22,10 @@ export function PipelineRunPage() {
   const { data: trace, isLoading, refreshError } = usePipelineRun(runId)
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!trace || trace.steps.length === 0) return
-    setSelectedStepId(current => {
-      if (current && trace.steps.some(step => step.id === current)) return current
-      return trace.steps.find(step => step.status === 'running')?.id ?? trace.steps[0].id
-    })
-  }, [trace])
-
-  const selectedStep = useMemo(
-    () => trace?.steps.find(step => step.id === selectedStepId) ?? null,
-    [trace, selectedStepId],
-  )
+  const activeStepId = trace?.steps.some(step => step.id === selectedStepId)
+    ? selectedStepId
+    : trace?.steps.find(step => step.status === 'running')?.id ?? trace?.steps[0]?.id ?? null
+  const selectedStep = trace?.steps.find(step => step.id === activeStepId) ?? null
 
   if (isLoading && !trace) {
     return <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading run trace...</div>
@@ -63,7 +55,7 @@ export function PipelineRunPage() {
       </header>
 
       <div className="grid min-h-0 flex-1 gap-6 overflow-auto p-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <PipelineRunTimeline steps={trace.steps} selectedStepId={selectedStepId} onSelect={setSelectedStepId} />
+        <PipelineRunTimeline steps={trace.steps} selectedStepId={activeStepId} onSelect={setSelectedStepId} />
         <section className="min-w-0 rounded-md border bg-background p-5">
           {selectedStep ? <PipelineStepInspector step={selectedStep} /> : <p className="text-sm text-muted-foreground">No step data yet.</p>}
         </section>

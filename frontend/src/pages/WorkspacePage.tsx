@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api/workspace'
 import { configApi } from '@/api/config'
@@ -36,6 +37,7 @@ const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
 
 export const WorkspacePage: React.FC = () => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const projectId = useProjectId() ?? undefined
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
@@ -134,21 +136,27 @@ export const WorkspacePage: React.FC = () => {
     mutationFn: async () => {
       const paths = Array.from(selectedPaths)
       let taskIds: string[]
+      let runIds: Array<string | null>
       if (paths.length === 1) {
         const result = await workspaceApi.process({ ...config, workflow_overrides: overrides, image_path: paths[0], skip_prepare: true })
         taskIds = [result.task_id]
+        runIds = [result.run_id ?? null]
       } else {
         const result = await workspaceApi.processBatch(paths, { ...config, workflow_overrides: overrides, skip_prepare: true })
         taskIds = result.task_ids
+        runIds = result.run_ids
       }
-      return { taskIds, paths, configSnapshot: { ...config } }
+      return { taskIds, runIds, paths, configSnapshot: { ...config } }
     },
-    onSuccess: async () => {
+    onSuccess: async ({ taskIds, runIds }) => {
       // Immediately refresh the global active-tasks list so this session and
       // all other open sessions see the new tasks right away.
       queryClient.invalidateQueries({ queryKey: ['workspace', 'active-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
+      if (taskIds.length === 1 && runIds[0]) {
+        navigate(`/pipeline-runs/${runIds[0]}`)
+      }
     },
   })
 
@@ -780,6 +788,15 @@ const GlobalTaskCard: React.FC<{ task: ActiveTask }> = ({ task }) => {
             <p className="text-xs text-muted-foreground">{task.image_count} images</p>
           )}
           <p className="text-sm">{statusMessage}</p>
+          {task.run_id && !isCaptionExport && (
+            <Link
+              to={`/pipeline-runs/${task.run_id}`}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              Open run trace
+            </Link>
+          )}
           {progress > 0 && (
             <div className="space-y-1">
               <Progress value={progress} className="h-2" />

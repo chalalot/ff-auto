@@ -32,10 +32,10 @@ export const workspaceApi = {
     `/api/workspace/input-images/${filename}/thumbnail`,
 
   process: (config: ProcessImageConfig & { skip_prepare?: boolean }) =>
-    apiClient.post<{ task_id: string }>('/workspace/process', config).then(r => r.data),
+    apiClient.post<{ task_id: string; run_id?: string | null }>('/workspace/process', config).then(r => r.data),
 
   processBatch: (imagePaths: string[], sharedConfig: Omit<ProcessImageConfig, 'image_path'> & { skip_prepare?: boolean }) =>
-    apiClient.post<{ task_ids: string[] }>('/workspace/process-batch', {
+    apiClient.post<{ task_ids: string[]; run_ids: Array<string | null> }>('/workspace/process-batch', {
       image_paths: imagePaths,
       ...sharedConfig,
     }).then(r => r.data),

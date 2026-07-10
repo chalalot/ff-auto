@@ -124,6 +124,7 @@ export interface ActiveTask {
   status_message: string
   progress: number
   image_path?: string
+  run_id?: string | null
   persona: string
   dispatched_at?: number
   task_type: string        // "image_process" | "caption_export"

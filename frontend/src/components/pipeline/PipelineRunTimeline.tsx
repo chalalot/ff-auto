@@ -1,12 +1,7 @@
 import { CheckCircle2, Circle, Loader2, XCircle } from 'lucide-react'
 import type { PipelineStepStatus, PipelineStepTrace } from '@/types/pipeline'
 import { cn } from '@/lib/utils'
-
-const STEP_LABELS: Record<string, string> = {
-  vision_observation: 'Vision observation',
-  analyst: 'Analyst',
-  turbo_engineer: 'Turbo Engineer',
-}
+import { pipelineStepLabel } from './pipelineLabels'
 
 const statusLabel: Record<PipelineStepStatus, string> = {
   queued: 'Queued',
@@ -20,10 +15,6 @@ function StepStatusIcon({ status }: { status: PipelineStepStatus }) {
   if (status === 'running') return <Loader2 className="h-5 w-5 animate-spin text-blue-600" aria-hidden="true" />
   if (status === 'failed') return <XCircle className="h-5 w-5 text-red-600" aria-hidden="true" />
   return <Circle className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-}
-
-export function pipelineStepLabel(stepKey: string) {
-  return STEP_LABELS[stepKey] ?? stepKey.replaceAll('_', ' ')
 }
 
 export function PipelineRunTimeline({

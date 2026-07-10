@@ -1,5 +1,5 @@
 import type { PipelineStepTrace } from '@/types/pipeline'
-import { pipelineStepLabel } from './PipelineRunTimeline'
+import { pipelineStepLabel } from './pipelineLabels'
 
 function formatValue(value: unknown) {
   if (value === null || value === undefined || value === '') return 'No data'
