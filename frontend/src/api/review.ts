@@ -30,5 +30,12 @@ export const reviewApi = {
   dispatch: (ids: string[]) =>
     apiClient.post<ReviewDispatchResponse>('/review/dispatch', { ids }).then(r => r.data),
 
+  redispatch: (id: string) =>
+    apiClient.post<ReviewRequestItem>(`/review/requests/${id}/redispatch`).then(r => r.data),
+
+  redispatchBulk: (ids: string[]) =>
+    apiClient.post<{ created: ReviewRequestItem[]; skipped: string[] }>('/review/redispatch-bulk', { ids }).then(r => r.data),
+
   getThumbnailUrl: (id: string) => `/api/review/requests/${id}/thumbnail`,
 }
+

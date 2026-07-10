@@ -87,6 +87,59 @@ def test_discard_dispatched_409(client, storage):
     assert client.delete(f"/api/review/requests/{rid}").status_code == 409
 
 
+def test_regenerate_pending_dispatches_and_leaves_row_untouched(client, storage):
+    # Matrix B happy cell: pending_review → task dispatched, prompt unmutated yet.
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    with patch("backend.tasks.regenerate_request_task.apply_async") as mock_aa:
+        mock_aa.return_value.id = "regen-task"
+        r = client.post(f"/api/review/requests/{rid}/regenerate")
+    assert r.status_code == 202
+    assert r.json()["request_id"] == rid
+    assert mock_aa.call_count == 1
+    assert mock_aa.call_args.kwargs["queue"] == "image"
+    row = storage.get_request(rid)
+    assert row["status"] == "pending_review"
+    assert row["prompt"] == "a prompt"  # not mutated by the endpoint itself
+
+
+def test_regenerate_non_pending_409_no_dispatch(client, storage):
+    # Matrix B reject cell: approved row → 409, no task, no mutation.
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    storage.claim_for_dispatch([rid])  # → approved
+    with patch("backend.tasks.regenerate_request_task.apply_async") as mock_aa:
+        r = client.post(f"/api/review/requests/{rid}/regenerate")
+    assert r.status_code == 409
+    assert mock_aa.call_count == 0
+    assert storage.get_request(rid)["prompt"] == "a prompt"
+
+
+def test_regenerate_missing_404(client, storage):
+    assert client.post("/api/review/requests/nope/regenerate").status_code == 404
+
+
+def test_regenerate_task_replaces_prompt_preserves_original(storage, clean_tables):
+    # S11: task replaces prompt in place, original_prompt preserved.
+    rid = storage.create_requests([{
+        "source_image_path": os.path.join(os.environ["PROCESSED_DIR"], "img.png"),
+        "prompt": "a prompt", "provider": "comfy_image",
+        "workflow_name": None, "settings": {"persona": "p1"},
+    }])["request_ids"][0]
+
+    class _FakeWF:
+        async def process(self, **kwargs):
+            return {"generated_prompt": "NEW PROMPT", "generated_prompts": ["NEW PROMPT"],
+                    "reference_image": kwargs.get("image_path"), "descriptive_prompt": "x"}
+
+    from backend.tasks import regenerate_request_task
+    with patch("backend.tasks.get_instances", return_value=(_FakeWF(), None, None)):
+        regenerate_request_task.apply(args=[rid])
+
+    row = storage.get_request(rid)
+    assert row["prompt"] == "NEW PROMPT"
+    assert row["original_prompt"] == "a prompt"
+    assert row["status"] == "pending_review"
+
+
 def test_dispatch_claims_and_enqueues(client, storage):
     ids = client.post(
         "/api/review/requests",

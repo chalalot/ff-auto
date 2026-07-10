@@ -356,6 +356,45 @@ def caption_export_task(
     }
 
 
+@celery_app.task(bind=True, name="backend.tasks.regenerate_request_task")
+def regenerate_request_task(self, request_id: str):
+    """Re-run the image→prompt workflow for a pending_review row and replace its
+    prompt in place (S11). original_prompt is preserved by update_request; a row
+    that is no longer pending_review is a no-op (Matrix B reject cells)."""
+    from backend.database.generation_requests_storage import (
+        GenerationRequestsStorage, InvalidStateError, PENDING_REVIEW,
+    )
+
+    storage = GenerationRequestsStorage()
+    row = storage.get_request(request_id)
+    if row is None or row["status"] != PENDING_REVIEW:
+        logger.info(f"[regenerate] {request_id} not pending_review — skipping")
+        return {"request_id": request_id, "skipped": True}
+
+    settings = row.get("settings") or {}
+    workflow, _, _ = get_instances()
+    try:
+        result = asyncio.run(workflow.process(
+            image_path=row.get("source_image_path"),
+            brief=settings.get("brief"),
+            persona_name=settings.get("persona") or "Jennie",
+            workflow_type=settings.get("workflow_type") or "turbo",
+            vision_model=settings.get("vision_model") or "gpt-4o",
+            variation_count=1,
+        ))
+    except Exception as e:
+        logger.error(f"[regenerate] {request_id} workflow failed: {e}")
+        return {"request_id": request_id, "error": str(e)}
+
+    new_prompt = result.get("generated_prompt") or ""
+    try:
+        updated = storage.update_request(request_id, prompt=new_prompt)
+    except InvalidStateError:
+        # Raced out of pending_review after we started — leave it untouched.
+        return {"request_id": request_id, "skipped": True}
+    return {"request_id": request_id, "regenerated": bool(updated)}
+
+
 @celery_app.task(bind=True, name="backend.tasks.merge_videos_task")
 def merge_videos_task(self, filenames: list, transition_type: str, transition_duration: float):
     """Merge multiple videos with transitions."""

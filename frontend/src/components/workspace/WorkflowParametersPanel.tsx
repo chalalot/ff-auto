@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { WorkflowParameters, WorkflowParamInput } from '@/types'
 
 // "owner__repo__name_v7.safetensors" → "name_v7"
-const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
+export const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
+
 
 // Every editable input as { node_id: { key: value } }. Locked inputs excluded.
 export function buildInitialOverrides(

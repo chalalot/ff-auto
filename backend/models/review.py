@@ -61,6 +61,10 @@ class ReviewDispatchRequest(BaseModel):
     ids: List[str] = Field(min_length=1)
 
 
+class ReviewRedispatchBulkRequest(BaseModel):
+    ids: List[str] = Field(min_length=1)
+
+
 class ReviewDispatchResponse(BaseModel):
     dispatched: List[str]
     skipped: List[str]

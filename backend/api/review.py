@@ -14,6 +14,9 @@ from backend.api.identity import Identity, get_identity
 from backend.database.generation_requests_storage import (
     GenerationRequestsStorage,
     InvalidStateError,
+    PENDING_REVIEW,
+    COMPLETED,
+    FAILED,
 )
 from backend.models.review import (
     ReviewCreateRequest,
@@ -22,6 +25,7 @@ from backend.models.review import (
     ReviewDispatchResponse,
     ReviewListResponse,
     ReviewPatchRequest,
+    ReviewRedispatchBulkRequest,
     ReviewRequestItem,
     ReviewStatus,
 )
@@ -120,6 +124,65 @@ def discard_request(
     return row
 
 
+@router.post("/requests/{request_id}/regenerate", status_code=202)
+def regenerate_request(
+    request_id: str,
+    storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
+):
+    """Re-run the image→prompt workflow to replace a pending_review row's prompt.
+
+    Matrix B: only `pending_review` rows regenerate; any other status is rejected
+    (409) with no dispatch and no mutation. Only image-prompt (`comfy_image`) rows
+    are eligible — video prompts don't come from this workflow (A14).
+    """
+    from backend.tasks import regenerate_request_task
+
+    row = storage.get_request(request_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if row["status"] != PENDING_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Request is {row['status']!r}; only {PENDING_REVIEW!r} rows can be regenerated.",
+        )
+    if row["provider"] != "comfy_image":
+        raise HTTPException(
+            status_code=409,
+            detail="Regenerate is only supported for image-prompt (comfy_image) rows.",
+        )
+    task = regenerate_request_task.apply_async(args=[request_id], queue="image")
+    return {"request_id": request_id, "task_id": task.id}
+
+
+@router.post("/requests/{request_id}/redispatch", response_model=ReviewRequestItem)
+def redispatch_request(
+    request_id: str,
+    storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
+):
+    """Clone a completed or failed request back to pending_review.
+
+    The existing prompt and settings are reused so the vision analysis
+    is skipped.  The original row is untouched (audit trail preserved).
+    """
+    try:
+        return storage.clone_request(request_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Request not found")
+    except InvalidStateError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.post("/redispatch-bulk")
+def redispatch_bulk(
+    body: ReviewRedispatchBulkRequest,
+    storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
+):
+    """Clone multiple completed/failed requests back to pending_review."""
+    created = storage.clone_requests_bulk(body.ids)
+    skipped = [i for i in body.ids if i not in {r["id"] for r in created}]
+    return {"created": created, "skipped": skipped}
+
+
 @router.post("/dispatch", response_model=ReviewDispatchResponse)
 def dispatch_requests(
     body: ReviewDispatchRequest,
@@ -149,6 +212,9 @@ def request_thumbnail(
     row = storage.get_request(request_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Request not found")
+    if not row["source_image_path"]:
+        # Brief-only rows have no source image to thumbnail.
+        raise HTTPException(status_code=404, detail="Request has no source image")
     source = _source_path_in_roots(row["source_image_path"])
     if source is None or not source.is_file():
         raise HTTPException(status_code=404, detail="Source image not found")

@@ -142,7 +142,7 @@ class GenerationRequestsStorage:
                 update(GenerationRequest)
                 .where(
                     GenerationRequest.id == request_id,
-                    GenerationRequest.status == PENDING_REVIEW,
+                    GenerationRequest.status.in_([PENDING_REVIEW, FAILED, COMPLETED]),
                 )
                 .values(**values)
                 .returning(GenerationRequest)
@@ -154,7 +154,7 @@ class GenerationRequestsStorage:
                 return None
             raise InvalidStateError(
                 f"Request {request_id} is {current.status!r}; only "
-                f"{PENDING_REVIEW!r} rows can be edited."
+                f"{PENDING_REVIEW!r}/{FAILED!r}/{COMPLETED!r} rows can be edited."
             )
 
     def discard_request(self, request_id: str) -> Optional[dict]:
@@ -260,3 +260,72 @@ class GenerationRequestsStorage:
                 .returning(GenerationRequest.id)
             ).scalars().all()
             return len(rows) > 0
+
+    def clone_request(self, request_id: str) -> dict:
+        """Clone a completed or failed request back to pending_review.
+
+        Creates a **new** row so the original execution history is preserved.
+        Raises ``InvalidStateError`` if the source row is not completed/failed.
+        """
+        with session_scope() as session:
+            source = session.get(GenerationRequest, request_id)
+            if source is None:
+                raise KeyError(f"Request {request_id} not found")
+            if source.status not in (COMPLETED, FAILED):
+                raise InvalidStateError(
+                    f"Request {request_id} is {source.status!r}; only "
+                    f"{COMPLETED!r}/{FAILED!r} rows can be re-dispatched."
+                )
+            new_row = GenerationRequest(
+                id=uuid.uuid4().hex,
+                batch_id=uuid.uuid4().hex,
+                source_image_path=source.source_image_path,
+                original_prompt=source.prompt,
+                prompt=source.prompt,
+                provider=source.provider,
+                workflow_name=source.workflow_name,
+                settings=source.settings or {},
+                status=PENDING_REVIEW,
+                project_id=source.project_id,
+                created_by_member_id=source.created_by_member_id,
+            )
+            session.add(new_row)
+            session.flush()
+            return _row_dict(new_row)
+
+    def clone_requests_bulk(self, request_ids: list) -> list:
+        """Clone multiple completed/failed requests back to pending_review.
+
+        Returns a list of newly created row dicts.  Rows that are not in a
+        clonable state are silently skipped.
+        """
+        if not request_ids:
+            return []
+        created = []
+        with session_scope() as session:
+            sources = session.execute(
+                select(GenerationRequest).where(
+                    GenerationRequest.id.in_(request_ids),
+                    GenerationRequest.status.in_([COMPLETED, FAILED]),
+                )
+            ).scalars().all()
+            batch_id = uuid.uuid4().hex
+            for source in sources:
+                new_row = GenerationRequest(
+                    id=uuid.uuid4().hex,
+                    batch_id=batch_id,
+                    source_image_path=source.source_image_path,
+                    original_prompt=source.prompt,
+                    prompt=source.prompt,
+                    provider=source.provider,
+                    workflow_name=source.workflow_name,
+                    settings=source.settings or {},
+                    status=PENDING_REVIEW,
+                    project_id=source.project_id,
+                    created_by_member_id=source.created_by_member_id,
+                )
+                session.add(new_row)
+                created.append(new_row)
+            session.flush()
+            return [_row_dict(r) for r in created]
+
