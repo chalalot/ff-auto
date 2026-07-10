@@ -148,6 +148,25 @@ class PipelineRunsStorage:
             row.rendered_context = context
             row.updated_at = _now()
 
+    def update_step_prompt(
+        self,
+        step_id: str,
+        system_prompt: str | None,
+        rendered_context: Any,
+        model_name: str | None,
+    ) -> None:
+        with session_scope() as session:
+            session.execute(
+                update(PipelineStep)
+                .where(PipelineStep.id == step_id)
+                .values(
+                    system_prompt=system_prompt,
+                    rendered_context=rendered_context,
+                    model_name=model_name,
+                    updated_at=_now(),
+                )
+            )
+
     def complete_step(
         self,
         step_id: str,

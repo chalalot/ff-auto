@@ -16,6 +16,10 @@ from backend.tools.skill_reader_tool import SkillReaderTool
 from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 from backend.workflows.config_manager import WorkflowConfigManager
 from backend.config import GlobalConfig
+from backend.services.pipeline_trace import (
+    current_trace_step,
+    install_litellm_trace_callback,
+)
 
 
 # Analyst instruction for the image path: the analyst consults the skill by
@@ -99,14 +103,16 @@ class ImageToPromptWorkflow:
     final prompt under the persona-type templates' locks + format.
     """
 
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = True, trace_recorder=None):
         self.verbose = verbose
+        self.trace_recorder = trace_recorder
         self.config_manager = WorkflowConfigManager()
         # Cache to reuse agents and LLMs across invocations
         self._cached_llms = {}
         self._cached_agents = {}
 
     def _get_llm(self, vision_model: str) -> Any:
+        install_litellm_trace_callback()
         if vision_model in self._cached_llms:
             return self._cached_llms[vision_model]
 
@@ -269,6 +275,14 @@ class ImageToPromptWorkflow:
         safe_image_path = Path(image_path).resolve().as_posix()
         vision_prompt = analyst_task_template.format(image_path=f'"{safe_image_path}"')
 
+        trace_step = current_trace_step.get()
+        if trace_step is not None:
+            trace_step.capture_prompt(
+                None,
+                {"vision_prompt": vision_prompt, "image_path": safe_image_path},
+                vision_model,
+            )
+
         logger.info(f"Executing vision analysis for {image_path} with model {vision_model}...")
         vision_result = VisionTool(model_name=vision_model)._run(prompt=vision_prompt, image_path=image_path)
 
@@ -299,6 +313,18 @@ class ImageToPromptWorkflow:
             expected_output="An improved, skill-grounded 5-category visual analysis with corrections noted inline.",
             agent=analyst,
         )
+        trace_step = current_trace_step.get()
+        if trace_step is not None:
+            trace_step.capture_prompt(
+                getattr(analyst, "backstory", None),
+                {
+                    "task_description": task.description,
+                    "expected_output": task.expected_output,
+                    "agent_role": analyst.role,
+                    "agent_goal": analyst.goal,
+                },
+                vision_model,
+            )
         crew = Crew(agents=[analyst], tasks=[task], process=Process.sequential, memory=False, verbose=self.verbose)
         crew.kickoff()
 
@@ -326,6 +352,22 @@ class ImageToPromptWorkflow:
                 expected_output=f"A final persona-locked image prompt following the framework (Variation {i+1}).",
                 agent=enhancer,
             ))
+        trace_step = current_trace_step.get()
+        if trace_step is not None:
+            trace_step.capture_prompt(
+                getattr(enhancer, "backstory", None),
+                {
+                    "tasks": [
+                        {
+                            "description": task.description,
+                            "expected_output": task.expected_output,
+                        }
+                        for task in tasks
+                    ],
+                    "variation_count": variation_count,
+                },
+                vision_model,
+            )
         crew = Crew(agents=[enhancer], tasks=tasks, process=Process.sequential, memory=False, verbose=self.verbose)
         crew.kickoff()
         return [t.output.raw if t.output else "" for t in tasks]
@@ -382,17 +424,61 @@ class ImageToPromptWorkflow:
         # asyncio.run(async_process_image()) → await process). CrewAI forbids a
         # sync crew.kickoff() on the event-loop thread, so the blocking seams run
         # in a worker thread.
-        observation = (
-            await asyncio.to_thread(self._observe, image_path, vision_model, template_dir)
-            if has_image else None
-        )
-        improved_analysis = await asyncio.to_thread(
-            self._analyze, observation, brief, has_image, template_dir, vision_model
-        )
+        if self.trace_recorder is not None:
+            with self.trace_recorder.step(
+                "vision_observation",
+                1,
+                {"image_path": image_path, "vision_model": vision_model},
+            ) as step:
+                observation = (
+                    await asyncio.to_thread(self._observe, image_path, vision_model, template_dir)
+                    if has_image else None
+                )
+                step.capture_output(observation)
+        else:
+            observation = (
+                await asyncio.to_thread(self._observe, image_path, vision_model, template_dir)
+                if has_image else None
+            )
+
+        if self.trace_recorder is not None:
+            with self.trace_recorder.step(
+                "analyst",
+                2,
+                {"observation": observation, "brief": brief, "has_image": has_image},
+            ) as step:
+                improved_analysis = await asyncio.to_thread(
+                    self._analyze, observation, brief, has_image, template_dir, vision_model
+                )
+                step.capture_output(improved_analysis)
+        else:
+            improved_analysis = await asyncio.to_thread(
+                self._analyze, observation, brief, has_image, template_dir, vision_model
+            )
         base_instruction = self._build_base_instruction(template_dir)
-        generated_prompts = await asyncio.to_thread(
-            self._enhance, improved_analysis, base_instruction, template_dir, vision_model, variation_count
-        )
+        if self.trace_recorder is not None:
+            with self.trace_recorder.step(
+                "turbo_engineer",
+                3,
+                {
+                    "improved_analysis": improved_analysis,
+                    "base_instruction": base_instruction,
+                    "variation_count": variation_count,
+                },
+            ) as step:
+                generated_prompts = await asyncio.to_thread(
+                    self._enhance,
+                    improved_analysis,
+                    base_instruction,
+                    template_dir,
+                    vision_model,
+                    variation_count,
+                )
+                step.capture_output(generated_prompts)
+        else:
+            generated_prompts = await asyncio.to_thread(
+                self._enhance, improved_analysis, base_instruction, template_dir, vision_model, variation_count
+            )
 
         logger.info(f"✅ Generated {len(generated_prompts)} prompt(s).")
 
