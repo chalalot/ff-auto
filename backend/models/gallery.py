@@ -33,6 +33,11 @@ class UndoRequest(BaseModel):
     from_status: str  # "approved" | "disapproved"
 
 
+class DeleteRequest(BaseModel):
+    filenames: List[str]
+    status: str  # "pending" | "approved" | "disapproved"
+
+
 class DownloadZipRequest(BaseModel):
     filenames: Optional[List[str]] = None
     date: Optional[str] = None  # "YYYY-MM-DD" — download all for that date

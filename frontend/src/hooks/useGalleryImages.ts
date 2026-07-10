@@ -47,3 +47,16 @@ export const useUndoImages = () => {
     },
   })
 }
+
+export const useDeleteImages = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ filenames, status }: { filenames: string[]; status: GalleryStatus }) =>
+      galleryApi.deleteImages(filenames, status),
+    onSuccess: () => {
+      // The 'gallery' key covers both the list and the stats query, so counts
+      // and the grid both refresh after a permanent delete.
+      queryClient.invalidateQueries({ queryKey: ['gallery'] })
+    },
+  })
+}

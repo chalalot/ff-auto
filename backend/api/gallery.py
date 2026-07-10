@@ -10,6 +10,7 @@ from backend.models.gallery import (
     ApproveRequest,
     DisapproveRequest,
     UndoRequest,
+    DeleteRequest,
     DownloadZipRequest,
     GalleryStats,
     NotesRequest,
@@ -90,6 +91,13 @@ def disapprove_images(body: DisapproveRequest, svc: GalleryService = Depends(get
 @router.post("/undo")
 def undo_action(body: UndoRequest, svc: GalleryService = Depends(get_gallery_service)):
     return svc.undo_action(body.filenames, body.from_status)
+
+
+@router.post("/delete")
+def delete_images(body: DeleteRequest, svc: GalleryService = Depends(get_gallery_service)):
+    if body.status not in ("pending", "approved", "disapproved"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+    return svc.delete_images(body.filenames, body.status)
 
 
 @router.get("/stats", response_model=GalleryStats)

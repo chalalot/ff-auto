@@ -8,16 +8,17 @@ import { Slider } from '@/components/ui/slider'
 import { evaluationsApi } from '@/api/evaluations'
 import {
   useGalleryImages, useGalleryStats,
-  useApproveImages, useDisapproveImages, useUndoImages
+  useApproveImages, useDisapproveImages, useUndoImages, useDeleteImages
 } from '@/hooks/useGalleryImages'
 import { galleryApi, type GalleryStatus } from '@/api/gallery'
 import { useProjectId } from '@/hooks/useProjectId'
 import { useMutation } from '@tanstack/react-query'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
   Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
-  LayoutGrid, Info, X, Sparkles
+  LayoutGrid, Info, X, Sparkles, Trash2
 } from 'lucide-react'
 import type { ImageMetadata } from '@/types'
 import type { GalleryImage } from '@/types'
@@ -39,6 +40,8 @@ export const GalleryPage: React.FC = () => {
   const [renameMap, setRenameMap] = useState<Record<string, string>>({})
   const [columns, setColumns] = useState(4)
   const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
+  // Filenames staged for permanent deletion; non-null opens the confirm dialog.
+  const [pendingDelete, setPendingDelete] = useState<string[] | null>(null)
 
   // Switching projects re-scopes the list; snap back to page 1 so we never
   // land on a now-out-of-range page (e.g. page 3 of a much smaller project).
@@ -49,6 +52,18 @@ export const GalleryPage: React.FC = () => {
   const approveMutation = useApproveImages()
   const disapproveMutation = useDisapproveImages()
   const undoMutation = useUndoImages()
+  const deleteMutation = useDeleteImages()
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return
+    await deleteMutation.mutateAsync({ filenames: pendingDelete, status: activeTab })
+    setSelectedImages(prev => {
+      const next = new Set(prev)
+      pendingDelete.forEach(f => next.delete(f))
+      return next
+    })
+    setPendingDelete(null)
+  }
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab as GalleryStatus)
@@ -147,6 +162,9 @@ export const GalleryPage: React.FC = () => {
           <Button size="sm" variant="outline" onClick={handleDownloadZip}>
             <Download className="w-4 h-4 mr-2" />Download ZIP
           </Button>
+          <Button size="sm" variant="destructive" onClick={() => setPendingDelete(Array.from(selectedImages))}>
+            <Trash2 className="w-4 h-4 mr-2" />Delete
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelectedImages(new Set())}>Clear</Button>
         </div>
       )}
@@ -180,6 +198,7 @@ export const GalleryPage: React.FC = () => {
               onSelectAll={() => setSelectedImages(new Set((gallery?.items || []).map(i => i.filename)))}
               onClearAll={() => setSelectedImages(new Set())}
               onShowDetail={(image) => setDetailImage({ image, status })}
+              onRequestDelete={(filename) => setPendingDelete([filename])}
               onAction={async (action, filename) => {
                 if (action === 'approve') await approveMutation.mutateAsync({ filenames: [filename] })
                 if (action === 'disapprove') await disapproveMutation.mutateAsync([filename])
@@ -212,6 +231,21 @@ export const GalleryPage: React.FC = () => {
           onClose={() => setDetailImage(null)}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        destructive
+        title={
+          pendingDelete && pendingDelete.length > 1
+            ? `Delete ${pendingDelete.length} images?`
+            : 'Delete this image?'
+        }
+        description="This permanently removes the file and its evaluations and cannot be undone."
+        confirmLabel="Delete"
+        isLoading={deleteMutation.isPending}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   )
 }
@@ -229,13 +263,14 @@ interface ImageGridProps {
   onSelectAll: () => void
   onClearAll: () => void
   onShowDetail: (image: GalleryImage) => void
+  onRequestDelete: (filename: string) => void
   onAction: (action: string, filename: string) => Promise<void>
 }
 
 const ImageGrid: React.FC<ImageGridProps> = ({
   images, status, isLoading, selectedImages, renameMap,
   columns, onColumnsChange,
-  onToggle, onRename, onSelectAll, onClearAll, onShowDetail, onAction
+  onToggle, onRename, onSelectAll, onClearAll, onShowDetail, onRequestDelete, onAction
 }) => {
   if (isLoading) return (
     <div className="flex items-center justify-center h-48">
@@ -281,6 +316,7 @@ const ImageGrid: React.FC<ImageGridProps> = ({
             onRename={(v) => onRename(img.filename, v)}
             onAction={(action) => onAction(action, img.filename)}
             onShowDetail={() => onShowDetail(img)}
+            onRequestDelete={() => onRequestDelete(img.filename)}
           />
         ))}
       </div>
@@ -550,10 +586,11 @@ interface ImageCardProps {
   onRename: (value: string) => void
   onAction: (action: string) => Promise<void>
   onShowDetail: () => void
+  onRequestDelete: () => void
 }
 
 const ImageCard: React.FC<ImageCardProps> = ({
-  image, status, isSelected, renameValue, onToggle, onRename, onAction, onShowDetail
+  image, status, isSelected, renameValue, onToggle, onRename, onAction, onShowDetail, onRequestDelete
 }) => {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const thumbnailUrl = galleryApi.getThumbnailUrl(image.filename, status)
@@ -676,6 +713,13 @@ const ImageCard: React.FC<ImageCardProps> = ({
           >
             <Download className="w-3 h-3" />
           </a>
+          <button
+            className="flex items-center justify-center h-7 w-7 rounded-md border border-input text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onRequestDelete() }}
+            title="Delete permanently"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         </div>
       </div>
     </div>

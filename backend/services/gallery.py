@@ -288,6 +288,42 @@ class GalleryService:
                 failed.append(fname)
         return {"moved": moved, "failed": failed}
 
+    def delete_images(self, filenames: List[str], status: str) -> dict:
+        """Permanently delete generated images from a status dir.
+
+        For each name we unlink the result image and its ``.txt`` sidecar, then
+        purge DB traces: the basename is spliced out of any execution row's
+        result path and matching evaluation rows are deleted. The shared
+        reference image is never touched. Delete is idempotent — a file already
+        gone still counts as success. Filenames are reduced to their basename
+        so a caller cannot escape the status dir via ``..``.
+        """
+        directory = self._dir_for_status(status)
+        deleted, failed = 0, []
+        for fname in filenames:
+            base = os.path.basename(fname)
+            if not base:
+                failed.append(fname)
+                continue
+            try:
+                img_path = directory / base
+                img_path.unlink(missing_ok=True)
+                img_path.with_suffix(".txt").unlink(missing_ok=True)
+                self.storage.remove_result_basename(base)
+                self._evaluations_storage().delete_by_basename(base)
+                deleted += 1
+            except Exception as e:
+                logger.error(f"Failed to delete {base}: {e}")
+                failed.append(fname)
+        return {"deleted": deleted, "failed": failed}
+
+    def _evaluations_storage(self):
+        # Imported lazily to keep the gallery service decoupled from the
+        # evaluations module at import time.
+        from backend.database.evaluations_storage import EvaluationsStorage
+
+        return EvaluationsStorage()
+
     def undo_action(self, filenames: List[str], from_status: str) -> dict:
         src_dir = self._dir_for_status(from_status)
         moved, failed = 0, []

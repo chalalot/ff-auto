@@ -37,6 +37,9 @@ export const galleryApi = {
   undo: (filenames: string[], fromStatus: 'approved' | 'disapproved') =>
     apiClient.post('/gallery/undo', { filenames, from_status: fromStatus }).then(r => r.data),
 
+  deleteImages: (filenames: string[], status: GalleryStatus) =>
+    apiClient.post('/gallery/delete', { filenames, status }).then(r => r.data),
+
   getStats: (params?: { project_id?: string }) =>
     apiClient.get<GalleryStats>('/gallery/stats', { params }).then(r => r.data),
 

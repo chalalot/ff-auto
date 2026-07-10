@@ -91,6 +91,36 @@ class ImageLogsStorage:
             ).scalars().all()
             return self._basenames(values)
 
+    def remove_result_basename(self, basename: str) -> int:
+        """Splice a single result-image basename out of every execution row.
+
+        A row's ``result_image_path`` can list several comma-joined variation
+        paths, so we drop only the matching part(s) and keep the row as an
+        execution record. When nothing remains the field is set to NULL. Used
+        when a generated image is permanently deleted. Returns rows touched.
+        """
+        target = os.path.basename(basename)
+        touched = 0
+        try:
+            with session_scope() as session:
+                rows = session.execute(
+                    select(ImageLog).where(
+                        ImageLog.result_image_path.isnot(None),
+                        ImageLog.result_image_path.like(f"%{target}%"),
+                    )
+                ).scalars().all()
+                for row in rows:
+                    parts = [p for p in (row.result_image_path or "").split(",") if p]
+                    kept = [p for p in parts if os.path.basename(p) != target]
+                    if len(kept) == len(parts):
+                        continue  # basename appeared only as a substring, not a real match
+                    row.result_image_path = ",".join(kept) if kept else None
+                    touched += 1
+                return touched
+        except Exception as e:
+            logger.error(f"Failed to remove result basename {target}: {e}")
+            return touched
+
     def get_pending_executions(self):
         """
         Get all executions where status is 'pending'.

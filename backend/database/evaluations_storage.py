@@ -156,6 +156,35 @@ class EvaluationsStorage:
             "failed_paths": failed_paths,
         }
 
+    def delete_by_basename(self, basename: str) -> int:
+        """Delete evaluation rows for a media file, matched by basename.
+
+        ``media_path`` stores the full path captured when the evaluation ran,
+        which may point at a different status dir than where the file lives now
+        (gallery images move between dirs after evaluation). Matching on the
+        trailing filename keeps delete robust across those moves. Returns rows
+        deleted.
+        """
+        import os
+
+        target = os.path.basename(basename)
+        deleted = 0
+        try:
+            with session_scope() as session:
+                rows = session.execute(
+                    select(Evaluation).where(
+                        Evaluation.media_path.like(f"%{target}%")
+                    )
+                ).scalars().all()
+                for row in rows:
+                    if os.path.basename(row.media_path or "") == target:
+                        session.delete(row)
+                        deleted += 1
+                return deleted
+        except Exception as e:
+            logger.error(f"Failed to delete evaluations for {target}: {e}")
+            return deleted
+
     def _decode_row(self, row: Evaluation) -> Dict[str, Any]:
         return {
             "id": row.id,
