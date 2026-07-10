@@ -138,6 +138,84 @@ class RunpodJob(Base):
     updated_at: Mapped[Optional[str]] = mapped_column(Text)
 
 
+class PipelineRun(Base):
+    """Top-level execution trace for an application pipeline."""
+
+    __tablename__ = "pipeline_runs"
+    __table_args__ = (
+        Index("idx_pipeline_runs_status_updated_at", "status", "updated_at"),
+        Index("idx_pipeline_runs_project_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    pipeline_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="queued"
+    )
+    input_payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    final_output: Mapped[Optional[dict]] = mapped_column(JSONB)
+    error: Mapped[Optional[dict]] = mapped_column(JSONB)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True)
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True)
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    project_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    created_by_member_id: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("members.id", ondelete="SET NULL")
+    )
+
+
+class PipelineStep(Base):
+    """One ordered stage inside a pipeline execution trace."""
+
+    __tablename__ = "pipeline_steps"
+    __table_args__ = (
+        UniqueConstraint("run_id", "step_key", name="uq_pipeline_steps_run_key"),
+        Index("idx_pipeline_steps_run_sequence", "run_id", "sequence"),
+        Index("idx_pipeline_steps_status_updated_at", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("pipeline_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    step_key: Mapped[str] = mapped_column(Text, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="queued"
+    )
+    input_payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text)
+    rendered_context: Mapped[Optional[object]] = mapped_column(JSONB)
+    output_payload: Mapped[Optional[object]] = mapped_column(JSONB)
+    usage: Mapped[Optional[dict]] = mapped_column(JSONB)
+    partial_output: Mapped[Optional[object]] = mapped_column(JSONB)
+    error: Mapped[Optional[dict]] = mapped_column(JSONB)
+    model_name: Mapped[Optional[str]] = mapped_column(Text)
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True)
+    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True)
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.now()
+    )
+
+
 class CaptionExport(Base):
     """Caption sheet exports (legacy: image_logs.db / caption_exports table)."""
 
