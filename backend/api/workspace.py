@@ -182,6 +182,7 @@ def process_image(
             project_id=identity.project_id,
             member_id=identity.member_id,
             prepare=not body.skip_prepare,
+            brief=body.brief,
         )
         return {"task_id": task_id}
     except FileNotFoundError as e:

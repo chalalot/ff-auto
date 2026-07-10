@@ -80,6 +80,19 @@ def test_dispatch_processing_returns_task_id(svc, _temp_dirs):
     assert task_id == "test-celery-task-id"
 
 
+def test_dispatch_processing_threads_brief_to_task_kwargs(svc, _temp_dirs):
+    # P5 / A12: an optional brief must ride through to the Celery task kwargs.
+    src = make_png(_temp_dirs["INPUT_DIR"], "brief_test.png")
+    mock_task = MagicMock()
+    mock_task.id = "tid"
+
+    with patch("backend.celery_app.celery_app.send_task", return_value=mock_task) as send:
+        svc.dispatch_processing(image_path=str(src), persona="Jennie", brief="golden hour mood")
+
+    task_kwargs = send.call_args.kwargs["kwargs"]
+    assert task_kwargs["brief"] == "golden hour mood"
+
+
 def test_dispatch_batch_returns_multiple_ids(svc, _temp_dirs):
     imgs = [make_png(_temp_dirs["INPUT_DIR"], f"batch_{i}.png") for i in range(3)]
     mock_task = MagicMock()

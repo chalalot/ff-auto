@@ -25,6 +25,7 @@ import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, Caption
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   persona: '',
+  brief: '',
   workflow_type: 'turbo',
   vision_model: 'gpt-4o',
   variation_count: 1,
@@ -249,6 +250,19 @@ export const WorkspacePage: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <Separator />
+
+          {/* Creative brief (optional) — steers the analyst on top of the reference. */}
+          <div className="space-y-2">
+            <Label>Brief <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Textarea
+              placeholder="Optional creative direction, e.g. 'golden-hour mood, candid street style'"
+              value={config.brief ?? ''}
+              onChange={(e) => setConfig(p => ({ ...p, brief: e.target.value }))}
+              rows={2}
+            />
           </div>
 
           <Separator />

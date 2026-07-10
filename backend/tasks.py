@@ -154,6 +154,7 @@ def process_image_task(
     workflow_name=None,
     project_id=None,
     created_by_member_id=None,
+    brief=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -161,6 +162,7 @@ def process_image_task(
         return asyncio.run(
             async_process_image(
                 dest_image_path=dest_image_path,
+                brief=brief,
                 persona=persona,
                 workflow_type=workflow_type,
                 vision_model=vision_model,
@@ -189,7 +191,7 @@ async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
     strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
     task, pipeline_type="image.subject_environment", workflow_overrides=None,
-    workflow_name=None, project_id=None, created_by_member_id=None,
+    workflow_name=None, project_id=None, created_by_member_id=None, brief=None,
 ):
     workflow, client, storage = get_instances()
 
@@ -202,6 +204,7 @@ async def async_process_image(
     try:
         result = await workflow.process(
             image_path=dest_image_path,
+            brief=brief,
             persona_name=persona,
             workflow_type=workflow_type,
             vision_model=vision_model,
@@ -250,6 +253,7 @@ async def async_process_image(
 
     settings = {
         "persona": persona,
+        "vision_model": vision_model,
         "workflow_type": workflow_type,
         "strength_model": strength_model,
         "seed_strategy": seed_strategy,
@@ -261,6 +265,7 @@ async def async_process_image(
         "pipeline_type": pipeline_type,
         "workflow_overrides": workflow_overrides or {},
         "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
+        "brief": brief,
     }
     created = GenerationRequestsStorage().create_requests(
         [

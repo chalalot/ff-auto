@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class InputImage(BaseModel):
@@ -21,7 +21,7 @@ class RefImage(BaseModel):
 
 
 class ProcessImageRequest(BaseModel):
-    image_path: str
+    image_path: Optional[str] = None  # None → brief-only headless (S13)
     skip_prepare: bool = False  # True when image_path is already in PROCESSED_DIR
     persona: str
     workflow_type: str = "turbo"
@@ -41,6 +41,14 @@ class ProcessImageRequest(BaseModel):
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
     # Which workflows/*.json graph to build from (default: workflow.json).
     workflow_name: Optional[str] = None
+    # Optional creative brief steering the analyst (image + brief). See A12.
+    brief: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _require_image_or_brief(self):
+        if not (self.image_path or (self.brief and self.brief.strip())):
+            raise ValueError("at least one of `image_path` or `brief` is required")
+        return self
 
 
 class ProcessBatchRequest(BaseModel):

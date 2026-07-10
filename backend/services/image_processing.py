@@ -123,17 +123,23 @@ class ImageProcessingService:
         project_id: Optional[str] = None,
         member_id: Optional[str] = None,
         prepare: bool = True,
+        brief: Optional[str] = None,
     ) -> str:
         """
         Prepare the image and dispatch a Celery task.
         Returns the Celery task_id.
         """
-        dest_path = self.prepare_image(image_path) if prepare else image_path
+        # Brief-only headless: no image → skip preparation, queue with a null source.
+        if not image_path:
+            dest_path = None
+        else:
+            dest_path = self.prepare_image(image_path) if prepare else image_path
 
         task = celery_app.send_task(
             "backend.tasks.process_image_task",
             kwargs={
                 "dest_image_path": dest_path,
+                "brief": brief,
                 "persona": persona,
                 "workflow_type": workflow_type,
                 "vision_model": vision_model,

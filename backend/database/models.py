@@ -242,7 +242,7 @@ class GenerationRequest(Base):
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
     batch_id: Mapped[str] = mapped_column(Text, nullable=False)
-    source_image_path: Mapped[str] = mapped_column(Text, nullable=False)
+    source_image_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     original_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     provider: Mapped[str] = mapped_column(Text, nullable=False)

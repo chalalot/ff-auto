@@ -75,7 +75,9 @@ export interface WorkflowParameters {
 }
 
 export interface ProcessImageConfig {
-  image_path: string
+  image_path?: string
+  // Optional creative brief steering the analyst (image + brief, or brief-only).
+  brief?: string
   persona: string
   workflow_type: string
   vision_model: string
