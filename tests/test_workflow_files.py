@@ -114,15 +114,9 @@ def test_dispatch_forwards_workflow_name(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_async_process_image_forwards_workflow_name(monkeypatch):
+async def test_async_process_image_forwards_workflow_name(monkeypatch, clean_tables):
     from backend import tasks
-
-    calls = {}
-
-    class _FakeClient:
-        async def generate_image(self, **kwargs):
-            calls.update(kwargs)
-            return "exec-1"
+    from backend.database.generation_requests_storage import GenerationRequestsStorage
 
     class _FakeWorkflow:
         async def process(self, **kwargs):
@@ -140,15 +134,15 @@ async def test_async_process_image_forwards_workflow_name(monkeypatch):
             pass
 
     monkeypatch.setattr(
-        tasks, "get_instances", lambda: (_FakeWorkflow(), _FakeClient(), _FakeStorage())
+        tasks, "get_instances", lambda: (_FakeWorkflow(), object(), _FakeStorage())
     )
-    monkeypatch.setattr(tasks.download_execution_task, "apply_async", lambda *a, **k: None)
 
-    await tasks.async_process_image(
+    result = await tasks.async_process_image(
         dest_image_path="/x.png", persona="emi", workflow_type="turbo",
         vision_model="gpt-4o", variation_count=1, strength_model=0.8,
         seed_strategy="random", base_seed=0, width=1024, height=1600,
         lora_name="", clip_model_type="qwen_image", task=_FakeTask(),
         workflow_name="alt.json",
     )
-    assert calls["workflow_name"] == "alt.json"
+    row = GenerationRequestsStorage().get_request(result["request_ids"][0])
+    assert row["workflow_name"] == "alt.json"

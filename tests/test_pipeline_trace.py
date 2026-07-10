@@ -77,3 +77,13 @@ def test_callback_captures_messages_without_credentials(fake_storage):
     assert "api_key" not in call_payload["request"]
     assert "authorization" not in call_payload["request"]
     assert call_payload["response"]["choices"][0]["message"]["content"] == "answer"
+
+
+def test_step_persistence_failure_does_not_fail_workflow():
+    class BrokenStorage:
+        def create_step(self, *args, **kwargs):
+            raise RuntimeError("database unavailable")
+
+    recorder = PipelineTraceRecorder(BrokenStorage(), "run-1")
+    with recorder.step("analyst", 2) as step:
+        step.capture_output("workflow output")

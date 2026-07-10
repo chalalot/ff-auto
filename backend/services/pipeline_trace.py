@@ -81,7 +81,7 @@ class PipelineStepRecorder:
     def __init__(
         self,
         storage: PipelineRunsStorage,
-        step_id: str,
+        step_id: Optional[str],
         step_key: str,
         sequence: int,
         input_payload: Any,
@@ -96,18 +96,28 @@ class PipelineStepRecorder:
         self._context_token: Optional[Token] = None
 
     def __enter__(self) -> "PipelineStepRecorder":
-        self.storage.start_step(
-            self.step_id,
-            self.input_payload,
-            None,
-            None,
-            None,
-        )
+        if self.step_id is not None:
+            try:
+                self.storage.start_step(
+                    self.step_id,
+                    self.input_payload,
+                    None,
+                    None,
+                    None,
+                )
+            except Exception as storage_error:
+                logger.warning(
+                    "[pipeline_trace] failed to start step %s: %s",
+                    self.step_key,
+                    storage_error,
+                )
         self._context_token = current_trace_step.set(self)
         return self
 
     def __exit__(self, exc_type, exc_value, _traceback) -> bool:
         try:
+            if self.step_id is None:
+                return False
             if exc_value is None:
                 self.storage.complete_step(
                     self.step_id,
@@ -140,19 +150,29 @@ class PipelineStepRecorder:
         rendered_context: Any,
         model_name: Optional[str],
     ) -> None:
-        self.storage.update_step_prompt(
-            self.step_id,
-            normalize_payload(system_prompt),
-            normalize_payload(rendered_context),
-            model_name,
-        )
+        if self.step_id is None:
+            return
+        try:
+            self.storage.update_step_prompt(
+                self.step_id,
+                normalize_payload(system_prompt),
+                normalize_payload(rendered_context),
+                model_name,
+            )
+        except Exception as storage_error:
+            logger.warning(
+                "[pipeline_trace] failed to capture prompt for %s: %s",
+                self.step_key,
+                storage_error,
+            )
 
     def capture_output(self, output_payload: Any, usage: Optional[dict] = None) -> None:
         self.output_payload = output_payload
         self.usage = usage
 
     def append_llm_call(self, call_payload: dict) -> None:
-        self.storage.append_llm_call(self.step_id, normalize_payload(call_payload))
+        if self.step_id is not None:
+            self.storage.append_llm_call(self.step_id, normalize_payload(call_payload))
 
 
 class PipelineTraceRecorder:
@@ -166,7 +186,15 @@ class PipelineTraceRecorder:
         sequence: int,
         input_payload: Any = None,
     ) -> PipelineStepRecorder:
-        step_id = self.storage.create_step(self.run_id, step_key, sequence)
+        try:
+            step_id = self.storage.create_step(self.run_id, step_key, sequence)
+        except Exception as storage_error:
+            logger.warning(
+                "[pipeline_trace] failed to create step %s: %s",
+                step_key,
+                storage_error,
+            )
+            step_id = None
         return PipelineStepRecorder(
             self.storage,
             step_id,
