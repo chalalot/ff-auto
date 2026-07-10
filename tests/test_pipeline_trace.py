@@ -79,6 +79,26 @@ def test_callback_captures_messages_without_credentials(fake_storage):
     assert call_payload["response"]["choices"][0]["message"]["content"] == "answer"
 
 
+def test_step_captures_tool_calls(fake_storage):
+    recorder = PipelineTraceRecorder(fake_storage, "run-1")
+
+    with recorder.step("analyst", 2) as step:
+        step.append_tool_call(
+            "Skill Reader",
+            {"ref_path": "SKILL.md"},
+            "skill contents",
+        )
+
+    fake_storage.append_tool_call.assert_called_once_with(
+        "step-1",
+        {
+            "tool": "Skill Reader",
+            "input": {"ref_path": "SKILL.md"},
+            "output": "skill contents",
+        },
+    )
+
+
 def test_step_persistence_failure_does_not_fail_workflow():
     class BrokenStorage:
         def create_step(self, *args, **kwargs):

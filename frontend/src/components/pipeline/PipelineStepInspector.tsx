@@ -18,6 +18,12 @@ function PayloadSection({ label, value }: { label: string; value: unknown }) {
   )
 }
 
+function toolCallsFromContext(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return []
+  const toolCalls = (value as { tool_calls?: unknown }).tool_calls
+  return Array.isArray(toolCalls) ? toolCalls : []
+}
+
 export function PipelineStepInspector({ step }: { step: PipelineStepTrace }) {
   const metadata = {
     model_name: step.model_name,
@@ -26,6 +32,7 @@ export function PipelineStepInspector({ step }: { step: PipelineStepTrace }) {
     finished_at: step.finished_at,
     status: step.status,
   }
+  const toolCalls = toolCallsFromContext(step.rendered_context)
 
   return (
     <div className="space-y-5">
@@ -36,6 +43,7 @@ export function PipelineStepInspector({ step }: { step: PipelineStepTrace }) {
       <PayloadSection label="Input" value={step.input_payload} />
       <PayloadSection label="System Prompt" value={step.system_prompt} />
       <PayloadSection label="Context" value={step.rendered_context} />
+      {toolCalls.length > 0 && <PayloadSection label="Tool Calls" value={toolCalls} />}
       <PayloadSection label="Output" value={step.output_payload ?? step.partial_output} />
       <PayloadSection label="Metadata" value={metadata} />
       {step.error && (

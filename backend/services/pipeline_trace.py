@@ -174,6 +174,48 @@ class PipelineStepRecorder:
         if self.step_id is not None:
             self.storage.append_llm_call(self.step_id, normalize_payload(call_payload))
 
+    def append_tool_call(
+        self,
+        tool_name: str,
+        input_payload: Any,
+        output_payload: Any,
+        error: Optional[Exception] = None,
+    ) -> None:
+        if self.step_id is None:
+            return
+        call_payload = {
+            "tool": tool_name,
+            "input": input_payload,
+            "output": output_payload,
+        }
+        if error is not None:
+            call_payload["error"] = {
+                "type": type(error).__name__,
+                "message": str(error),
+            }
+        try:
+            self.storage.append_tool_call(
+                self.step_id,
+                normalize_payload(call_payload),
+            )
+        except Exception as storage_error:
+            logger.warning(
+                "[pipeline_trace] tool call capture failed for %s: %s",
+                self.step_key,
+                storage_error,
+            )
+
+
+def record_tool_call(
+    tool_name: str,
+    input_payload: Any,
+    output_payload: Any,
+    error: Optional[Exception] = None,
+) -> None:
+    step = current_trace_step.get()
+    if step is not None:
+        step.append_tool_call(tool_name, input_payload, output_payload, error)
+
 
 class PipelineTraceRecorder:
     def __init__(self, storage: PipelineRunsStorage, run_id: str):

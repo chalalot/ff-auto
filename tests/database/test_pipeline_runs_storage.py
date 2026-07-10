@@ -26,6 +26,14 @@ def test_run_and_steps_round_trip(clean_tables):
         {"observation": "subject"},
         {"input_tokens": 3},
     )
+    storage.append_tool_call(
+        vision_id,
+        {
+            "tool": "Skill Reader",
+            "input": {"ref_path": "SKILL.md"},
+            "output": "skill contents",
+        },
+    )
 
     trace = storage.get_run_with_steps(run_id)
 
@@ -37,6 +45,7 @@ def test_run_and_steps_round_trip(clean_tables):
     assert trace["steps"][0]["status"] == "succeeded"
     assert trace["steps"][0]["output_payload"] == {"observation": "subject"}
     assert trace["steps"][0]["usage"] == {"input_tokens": 3}
+    assert trace["steps"][0]["rendered_context"]["tool_calls"][0]["tool"] == "Skill Reader"
 
 
 def test_step_failure_and_run_failure_are_readable(clean_tables):

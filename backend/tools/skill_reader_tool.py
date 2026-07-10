@@ -51,17 +51,19 @@ class SkillReaderTool(BaseTool):
             self.skill_root = str(skill_root)
 
     def _run(self, ref_path: str) -> str:
+        from backend.services.pipeline_trace import record_tool_call
+
         root = Path(self.skill_root).resolve()
         target = (root / ref_path).resolve()
 
         # Path-traversal guard: target must be the root or live under it.
         if target != root and root not in target.parents:
             logger.warning("[SkillReader] refused out-of-root path: %r", ref_path)
-            return f"Error: path {ref_path!r} escapes the skill root."
-
-        if not target.is_file():
-            return f"Error: skill reference {ref_path!r} not found."
-
-        content = target.read_text(encoding="utf-8")
-        self.read_log.append((len(self.read_log) + 1, ref_path))
-        return content
+            result = f"Error: path {ref_path!r} escapes the skill root."
+        elif not target.is_file():
+            result = f"Error: skill reference {ref_path!r} not found."
+        else:
+            result = target.read_text(encoding="utf-8")
+            self.read_log.append((len(self.read_log) + 1, ref_path))
+        record_tool_call(self.name, {"ref_path": ref_path}, result)
+        return result

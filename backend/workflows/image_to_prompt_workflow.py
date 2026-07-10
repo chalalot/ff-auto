@@ -19,6 +19,7 @@ from backend.config import GlobalConfig
 from backend.services.pipeline_trace import (
     current_trace_step,
     install_litellm_trace_callback,
+    record_tool_call,
 )
 
 
@@ -285,6 +286,11 @@ class ImageToPromptWorkflow:
 
         logger.info(f"Executing vision analysis for {image_path} with model {vision_model}...")
         vision_result = VisionTool(model_name=vision_model)._run(prompt=vision_prompt, image_path=image_path)
+        record_tool_call(
+            "Vision Tool",
+            {"prompt": vision_prompt, "image_path": safe_image_path},
+            vision_result,
+        )
 
         if vision_result is None:
             raise ValueError("Vision model returned None (empty response)")

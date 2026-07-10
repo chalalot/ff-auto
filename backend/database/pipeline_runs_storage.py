@@ -140,6 +140,17 @@ class PipelineRunsStorage:
             )
 
     def append_llm_call(self, step_id: str, call_payload: dict) -> None:
+        self._append_context_event(step_id, "llm_calls", call_payload)
+
+    def append_tool_call(self, step_id: str, call_payload: dict) -> None:
+        self._append_context_event(step_id, "tool_calls", call_payload)
+
+    def _append_context_event(
+        self,
+        step_id: str,
+        event_key: str,
+        event_payload: dict,
+    ) -> None:
         with session_scope() as session:
             row = session.execute(
                 select(PipelineStep).where(PipelineStep.id == step_id)
@@ -148,18 +159,22 @@ class PipelineRunsStorage:
                 return
             context = row.rendered_context
             if isinstance(context, dict):
+                context = dict(context)
+                context[event_key] = [
+                    *context.get(event_key, []),
+                    event_payload,
+                ]
+            elif isinstance(context, list):
                 context = {
                     "workflow_context": context,
-                    "llm_calls": [call_payload],
+                    event_key: [event_payload],
                 }
-            elif isinstance(context, list):
-                context = {"llm_calls": [*context, call_payload]}
             elif context is None:
-                context = {"llm_calls": [call_payload]}
+                context = {event_key: [event_payload]}
             else:
                 context = {
                     "workflow_context": str(context),
-                    "llm_calls": [call_payload],
+                    event_key: [event_payload],
                 }
             row.rendered_context = context
             row.updated_at = _now()
