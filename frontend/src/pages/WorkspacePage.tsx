@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceApi } from '@/api/workspace'
+import { pipelineApi } from '@/api/pipeline'
 import { configApi } from '@/api/config'
 import { usePersonas, useVisionModels, useLoraOptions, useLastUsed } from '@/hooks/usePersonas'
 import { useTaskProgress } from '@/hooks/useTaskProgress'
@@ -22,6 +23,7 @@ import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Cloc
 import { Textarea } from '@/components/ui/textarea'
 import { WorkflowParametersPanel, buildInitialOverrides } from '@/components/workspace/WorkflowParametersPanel'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, WorkflowParameters } from '@/types'
+import type { PipelineRunSummary } from '@/types/pipeline'
 
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
@@ -84,6 +86,11 @@ export const WorkspacePage: React.FC = () => {
   const { data: executions = [] } = useQuery({
     queryKey: ['workspace', 'executions', projectId ?? 'all'],
     queryFn: () => workspaceApi.getExecutions({ limit: 20, project_id: projectId }),
+  })
+  const { data: pipelineRuns = [], isLoading: pipelineRunsLoading } = useQuery<PipelineRunSummary[]>({
+    queryKey: ['pipeline-runs', projectId ?? 'all'],
+    queryFn: () => pipelineApi.listRuns({ limit: 20, project_id: projectId }),
+    refetchInterval: 5000,
   })
 
   const { data: library = [], refetch: refetchLibrary } = useQuery({
@@ -153,6 +160,7 @@ export const WorkspacePage: React.FC = () => {
       // all other open sessions see the new tasks right away.
       queryClient.invalidateQueries({ queryKey: ['workspace', 'active-tasks'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'executions'] })
+      queryClient.invalidateQueries({ queryKey: ['pipeline-runs'] })
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
       if (taskIds.length === 1 && runIds[0]) {
         navigate(`/pipeline-runs/${runIds[0]}`)
@@ -428,7 +436,24 @@ export const WorkspacePage: React.FC = () => {
 
           {/* Execution History Tab */}
           <TabsContent value="history" className="flex-1 overflow-auto px-4 pb-4">
-            <div className="space-y-2">
+            <div className="space-y-6">
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold">Pipeline Runs</h2>
+                    <p className="text-xs text-muted-foreground">Reopen a run to inspect every agent prompt, context, and output.</p>
+                  </div>
+                  {pipelineRunsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+                {pipelineRuns.length === 0 && !pipelineRunsLoading ? (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No pipeline runs yet.</div>
+                ) : (
+                  pipelineRuns.map(run => <PipelineRunHistoryCard key={run.id} run={run} />)
+                )}
+              </section>
+
+              <section className="space-y-2">
+                <h2 className="text-sm font-semibold">Legacy Executions</h2>
               {executions.length === 0 ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -439,6 +464,7 @@ export const WorkspacePage: React.FC = () => {
                   <ExecutionCard key={exec.execution_id} exec={exec} />
                 ))
               )}
+              </section>
             </div>
           </TabsContent>
 
@@ -2074,6 +2100,55 @@ const RunpodJobCard: React.FC<{
 // ------------------------------------------------------------------
 // Execution history card
 // ------------------------------------------------------------------
+function formatPipelineName(name: string) {
+  return name.replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase())
+}
+
+const PipelineRunHistoryCard: React.FC<{ run: PipelineRunSummary }> = ({ run }) => {
+  const input = run.input_payload && typeof run.input_payload === 'object'
+    ? run.input_payload as Record<string, unknown>
+    : null
+  const refFilename = refFilenameFromPath(typeof input?.image_path === 'string' ? input.image_path : undefined)
+  const status: 'success' | 'destructive' | 'secondary' = run.status === 'succeeded' ? 'success' : run.status === 'failed' ? 'destructive' : 'secondary'
+
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-3">
+        {refFilename ? (
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border bg-muted">
+            <img
+              src={workspaceApi.getRefImageThumbnailUrl(refFilename)}
+              alt="ref"
+              className="h-full w-full object-cover"
+              onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            />
+          </div>
+        ) : (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-muted">
+            <Zap className="h-4 w-4 text-muted-foreground/50" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium">{formatPipelineName(run.pipeline_name)}</p>
+            <Badge variant={status}>{run.status}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {refFilename ?? 'No reference image'} - {run.created_at ? formatDistanceToNow(new Date(run.created_at), { addSuffix: true }) : 'Queued'}
+          </p>
+        </div>
+        <Link
+          to={`/pipeline-runs/${run.id}`}
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+        >
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+          Open trace
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
 const ExecutionCard: React.FC<{ exec: ExecutionRecord }> = ({ exec }) => {
   const [showInfo, setShowInfo] = useState(false)
   const refFilename = refFilenameFromPath(exec.image_ref_path)

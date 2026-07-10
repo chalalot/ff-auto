@@ -1,4 +1,6 @@
 from backend.database.pipeline_runs_storage import PipelineRunsStorage
+from backend.database.engine import session_scope
+from backend.database.models import Project
 
 
 def test_get_pipeline_run_returns_ordered_live_trace(client, clean_tables):
@@ -44,3 +46,16 @@ def test_get_missing_pipeline_run_returns_404(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Pipeline run not found"
+
+
+def test_list_pipeline_runs_returns_summaries(client, clean_tables):
+    storage = PipelineRunsStorage()
+    with session_scope() as session:
+        session.add(Project(id="project-a", name="Project A"))
+    run_id = storage.create_run("image_to_prompt", {"image_path": "ref.png"}, "project-a", None)
+
+    response = client.get("/api/pipeline-runs?project_id=project-a")
+
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == run_id
+    assert "steps" not in response.json()[0]

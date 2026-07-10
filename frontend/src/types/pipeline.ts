@@ -36,3 +36,5 @@ export interface PipelineRunTrace {
   created_by_member_id?: string | null
   steps: PipelineStepTrace[]
 }
+
+export type PipelineRunSummary = Omit<PipelineRunTrace, 'final_output' | 'steps'>

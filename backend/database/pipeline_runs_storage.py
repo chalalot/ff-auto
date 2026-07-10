@@ -32,6 +32,22 @@ def _run_dict(row: PipelineRun) -> dict:
     }
 
 
+def _run_summary_dict(row: PipelineRun) -> dict:
+    return {
+        "id": row.id,
+        "pipeline_name": row.pipeline_name,
+        "status": row.status,
+        "input_payload": row.input_payload,
+        "error": row.error,
+        "started_at": row.started_at,
+        "finished_at": row.finished_at,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "project_id": row.project_id,
+        "created_by_member_id": row.created_by_member_id,
+    }
+
+
 def _step_dict(row: PipelineStep) -> dict:
     return {
         "id": row.id,
@@ -245,3 +261,18 @@ class PipelineRunsStorage:
             result = _run_dict(run)
             result["steps"] = [_step_dict(step) for step in steps]
             return result
+
+    def list_runs(
+        self,
+        limit: int = 20,
+        project_id: Optional[str] = None,
+    ) -> list[dict]:
+        with session_scope() as session:
+            query = select(PipelineRun)
+            if project_id is not None:
+                query = query.where(PipelineRun.project_id == project_id)
+            query = query.order_by(
+                PipelineRun.created_at.desc(), PipelineRun.id.desc()
+            ).limit(limit)
+            runs = session.execute(query).scalars().all()
+            return [_run_summary_dict(run) for run in runs]

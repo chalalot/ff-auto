@@ -1,4 +1,6 @@
 from backend.database.pipeline_runs_storage import PipelineRunsStorage
+from backend.database.engine import session_scope
+from backend.database.models import Project
 
 
 def test_run_and_steps_round_trip(clean_tables):
@@ -64,3 +66,19 @@ def test_step_failure_and_run_failure_are_readable(clean_tables):
 
 def test_missing_run_returns_none(clean_tables):
     assert PipelineRunsStorage().get_run_with_steps("missing") is None
+
+
+def test_list_runs_returns_newest_summaries_and_filters_project(clean_tables):
+    storage = PipelineRunsStorage()
+    with session_scope() as session:
+        session.add(Project(id="project-a", name="Project A"))
+        session.add(Project(id="project-b", name="Project B"))
+    older_id = storage.create_run("image_to_prompt", {"image_path": "old.png"}, "project-a", None)
+    newer_id = storage.create_run("image_to_prompt", {"image_path": "new.png"}, "project-b", None)
+
+    runs = storage.list_runs(limit=10)
+    assert [run["id"] for run in runs] == [newer_id, older_id]
+    assert "final_output" not in runs[0]
+
+    project_runs = storage.list_runs(limit=10, project_id="project-a")
+    assert [run["id"] for run in project_runs] == [older_id]
