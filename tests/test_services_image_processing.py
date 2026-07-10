@@ -72,12 +72,14 @@ def test_dispatch_processing_returns_task_id(svc, _temp_dirs):
     mock_task = MagicMock()
     mock_task.id = "test-celery-task-id"
 
-    with patch("backend.celery_app.celery_app.send_task", return_value=mock_task):
-        task_id = svc.dispatch_processing(
+    with patch("backend.celery_app.celery_app.send_task", return_value=mock_task), \
+         patch("backend.services.image_processing.PipelineRunsStorage") as trace_storage:
+        trace_storage.return_value.create_run.return_value = "run-1"
+        dispatch = svc.dispatch_processing(
             image_path=str(src),
             persona="Jennie",
         )
-    assert task_id == "test-celery-task-id"
+    assert dispatch == {"task_id": "test-celery-task-id", "run_id": "run-1"}
 
 
 def test_dispatch_processing_threads_brief_to_task_kwargs(svc, _temp_dirs):
@@ -101,6 +103,7 @@ def test_dispatch_batch_returns_multiple_ids(svc, _temp_dirs):
     with patch("backend.celery_app.celery_app.send_task", return_value=mock_task):
         ids = svc.dispatch_batch([str(p) for p in imgs], persona="Sephera")
     assert len(ids) == 3
+    assert all(set(item) == {"task_id", "run_id"} for item in ids)
 
 
 def test_get_task_status_pending(svc):

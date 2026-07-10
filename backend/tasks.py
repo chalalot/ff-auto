@@ -7,6 +7,8 @@ from backend.config import GlobalConfig
 from backend.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 from backend.third_parties.comfyui_client import ComfyUIClient
 from backend.database.image_logs_storage import ImageLogsStorage
+from backend.database.pipeline_runs_storage import PipelineRunsStorage
+from backend.services.pipeline_trace import PipelineTraceRecorder
 from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -155,6 +157,7 @@ def process_image_task(
     project_id=None,
     created_by_member_id=None,
     brief=None,
+    run_id=None,
 ):
     """Celery task to run the CrewAI workflow and queue to ComfyUI."""
     try:
@@ -162,6 +165,7 @@ def process_image_task(
         return asyncio.run(
             async_process_image(
                 dest_image_path=dest_image_path,
+                run_id=run_id,
                 brief=brief,
                 persona=persona,
                 workflow_type=workflow_type,
@@ -192,8 +196,22 @@ async def async_process_image(
     strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
     task, pipeline_type="image.subject_environment", workflow_overrides=None,
     workflow_name=None, project_id=None, created_by_member_id=None, brief=None,
+    run_id=None,
 ):
     workflow, client, storage = get_instances()
+
+    trace_storage = None
+    trace_recorder = None
+    if run_id:
+        try:
+            trace_storage = PipelineRunsStorage()
+            trace_storage.start_run(run_id)
+            trace_recorder = PipelineTraceRecorder(trace_storage, run_id)
+            workflow = ImageToPromptWorkflow(verbose=False, trace_recorder=trace_recorder)
+        except Exception as e:
+            logger.warning("Could not start pipeline trace %s: %s", run_id, e)
+            trace_storage = None
+            trace_recorder = None
 
     logger.info(f"Generating {variation_count} prompt(s) for {dest_image_path}...")
     task.update_state(
@@ -211,6 +229,14 @@ async def async_process_image(
             variation_count=variation_count,
         )
     except Exception as e:
+        if trace_storage is not None:
+            try:
+                trace_storage.fail_run(
+                    run_id,
+                    {"type": type(e).__name__, "message": str(e)},
+                )
+            except Exception as trace_error:
+                logger.warning("Could not fail pipeline trace %s: %s", run_id, trace_error)
         error_msg = str(e)
         is_vision_refusal = "refused to analyze" in error_msg or "content policy" in error_msg.lower()
         is_empty_response = "Invalid response from LLM call - None or empty" in error_msg
@@ -235,6 +261,12 @@ async def async_process_image(
             return {"success": False, "image_path": dest_image_path, "error": label}
         else:
             raise e
+
+    if trace_storage is not None:
+        try:
+            trace_storage.complete_run(run_id, result)
+        except Exception as e:
+            logger.warning("Could not complete pipeline trace %s: %s", run_id, e)
 
     prompts = result.get("generated_prompts", [result.get("generated_prompt")])
     logger.info(

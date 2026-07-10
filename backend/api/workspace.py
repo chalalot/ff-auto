@@ -163,7 +163,7 @@ def process_image(
 ):
     _validate_image_pipeline_type(body.pipeline_type)
     try:
-        task_id = svc.dispatch_processing(
+        dispatch = svc.dispatch_processing(
             image_path=body.image_path,
             persona=body.persona,
             workflow_type=body.workflow_type,
@@ -184,7 +184,7 @@ def process_image(
             prepare=not body.skip_prepare,
             brief=body.brief,
         )
-        return {"task_id": task_id}
+        return dispatch
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -195,7 +195,7 @@ def process_image(
 def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depends(get_image_processing_service)):
     _validate_image_pipeline_type(body.pipeline_type)
     try:
-        task_ids = svc.dispatch_batch(
+        dispatches = svc.dispatch_batch(
             image_paths=body.image_paths,
             persona=body.persona,
             workflow_type=body.workflow_type,
@@ -213,7 +213,10 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
             workflow_name=body.workflow_name,
             prepare=not body.skip_prepare,
         )
-        return {"task_ids": task_ids}
+        return {
+            "task_ids": [item["task_id"] for item in dispatches],
+            "run_ids": [item.get("run_id") for item in dispatches],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

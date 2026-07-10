@@ -19,6 +19,7 @@ from celery.result import AsyncResult
 
 from backend.config import GlobalConfig
 from backend.celery_app import celery_app
+from backend.database.pipeline_runs_storage import PipelineRunsStorage
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ class ImageProcessingService:
         member_id: Optional[str] = None,
         prepare: bool = True,
         brief: Optional[str] = None,
-    ) -> str:
+    ) -> dict:
         """
         Prepare the image and dispatch a Celery task.
         Returns the Celery task_id.
@@ -135,10 +136,39 @@ class ImageProcessingService:
         else:
             dest_path = self.prepare_image(image_path) if prepare else image_path
 
+        run_id = None
+        try:
+            run_id = PipelineRunsStorage().create_run(
+                "image_to_prompt",
+                {
+                    "image_path": dest_path,
+                    "brief": brief,
+                    "persona": persona,
+                    "workflow_type": workflow_type,
+                    "vision_model": vision_model,
+                    "variation_count": variation_count,
+                    "strength": strength,
+                    "seed_strategy": seed_strategy,
+                    "base_seed": base_seed,
+                    "width": width,
+                    "height": height,
+                    "lora_name": lora_name,
+                    "clip_model_type": clip_model_type,
+                    "pipeline_type": pipeline_type,
+                    "workflow_overrides": workflow_overrides or {},
+                    "workflow_name": workflow_name,
+                },
+                project_id,
+                member_id,
+            )
+        except Exception as e:
+            logger.warning("Could not create pipeline trace for %s: %s", dest_path, e)
+
         task = celery_app.send_task(
             "backend.tasks.process_image_task",
             kwargs={
                 "dest_image_path": dest_path,
+                "run_id": run_id,
                 "brief": brief,
                 "persona": persona,
                 "workflow_type": workflow_type,
@@ -166,6 +196,7 @@ class ImageProcessingService:
             r = _redis_client()
             meta = json.dumps({
                 "image_path": dest_path,
+                "run_id": run_id,
                 "persona": persona,
                 "dispatched_at": time.time(),
             })
@@ -174,15 +205,14 @@ class ImageProcessingService:
         except Exception as e:
             logger.warning(f"Could not register task {task.id} in Redis: {e}")
 
-        return task.id
+        return {"task_id": task.id, "run_id": run_id}
 
-    def dispatch_batch(self, image_paths: List[str], **kwargs) -> List[str]:
+    def dispatch_batch(self, image_paths: List[str], **kwargs) -> List[dict]:
         """Dispatch processing for multiple images. Returns list of task IDs."""
-        task_ids = []
+        dispatches = []
         for path in image_paths:
-            task_id = self.dispatch_processing(image_path=path, **kwargs)
-            task_ids.append(task_id)
-        return task_ids
+            dispatches.append(self.dispatch_processing(image_path=path, **kwargs))
+        return dispatches
 
     # ------------------------------------------------------------------
     # Task status
@@ -285,6 +315,7 @@ class ImageProcessingService:
                     "status_message": info.get("status", ""),
                     "progress": info.get("progress", 0),
                     "image_path": meta.get("image_path"),
+                    "run_id": meta.get("run_id"),
                     "persona": meta.get("persona", ""),
                     "dispatched_at": meta.get("dispatched_at"),
                     "task_type": meta.get("task_type", "image_process"),

@@ -90,19 +90,50 @@ def test_dispatch_processing_forwards_pipeline_type(monkeypatch):
         def setex(self, *a, **k):
             pass
 
+    class _FakeTraceStorage:
+        def create_run(self, *args, **kwargs):
+            return "run-1"
+
     monkeypatch.setattr(image_processing.celery_app, "send_task", fake_send_task)
     monkeypatch.setattr(image_processing, "_redis_client", lambda: _FakeRedis())
+    monkeypatch.setattr(image_processing, "PipelineRunsStorage", _FakeTraceStorage)
 
     svc = image_processing.ImageProcessingService()
-    task_id = svc.dispatch_processing(
+    dispatch = svc.dispatch_processing(
         image_path="/x/y.png",
         persona="Jennie",
         pipeline_type="image.unified",
         prepare=False,
     )
 
-    assert task_id == "task-1"
+    assert dispatch == {"task_id": "task-1", "run_id": "run-1"}
     assert captured["kwargs"]["pipeline_type"] == "image.unified"
+    assert captured["kwargs"]["run_id"] == "run-1"
+
+
+def test_dispatch_processing_continues_when_trace_storage_fails(monkeypatch):
+    from backend.services import image_processing
+
+    class _FakeTask:
+        id = "task-2"
+
+    class _BrokenTraceStorage:
+        def create_run(self, *args, **kwargs):
+            raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(
+        image_processing.celery_app,
+        "send_task",
+        lambda *args, **kwargs: _FakeTask(),
+    )
+    monkeypatch.setattr(image_processing, "_redis_client", lambda: MagicMock())
+    monkeypatch.setattr(image_processing, "PipelineRunsStorage", _BrokenTraceStorage)
+
+    dispatch = image_processing.ImageProcessingService().dispatch_processing(
+        image_path="/x/y.png", persona="Jennie", prepare=False
+    )
+
+    assert dispatch == {"task_id": "task-2", "run_id": None}
 
 
 # ---------------------------------------------------------------------------

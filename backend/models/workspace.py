@@ -80,10 +80,12 @@ class TaskStatusResponse(BaseModel):
 
 class DispatchResponse(BaseModel):
     task_id: str
+    run_id: Optional[str] = None
 
 
 class BatchDispatchResponse(BaseModel):
     task_ids: List[str]
+    run_ids: List[Optional[str]] = []
 
 
 class PipelineInfo(BaseModel):
@@ -186,6 +188,7 @@ class ActiveTask(BaseModel):
     status_message: str = ""
     progress: float = 0
     image_path: Optional[str] = None
+    run_id: Optional[str] = None
     persona: str = ""
     dispatched_at: Optional[float] = None
     task_type: str = "image_process"   # "image_process" | "caption_export"
