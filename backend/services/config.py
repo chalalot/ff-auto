@@ -21,50 +21,17 @@ class ConfigService:
         self.presets_dir = self.prompts_dir / "presets"
         self.presets_dir.mkdir(parents=True, exist_ok=True)
         self._config_manager = WorkflowConfigManager()
+        # Personas resolve through the config manager (lazy PROMPTS_DIR) so that
+        # listing, reading, and writing identity locks always share one directory.
+        self.personas_dir = Path(self._config_manager.PERSONAS_DIR)
 
     # ------------------------------------------------------------------
     # Personas
     # ------------------------------------------------------------------
 
     def list_personas(self) -> List[dict]:
-        names = self._config_manager.get_personas()
-        result = []
-        for name in names:
-            cfg = self._config_manager.get_persona_config(name)
-            result.append(
-                {
-                    "name": name,
-                    "type": cfg.get("type", "instagirl"),
-                    "hair_color": cfg.get("hair_color", ""),
-                    "hairstyles": cfg.get("hairstyles", []),
-                }
-            )
-        return result
-
-    def get_persona(self, name: str) -> Optional[dict]:
-        personas = self._config_manager.get_personas()
-        if name not in personas:
-            return None
-        cfg = self._config_manager.get_persona_config(name)
-        return {"name": name, **cfg}
-
-    def update_persona(self, name: str, data: dict) -> bool:
-        try:
-            self._config_manager.update_persona_config(name, data)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update persona {name}: {e}")
-            return False
-
-    def get_persona_types(self) -> List[str]:
-        return self._config_manager.get_persona_types()
-
-    def create_persona_type(self, type_name: str) -> bool:
-        try:
-            return self._config_manager.create_persona_template_structure(type_name)
-        except Exception as e:
-            logger.error(f"Failed to create persona type {type_name}: {e}")
-            return False
+        """Return the character roster — just names now."""
+        return [{"name": name} for name in self._config_manager.get_personas()]
 
     # ------------------------------------------------------------------
     # Presets
@@ -116,30 +83,52 @@ class ConfigService:
         return self.save_preset("_last_used", data)
 
     # ------------------------------------------------------------------
-    # Template files (prompts/templates/{type}/*.txt)
+    # Character identity locks (prompts/personas/{name}/identity_lock.txt)
+    # ------------------------------------------------------------------
+    # Each character has one preset "identity lock" — the fixed user-prompt text
+    # describing WHO the subject is. It is injected verbatim into every generated
+    # prompt. This replaces the old per-type persona_contract templates.
+
+    def get_identity_locks(self) -> Dict[str, str]:
+        """Return {persona_name: identity_lock_content} for every character."""
+        result = {}
+        for name in self._config_manager.get_personas():
+            path = self.personas_dir / name / "identity_lock.txt"
+            try:
+                result[name] = path.read_text(encoding="utf-8") if path.exists() else ""
+            except Exception as e:
+                logger.error(f"Failed to read {path}: {e}")
+                result[name] = ""
+        return result
+
+    def save_identity_lock(self, name: str, content: str) -> bool:
+        if name not in self._config_manager.get_personas():
+            return False
+        persona_dir = self.personas_dir / name
+        persona_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (persona_dir / "identity_lock.txt").write_text(content, encoding="utf-8")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write identity lock for {name}: {e}")
+            return False
+
+    # ------------------------------------------------------------------
+    # Global agent prompts (prompts/agents/*.txt) — the single system prompt
+    # and its task template, shared across every persona.
     # ------------------------------------------------------------------
 
-    TEMPLATE_FILES = [
-        "turbo_agent.txt",
-        "turbo_framework.txt",
-        "turbo_constraints.txt",
-        "turbo_example.txt",
-        "analyst_agent.txt",
-        "analyst_task.txt",
+    AGENT_PROMPT_FILES = [
+        "agent_system.txt",
+        "agent_instruction.txt",
     ]
 
-    def list_template_types(self) -> List[str]:
-        templates_dir = self.prompts_dir / "templates"
-        if not templates_dir.exists():
-            return []
-        return sorted(d.name for d in templates_dir.iterdir() if d.is_dir())
-
-    def get_template_files(self, type_name: str) -> Dict[str, str]:
-        """Return {filename: content} for all template files of a type."""
-        template_dir = self.prompts_dir / "templates" / type_name
+    def get_agent_prompts(self) -> Dict[str, str]:
+        """Return {filename: content} for the global agent prompts."""
+        agents_dir = self.prompts_dir / "agents"
         result = {}
-        for filename in self.TEMPLATE_FILES:
-            path = template_dir / filename
+        for filename in self.AGENT_PROMPT_FILES:
+            path = agents_dir / filename
             try:
                 result[filename] = path.read_text(encoding="utf-8") if path.exists() else ""
             except Exception as e:
@@ -147,16 +136,16 @@ class ConfigService:
                 result[filename] = ""
         return result
 
-    def save_template_file(self, type_name: str, filename: str, content: str) -> bool:
-        if filename not in self.TEMPLATE_FILES:
+    def save_agent_prompt(self, filename: str, content: str) -> bool:
+        if filename not in self.AGENT_PROMPT_FILES:
             return False
-        template_dir = self.prompts_dir / "templates" / type_name
-        template_dir.mkdir(parents=True, exist_ok=True)
+        agents_dir = self.prompts_dir / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
         try:
-            (template_dir / filename).write_text(content, encoding="utf-8")
+            (agents_dir / filename).write_text(content, encoding="utf-8")
             return True
         except Exception as e:
-            logger.error(f"Failed to write template {type_name}/{filename}: {e}")
+            logger.error(f"Failed to write agent prompt {filename}: {e}")
             return False
 
     # ------------------------------------------------------------------
@@ -164,13 +153,14 @@ class ConfigService:
     # ------------------------------------------------------------------
 
     def get_workflow_types(self) -> List[str]:
-        return ["turbo", "standard"]
+        return ["image_generation", "image_upscaler", "multiangle_edit"]
 
     def get_vision_models(self) -> List[Dict[str, str]]:
         return [
             {"label": "ChatGPT (gpt-4o)", "value": "gpt-4o"},
             {"label": "Grok (grok-4.3)", "value": "grok-4.3"},
             {"label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro"},
+            {"label": "Gemma 4 31B IT (gemma-4-31b-it)", "value": "gemma-4-31b-it"},
         ]
 
     def get_clip_model_types(self) -> List[str]:

@@ -1,24 +1,20 @@
-import React, { useMemo, useState, useCallback } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, RefreshCcw, RotateCcw, Send, Trash2 } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { AlertTriangle, Loader2, RefreshCcw, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { reviewApi } from '@/api/review'
 import { projectsApi } from '@/api/projects'
 import { workspaceApi } from '@/api/workspace'
 import { useProjectId } from '@/hooks/useProjectId'
 import { usePersonas, useVisionModels, useLoraOptions } from '@/hooks/usePersonas'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { WorkflowParametersPanel, buildInitialOverrides, loraShortLabel } from '@/components/workspace/WorkflowParametersPanel'
+import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParametersPanel'
 import type { ReviewRequestItem, ReviewStatus } from '@/types/review'
 import type { WorkflowParameters, PersonaSummary } from '@/types'
 import type { SelectOption } from '@/api/config'
-
-
 
 const STATUS_BADGE: Record<ReviewStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
   pending_review: 'secondary',
@@ -36,6 +32,22 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const SELECTABLE: ReviewStatus[] = ['pending_review', 'failed', 'completed']
+
+// Inline sections rendered in this order; empty statuses are skipped.
+const STATUS_SECTIONS: Array<{ status: ReviewStatus; label: string }> = [
+  { status: 'pending_review', label: 'Pending Review' },
+  { status: 'dispatched', label: 'Dispatched' },
+  { status: 'completed', label: 'Completed' },
+  { status: 'failed', label: 'Failed' },
+  { status: 'approved', label: 'Approved' },
+  { status: 'discarded', label: 'Discarded' },
+]
+
+// Only actionable states are offered in the filter; approved/discarded still
+// show as sections under "All states".
+const FILTER_STATUSES = STATUS_SECTIONS.filter(
+  s => s.status !== 'approved' && s.status !== 'discarded',
+)
 
 function settingsEntries(settings: Record<string, unknown>): string[] {
   // Node overrides are applied last at dispatch, so they are the effective
@@ -76,7 +88,7 @@ const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   </p>
 )
 
-const RequestRow: React.FC<{
+export const RequestRow: React.FC<{
   item: ReviewRequestItem
   checked: boolean
   onToggle: (id: string) => void
@@ -84,6 +96,7 @@ const RequestRow: React.FC<{
   personas?: PersonaSummary[]
   visionModels?: SelectOption[]
   loraOptions?: string[]
+  imageOptions?: string[]
 }> = ({
   item,
   checked,
@@ -92,6 +105,7 @@ const RequestRow: React.FC<{
   personas = [],
   visionModels = [],
   loraOptions = [],
+  imageOptions = [],
 }) => {
   const queryClient = useQueryClient()
   const sections = parsePromptSections(item.prompt)
@@ -104,19 +118,9 @@ const RequestRow: React.FC<{
     item.status === 'completed'
 
   const settingsObj = (item.settings ?? {}) as Record<string, unknown>
-
-  // Local settings state for fast numeric typing — saved on blur.
-  const initSettings = useCallback(() => {
-    const s: Record<string, string> = {
-      base_seed: settingsObj.base_seed != null ? String(settingsObj.base_seed) : '0',
-      strength_model: settingsObj.strength_model != null ? String(settingsObj.strength_model) : '1',
-      width: settingsObj.width != null ? String(settingsObj.width) : '1024',
-      height: settingsObj.height != null ? String(settingsObj.height) : '1024',
-    }
-    return s
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id, item.updated_at])
-  const [localSettings, setLocalSettings] = useState(initSettings)
+  // Saved overrides the workflow JSON no longer has. The graph is re-read at
+  // dispatch, so an edit to the workflow can orphan these in place.
+  const staleOverrides = item.stale_overrides ?? []
 
   const patchMutation = useMutation({
     mutationFn: (prompt: string) => reviewApi.updateRequest(item.id, { prompt }),
@@ -169,18 +173,6 @@ const RequestRow: React.FC<{
     }
   }
 
-  const saveSettingsField = (key: 'base_seed' | 'strength_model' | 'width' | 'height') => {
-    if (!editable) return
-    const raw = localSettings[key]
-    const original = settingsObj[key]
-    let value: unknown = raw
-    if (key === 'strength_model') value = raw === '' ? undefined : parseFloat(raw)
-    else value = raw === '' ? undefined : parseInt(raw, 10)
-    if (String(value ?? '') !== String(original ?? '')) {
-      settingsMutation.mutate({ [key]: value })
-    }
-  }
-
   const saveSections = () => {
     if (!editable || !sections) return
     const next = joinPromptSections(subject, environment)
@@ -221,6 +213,17 @@ const RequestRow: React.FC<{
           {projectName && (
             <Badge variant="outline" className="text-xs">
               {projectName}
+            </Badge>
+          )}
+          {staleOverrides.length > 0 && (
+            <Badge
+              variant="destructive"
+              className="text-xs gap-1"
+              data-testid="stale-overrides-badge"
+              title={`These saved values are not in ${workflowName} anymore and will fall back to the workflow's defaults: ${staleOverrides.join(', ')}`}
+            >
+              <AlertTriangle className="h-3 w-3" />
+              {staleOverrides.length} stale override{staleOverrides.length > 1 ? 's' : ''}
             </Badge>
           )}
           <span className="text-xs text-muted-foreground truncate">
@@ -269,7 +272,7 @@ const RequestRow: React.FC<{
 
         {editable ? (
           <div className="space-y-2.5 pt-1">
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {/* Persona */}
               <div className="space-y-0.5">
                 <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
@@ -294,25 +297,6 @@ const RequestRow: React.FC<{
                         {String(settingsObj.persona || 'Jennie')}
                       </SelectItem>
                     )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Workflow Type */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Workflow Type
-                </label>
-                <Select
-                  value={String(settingsObj.workflow_type || 'turbo')}
-                  onValueChange={v => saveSettingSelect('workflow_type', v)}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="turbo">Turbo</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -345,130 +329,6 @@ const RequestRow: React.FC<{
                 </Select>
               </div>
 
-              {/* LoRA */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  LoRA
-                </label>
-                <Select
-                  value={String(settingsObj.lora_name || 'none')}
-                  onValueChange={v => saveSettingSelect('lora_name', v === 'none' ? '' : v)}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue placeholder="Select LoRA">
-                      {settingsObj.lora_name
-                        ? loraShortLabel(String(settingsObj.lora_name))
-                        : 'None'}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">
-                      <span className="text-muted-foreground">None</span>
-                    </SelectItem>
-                    {Array.from(
-                      new Set([
-                        ...(settingsObj.lora_name ? [String(settingsObj.lora_name)] : []),
-                        ...loraOptions,
-                      ])
-                    ).map(
-                      l =>
-                        l && (
-                          <SelectItem key={l} value={l}>
-                            <span className="font-medium">{loraShortLabel(l)}</span>
-                          </SelectItem>
-                        )
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Seed Strategy */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Seed Strategy
-                </label>
-                <Select
-                  value={String(settingsObj.seed_strategy || 'random')}
-                  onValueChange={v => saveSettingSelect('seed_strategy', v)}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="random">Random</SelectItem>
-                    <SelectItem value="fixed">Fixed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Base Seed */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Base Seed
-                </label>
-                <Input
-                  type="number"
-                  value={localSettings.base_seed}
-                  onChange={e =>
-                    setLocalSettings(p => ({ ...p, base_seed: e.target.value }))
-                  }
-                  onBlur={() => saveSettingsField('base_seed')}
-                  className="h-7 text-xs font-mono"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Strength */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Strength
-                </label>
-                <Input
-                  type="number"
-                  step="0.05"
-                  value={localSettings.strength_model}
-                  onChange={e =>
-                    setLocalSettings(p => ({ ...p, strength_model: e.target.value }))
-                  }
-                  onBlur={() => saveSettingsField('strength_model')}
-                  className="h-7 text-xs font-mono"
-                  placeholder="1.0"
-                />
-              </div>
-
-              {/* Width */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Width
-                </label>
-                <Input
-                  type="number"
-                  value={localSettings.width}
-                  onChange={e =>
-                    setLocalSettings(p => ({ ...p, width: e.target.value }))
-                  }
-                  onBlur={() => saveSettingsField('width')}
-                  className="h-7 text-xs font-mono"
-                  placeholder="1024"
-                />
-              </div>
-
-              {/* Height */}
-              <div className="space-y-0.5">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Height
-                </label>
-                <Input
-                  type="number"
-                  value={localSettings.height}
-                  onChange={e =>
-                    setLocalSettings(p => ({ ...p, height: e.target.value }))
-                  }
-                  onBlur={() => saveSettingsField('height')}
-                  className="h-7 text-xs font-mono"
-                  placeholder="1024"
-                />
-              </div>
             </div>
 
             {item.workflow_name && (
@@ -477,19 +337,23 @@ const RequestRow: React.FC<{
                   Workflow Parameters ({item.workflow_name.replace(/\.json$/i, '')})
                 </summary>
                 <div className="mt-2.5 pt-2 border-t border-border/40">
+                  {staleOverrides.length > 0 && (
+                    <p className="mb-2 text-xs text-destructive">
+                      No longer in this workflow — these fall back to the graph's defaults at
+                      dispatch. Re-set them below, or Reset to clear.{' '}
+                      <span className="font-mono break-all">{staleOverrides.join(', ')}</span>
+                    </p>
+                  )}
                   <WorkflowParametersPanel
                     params={workflowParams}
                     loading={paramsLoading}
                     error={paramsError ? 'Failed to load parameters' : null}
                     loraOptions={loraOptions}
+                    imageOptions={imageOptions}
+                    imageThumbnailUrl={workspaceApi.getRefImageThumbnailUrl}
                     values={currentOverrides}
                     onChange={handleOverrideChange}
-                    onReset={() => {
-                      if (workflowParams) {
-                        const reset = buildInitialOverrides(workflowParams)
-                        settingsMutation.mutate({ workflow_overrides: reset })
-                      }
-                    }}
+                    onReset={() => settingsMutation.mutate({ workflow_overrides: {} })}
                   />
                 </div>
               </details>
@@ -542,10 +406,20 @@ const RequestRow: React.FC<{
   )
 }
 
-export const ReviewQueuePage: React.FC = () => {
+function groupByBatch(items: ReviewRequestItem[]): Array<[string, ReviewRequestItem[]]> {
+  const map = new Map<string, ReviewRequestItem[]>()
+  for (const item of items) {
+    const group = map.get(item.batch_id) ?? []
+    group.push(item)
+    map.set(item.batch_id, group)
+  }
+  return Array.from(map.entries())
+}
+
+export const ReviewQueueSection: React.FC = () => {
   const projectId = useProjectId() ?? undefined
   const queryClient = useQueryClient()
-  const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('pending_review')
+  const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const { data, isLoading } = useQuery({
@@ -562,6 +436,10 @@ export const ReviewQueuePage: React.FC = () => {
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
   const { data: loraOptions = [] } = useLoraOptions()
+  const { data: refImages = [] } = useQuery({
+    queryKey: ['workspace', 'ref-images', projectId ?? 'all'],
+    queryFn: () => workspaceApi.getRefImages({ project_id: projectId }),
+  })
 
   const { data: allProjects = [] } = useQuery({
     queryKey: ['projects', 'all'],
@@ -571,15 +449,19 @@ export const ReviewQueuePage: React.FC = () => {
   const projectNames = new Map(allProjects.map(p => [p.id, p.name]))
 
   const items = useMemo(() => data?.items ?? [], [data])
-  const batches = useMemo(() => {
-    const map = new Map<string, ReviewRequestItem[]>()
-    for (const item of items) {
-      const group = map.get(item.batch_id) ?? []
-      group.push(item)
-      map.set(item.batch_id, group)
-    }
-    return Array.from(map.entries())
-  }, [items])
+
+  // One inline section per status (in STATUS_SECTIONS order), each grouped
+  // by batch. Statuses with no items are skipped.
+  const statusSections = useMemo(
+    () =>
+      STATUS_SECTIONS.map(section => ({
+        ...section,
+        items: items.filter(i => i.status === section.status),
+      }))
+        .filter(section => section.items.length > 0)
+        .map(section => ({ ...section, batches: groupByBatch(section.items) })),
+    [items],
+  )
 
   const toggle = (id: string) =>
     setSelected(prev => {
@@ -632,25 +514,43 @@ export const ReviewQueuePage: React.FC = () => {
     },
   })
 
-  const selectedIds = Array.from(selected)
-  const showRedispatch = statusFilter === 'completed' || statusFilter === 'failed'
+  // Sections mix statuses, so the selection can too — route each id to the
+  // action its status supports.
+  const itemById = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
+  const selectedItems = Array.from(selected)
+    .map(id => itemById.get(id))
+    .filter((i): i is ReviewRequestItem => Boolean(i))
+  const pendingIds = selectedItems.filter(i => i.status === 'pending_review').map(i => i.id)
+  const retryableIds = selectedItems
+    .filter(i => i.status === 'completed' || i.status === 'failed')
+    .map(i => i.id)
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-4 border-b flex items-center justify-between">
-        <h1 className="text-xl font-bold">Review Queue</h1>
-        <Tabs value={statusFilter} onValueChange={v => { setStatusFilter(v as ReviewStatus | 'all'); setSelected(new Set()) }}>
-          <TabsList>
-            <TabsTrigger value="pending_review">Pending</TabsTrigger>
-            <TabsTrigger value="dispatched">Dispatched</TabsTrigger>
-            <TabsTrigger value="completed">Completed</TabsTrigger>
-            <TabsTrigger value="failed">Failed</TabsTrigger>
-            <TabsTrigger value="all">All</TabsTrigger>
-          </TabsList>
-        </Tabs>
+    <section id="review-queue" className="flex flex-col">
+      <div className="pb-3 flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Review Queue</h2>
+        <Select
+          value={statusFilter}
+          onValueChange={v => {
+            setStatusFilter(v as ReviewStatus | 'all')
+            setSelected(new Set())
+          }}
+        >
+          <SelectTrigger className="h-8 w-[170px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All states</SelectItem>
+            {FILTER_STATUSES.map(({ status, label }) => (
+              <SelectItem key={status} value={status}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 space-y-6">
+      <div className="space-y-8">
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
@@ -660,80 +560,92 @@ export const ReviewQueuePage: React.FC = () => {
             No requests{statusFilter !== 'all' ? ` with status "${statusFilter.replace('_', ' ')}"` : ''}.
           </p>
         ) : (
-          batches.map(([batchId, batchItems]) => (
-            <section key={batchId} className="space-y-2">
-              <div className="flex items-center gap-3">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Batch {batchId.slice(0, 8)} ({batchItems.length})
-                </h2>
-                {batchItems.some(i => SELECTABLE.includes(i.status)) && (
-                  <Button variant="outline" size="sm" onClick={() => toggleBatch(batchItems)}>
-                    Select all in batch
-                  </Button>
-                )}
+          statusSections.map(({ status, label, items: sectionItems, batches }) => (
+            <section key={status} className="space-y-3">
+              <div className="flex items-center gap-2 border-b pb-1.5">
+                <h3 className="text-sm font-semibold">{label}</h3>
+                <Badge variant={STATUS_BADGE[status]} className="text-xs">
+                  {sectionItems.length}
+                </Badge>
               </div>
-              <div className="space-y-2">
-                {batchItems.map(item => (
-                  <RequestRow
-                    key={item.id}
-                    item={item}
-                    checked={selected.has(item.id)}
-                    onToggle={toggle}
-                    projectName={!projectId && item.project_id ? projectNames.get(item.project_id) : undefined}
-                    personas={personas}
-                    visionModels={visionModels}
-                    loraOptions={loraOptions}
-                  />
-                ))}
-              </div>
+              {batches.map(([batchId, batchItems]) => (
+                <div key={batchId} className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                      Batch {batchId.slice(0, 8)} ({batchItems.length})
+                    </h4>
+                    {batchItems.some(i => SELECTABLE.includes(i.status)) && (
+                      <Button variant="outline" size="sm" onClick={() => toggleBatch(batchItems)}>
+                        Select all in batch
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {batchItems.map(item => (
+                      <RequestRow
+                        key={item.id}
+                        item={item}
+                        checked={selected.has(item.id)}
+                        onToggle={toggle}
+                        projectName={!projectId && item.project_id ? projectNames.get(item.project_id) : undefined}
+                        personas={personas}
+                        visionModels={visionModels}
+                        loraOptions={loraOptions}
+                        imageOptions={refImages.map(i => i.filename)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </section>
           ))
         )}
       </div>
 
-      {selectedIds.length > 0 && (
-        <div className="sticky bottom-0 border-t bg-card p-3 flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">{selectedIds.length} selected</p>
+      {selectedItems.length > 0 && (
+        <div className="sticky bottom-0 mt-4 border rounded-md bg-card p-3 flex items-center justify-between shadow-sm">
+          <p className="text-sm text-muted-foreground">{selectedItems.length} selected</p>
           <div className="flex gap-2">
-            {showRedispatch && (
-              <Button
-                variant="outline"
-                onClick={() => redispatchBulkMutation.mutate(selectedIds)}
-                disabled={redispatchBulkMutation.isPending}
-              >
-                {redispatchBulkMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Cloning...</>
-                ) : (
-                  <><RefreshCcw className="w-4 h-4 mr-2" />Regenerate to pending ({selectedIds.length})</>
-                )}
-              </Button>
+            {retryableIds.length > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => redispatchBulkMutation.mutate(retryableIds)}
+                  disabled={redispatchBulkMutation.isPending}
+                >
+                  {redispatchBulkMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Cloning...</>
+                  ) : (
+                    <><RefreshCcw className="w-4 h-4 mr-2" />Regenerate to pending ({retryableIds.length})</>
+                  )}
+                </Button>
+                <Button
+                  onClick={() => retryViaCloneMutation.mutate(retryableIds)}
+                  disabled={retryViaCloneMutation.isPending}
+                >
+                  {retryViaCloneMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Retrying...</>
+                  ) : (
+                    <><RotateCcw className="w-4 h-4 mr-2" />Retry selected ({retryableIds.length})</>
+                  )}
+                </Button>
+              </>
             )}
-            {showRedispatch ? (
+            {pendingIds.length > 0 && (
               <Button
-                onClick={() => retryViaCloneMutation.mutate(selectedIds)}
-                disabled={retryViaCloneMutation.isPending}
-              >
-                {retryViaCloneMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Retrying...</>
-                ) : (
-                  <><RotateCcw className="w-4 h-4 mr-2" />Retry selected ({selectedIds.length})</>
-                )}
-              </Button>
-            ) : (
-              <Button
-                onClick={() => dispatchMutation.mutate(selectedIds)}
+                onClick={() => dispatchMutation.mutate(pendingIds)}
                 disabled={dispatchMutation.isPending}
               >
                 {dispatchMutation.isPending ? (
                   <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Dispatching...</>
                 ) : (
-                  <><Send className="w-4 h-4 mr-2" />Generate selected ({selectedIds.length})</>
+                  <><Send className="w-4 h-4 mr-2" />Generate selected ({pendingIds.length})</>
                 )}
               </Button>
             )}
           </div>
         </div>
       )}
-    </div>
+    </section>
   )
 }

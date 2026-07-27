@@ -1,14 +1,6 @@
 // Config types
 export interface PersonaSummary {
   name: string
-  type: string
-  hair_color: string
-  hairstyles: string[]
-  lora_name: string
-}
-
-export interface PersonaConfig extends PersonaSummary {
-  lora_name: string
 }
 
 export interface PresetConfig {
@@ -21,10 +13,8 @@ export interface LastUsedConfig {
   vision_model?: string
   batch_limit?: number
   variations?: number
-  lora_name?: string
-  seed_strategy?: string
-  base_seed?: number
   workflow_type?: string
+  workflow_name?: string
 }
 
 // Workspace types
@@ -74,21 +64,19 @@ export interface WorkflowParameters {
   nodes: WorkflowParamNode[]
 }
 
+// The three workflow categories the Configuration sidebar offers.
+export type WorkflowType = 'image_generation' | 'image_upscaler' | 'multiangle_edit'
+
 export interface ProcessImageConfig {
   image_path?: string
-  // Optional creative brief steering the analyst (image + brief, or brief-only).
-  brief?: string
   persona: string
   workflow_type: string
   vision_model: string
   variation_count: number
-  seed_strategy: string
-  base_seed: number
-  // Legacy single-LoRA override; per-node values now come via workflow_overrides.
-  lora_name?: string
-  // Which workflows/*.json graph to build from (backend defaults to workflow.json).
+  // Which workflows/*.json graph to build from.
   workflow_name?: string
   // Per-run node-input overrides: { node_id: { input_key: value } }.
+  // Seeds, LoRA, dimensions, CLIP type are all edited through these.
   workflow_overrides?: Record<string, Record<string, unknown>>
 }
 

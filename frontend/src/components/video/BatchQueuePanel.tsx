@@ -86,7 +86,7 @@ export const BatchQueuePanel: React.FC<BatchQueuePanelProps> = ({
         <div className="flex items-center gap-2 rounded-md border p-3 text-sm">
           <ListChecks className="w-4 h-4 text-muted-foreground" />
           <span>{sentCount} request{sentCount !== 1 ? 's' : ''} awaiting review.</span>
-          <Link to="/review" className="text-primary hover:underline">Open Review Queue</Link>
+          <Link to="/workspace" className="text-primary hover:underline">Open Review Queue</Link>
         </div>
       )}
     </div>

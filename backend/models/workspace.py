@@ -24,20 +24,16 @@ class ProcessImageRequest(BaseModel):
     image_path: Optional[str] = None  # None → brief-only headless (S13)
     skip_prepare: bool = False  # True when image_path is already in PROCESSED_DIR
     persona: str
-    workflow_type: str = "turbo"
+    workflow_type: str = "image_generation"
     vision_model: str = "gpt-4o"
     variation_count: int = Field(default=1, ge=1, le=5)
-    strength: float = Field(default=0.8, ge=0.0, le=2.0)
-    seed_strategy: str = "random"
-    base_seed: int = 0
     width: int = 1024
     height: int = 1600
-    lora_name: str = ""
-    clip_model_type: str = "qwen_image"
     # Which image generation pipeline builds the ComfyUI workflow.
     # See backend.pipelines; default preserves the auto-split behaviour.
     pipeline_type: str = "image.subject_environment"
     # Per-run node-input overrides: { node_id: { input_key: value } }.
+    # Seeds, LoRA, dimensions, CLIP type are all edited through these.
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
     # Which workflows/*.json graph to build from (default: workflow.json).
     workflow_name: Optional[str] = None
@@ -55,19 +51,31 @@ class ProcessBatchRequest(BaseModel):
     image_paths: List[str]
     skip_prepare: bool = False
     persona: str
-    workflow_type: str = "turbo"
+    workflow_type: str = "image_generation"
     vision_model: str = "gpt-4o"
     variation_count: int = Field(default=1, ge=1, le=5)
-    strength: float = Field(default=0.8, ge=0.0, le=2.0)
-    seed_strategy: str = "random"
-    base_seed: int = 0
     width: int = 1024
     height: int = 1600
-    lora_name: str = ""
-    clip_model_type: str = "qwen_image"
     pipeline_type: str = "image.subject_environment"
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
     workflow_name: Optional[str] = None
+
+
+class RunWorkflowDirectRequest(BaseModel):
+    """Direct ComfyUI submission — no prompt-writing agent, no review queue.
+
+    Used by the Image Upscaler and Multiangle-Edit workflow types (and by
+    Image Generation when the user supplies the prompt text themselves).
+    The image is uploaded to ComfyUI and patched into the LoadImage node;
+    ``prompt`` (when given) is patched into the CLIPTextEncode node if the
+    graph has one. Everything else is edited via ``workflow_overrides``.
+    """
+
+    image_paths: List[str] = Field(min_length=1)
+    workflow_name: str
+    workflow_type: str = "image_upscaler"
+    prompt: Optional[str] = None
+    workflow_overrides: Dict[str, Dict[str, Any]] = {}
 
 
 class TaskStatusResponse(BaseModel):
@@ -151,7 +159,7 @@ class CaptionExportRequest(BaseModel):
     image_entries: List[CaptionExportEntry]
     persona: str
     vision_model: str = "gpt-4o"
-    workflow_type: str = "turbo"
+    workflow_type: str = "image_generation"
 
 
 class GDriveFetchRequest(BaseModel):

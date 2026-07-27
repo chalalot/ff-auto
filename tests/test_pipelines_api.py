@@ -163,16 +163,11 @@ async def test_async_process_image_writes_review_request_with_pipeline_type(
     result = await tasks_module.async_process_image(
         dest_image_path="/tmp/img.png",
         persona="p1",
-        workflow_type="turbo",
+        workflow_type="image_generation",
         vision_model="gpt-4o",
         variation_count=1,
-        strength_model=1.0,
-        seed_strategy="random",
-        base_seed=0,
         width=1024,
         height=1024,
-        lora_name="lora",
-        clip_model_type="qwen_image",
         pipeline_type="image.pose_transfer",
         workflow_overrides={"steps": 20},
         workflow_name="pose.json",
@@ -204,15 +199,18 @@ def test_get_pipelines_lists_image_and_video(client):
     assert by_type["video.first_frame"]["available"] is False
 
 
-def test_get_parameters_for_image_pipeline(client):
+def test_get_parameters_for_image_pipeline(client, monkeypatch):
+    # No default workflow.json exists any more — point the pipeline template
+    # at one of the real workflow graphs.
+    monkeypatch.setenv("WORKFLOW_JSON_PATH", "workflows/Z-image-control-net.json")
     resp = client.get("/api/workspace/pipelines/image.unified/parameters")
     assert resp.status_code == 200
     body = resp.json()
     assert body["pipeline_type"] == "image.unified"
     assert len(body["nodes"]) > 0
-    # seed is present but locked
+    # Seeds are workflow-owned now — present and editable in the panel.
     seeds = [i for n in body["nodes"] for i in n["inputs"] if i["key"] == "seed"]
-    assert seeds and all(i["locked"] for i in seeds)
+    assert seeds and all(not i["locked"] for i in seeds)
 
 
 def test_get_parameters_unknown_pipeline_400(client):
@@ -279,11 +277,9 @@ async def test_async_process_image_writes_workflow_overrides_to_settings(
     )
 
     result = await tasks_module.async_process_image(
-        dest_image_path="/x.png", persona="emi", workflow_type="turbo",
-        vision_model="gpt-4o", variation_count=1, strength_model=0.8,
-        seed_strategy="random", base_seed=0, width=1024, height=1600,
-        lora_name="", clip_model_type="qwen_image", task=MagicMock(),
-        pipeline_type="image.unified",
+        dest_image_path="/x.png", persona="emi", workflow_type="image_generation",
+        vision_model="gpt-4o", variation_count=1, width=1024, height=1600,
+        task=MagicMock(), pipeline_type="image.unified",
         workflow_overrides={"125": {"strength_model": 1.3}},
     )
 

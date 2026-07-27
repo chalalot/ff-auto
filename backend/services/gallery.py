@@ -169,12 +169,16 @@ class GalleryService:
                                 metadata["seed"] = inputs["noise_seed"]
                         if "text" in inputs and isinstance(inputs["text"], str):
                             text_nodes.append(inputs["text"])
-                    # The positive prompt is split across CLIPTextEncode nodes
-                    # ("#Subject" / "#Environment"). Join those sections so both
+                    # The positive prompt can be split across conditioning nodes
+                    # ("#Prompt" / "#Environment"). Join those sections so both
                     # are shown; otherwise fall back to the first text node.
                     sectioned = [t for t in text_nodes if t.strip().startswith("#")]
                     if sectioned:
-                        sectioned.sort(key=lambda t: 0 if t.strip().startswith("#Subject") else 1)
+                        sectioned.sort(
+                            key=lambda t: 0 if t.strip().lower().startswith(
+                                ("#prompt", "#subject")
+                            ) else 1
+                        )
                         metadata["prompt"] = "\n\n".join(t.strip() for t in sectioned)
                     elif text_nodes:
                         metadata["prompt"] = text_nodes[0]
@@ -186,7 +190,7 @@ class GalleryService:
             record = self.storage.get_execution_by_result_path(str(path))
             if record:
                 metadata["persona"] = record.get("persona")
-                # The DB holds the full prompt (both "#Subject" and "#Environment"
+                # The DB holds both "#Prompt" and "#Environment"
                 # sections). The embedded PNG workflow splits these across separate
                 # CLIPTextEncode nodes, so prefer the DB copy when available.
                 db_prompt = record.get("prompt")

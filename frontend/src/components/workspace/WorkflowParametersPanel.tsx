@@ -8,34 +8,28 @@ import type { WorkflowParameters, WorkflowParamInput } from '@/types'
 // "owner__repo__name_v7.safetensors" → "name_v7"
 export const loraShortLabel = (name: string) => name.split('__').at(-1)?.replace(/\.safetensors$/i, '') ?? name
 
-
-// Every editable input as { node_id: { key: value } }. Locked inputs excluded.
-export function buildInitialOverrides(
-  params: WorkflowParameters,
-): Record<string, Record<string, unknown>> {
-  const out: Record<string, Record<string, unknown>> = {}
-  for (const node of params.nodes) {
-    const editable = node.inputs.filter(i => !i.locked)
-    if (editable.length === 0) continue
-    out[node.node_id] = {}
-    for (const inp of editable) out[node.node_id][inp.key] = inp.value
-  }
-  return out
-}
-
 interface Props {
   params: WorkflowParameters | null
   loading: boolean
   error: string | null
+  // Sparse: only the inputs the user actually changed. Unchanged inputs fall
+  // back to the workflow's authored value — and are never sent as overrides,
+  // so they can't clobber values the backend patches at dispatch (e.g. the
+  // uploaded source image in LoadImage).
   values: Record<string, Record<string, unknown>>
   onChange: (nodeId: string, key: string, value: unknown) => void
   onReset: () => void
   // Registry of known LoRA files; lora_name inputs render as a dropdown.
   loraOptions?: string[]
+  // Library image filenames; LoadImage `image` inputs render as a dropdown.
+  imageOptions?: string[]
+  // Resolves a library filename to its thumbnail URL (dropdown previews).
+  imageThumbnailUrl?: (filename: string) => string
 }
 
 export const WorkflowParametersPanel: React.FC<Props> = ({
-  params, loading, error, values, onChange, onReset, loraOptions = [],
+  params, loading, error, values, onChange, onReset,
+  loraOptions = [], imageOptions = [], imageThumbnailUrl,
 }) => {
   if (loading) return <p className="text-xs text-muted-foreground">Loading parameters…</p>
   if (error) return <p className="text-xs text-destructive">{error}</p>
@@ -61,9 +55,12 @@ export const WorkflowParametersPanel: React.FC<Props> = ({
               <ParamField
                 key={inp.key}
                 input={inp}
-                value={values[node.node_id]?.[inp.key]}
+                classType={node.class_type}
+                value={values[node.node_id]?.[inp.key] ?? inp.value}
                 onChange={v => onChange(node.node_id, inp.key, v)}
                 loraOptions={loraOptions}
+                imageOptions={imageOptions}
+                imageThumbnailUrl={imageThumbnailUrl}
               />
             ))}
           </div>
@@ -75,10 +72,61 @@ export const WorkflowParametersPanel: React.FC<Props> = ({
 
 const ParamField: React.FC<{
   input: WorkflowParamInput
+  classType: string
   value: unknown
   onChange: (v: unknown) => void
   loraOptions?: string[]
-}> = ({ input, value, onChange, loraOptions = [] }) => {
+  imageOptions?: string[]
+  imageThumbnailUrl?: (filename: string) => string
+}> = ({ input, classType, value, onChange, loraOptions = [], imageOptions = [], imageThumbnailUrl }) => {
+  if (!input.locked && input.key === 'image' && classType === 'LoadImage') {
+    const current = value == null ? '' : String(value)
+    // Keep the workflow's baked-in filename selectable alongside the library.
+    const options = current && !imageOptions.includes(current)
+      ? [current, ...imageOptions]
+      : imageOptions
+    // Baked-in ComfyUI names have no library thumbnail — hide broken images.
+    const thumb = (filename: string, size: string) =>
+      imageThumbnailUrl ? (
+        <img
+          src={imageThumbnailUrl(filename)}
+          alt=""
+          className={`${size} rounded object-cover bg-muted shrink-0`}
+          loading="lazy"
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+        />
+      ) : null
+    return (
+      <div className="space-y-0.5">
+        <Label className="text-[11px]">{input.key}</Label>
+        <Select value={current} onValueChange={onChange}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Select image">
+              {current ? (
+                <span className="flex items-center gap-1.5 min-w-0">
+                  {thumb(current, 'h-5 w-5')}
+                  <span className="truncate">{current}</span>
+                </span>
+              ) : undefined}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {options.map(f => (
+              <SelectItem key={f} value={f}>
+                <span className="flex items-center gap-2 min-w-0">
+                  {thumb(f, 'h-9 w-9')}
+                  <span className="break-all">{f}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground">
+          Library images are uploaded to ComfyUI at dispatch.
+        </p>
+      </div>
+    )
+  }
   if (!input.locked && input.key === 'lora_name') {
     const current = value == null ? '' : String(value)
     // Keep the workflow's baked-in file selectable even if unregistered.

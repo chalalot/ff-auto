@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import type { PersonaSummary, PersonaConfig, PresetConfig, LastUsedConfig } from '@/types'
+import type { PersonaSummary, PresetConfig, LastUsedConfig } from '@/types'
 
 export interface SelectOption {
   label: string
@@ -9,15 +9,6 @@ export interface SelectOption {
 export const configApi = {
   getPersonas: () =>
     apiClient.get<PersonaSummary[]>('/config/personas').then(r => r.data),
-
-  getPersona: (name: string) =>
-    apiClient.get<PersonaConfig>(`/config/personas/${name}`).then(r => r.data),
-
-  updatePersona: (name: string, data: Partial<PersonaConfig>) =>
-    apiClient.put(`/config/personas/${name}`, data).then(r => r.data),
-
-  getPersonaTypes: () =>
-    apiClient.get<string[]>('/config/persona-types').then(r => r.data),
 
   getPresets: () =>
     apiClient.get<PresetConfig[]>('/config/presets').then(r => r.data),

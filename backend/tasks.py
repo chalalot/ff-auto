@@ -9,7 +9,6 @@ from backend.third_parties.comfyui_client import ComfyUIClient
 from backend.database.image_logs_storage import ImageLogsStorage
 from backend.database.pipeline_runs_storage import PipelineRunsStorage
 from backend.services.pipeline_trace import PipelineTraceRecorder
-from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -144,13 +143,8 @@ def process_image_task(
     workflow_type,
     vision_model,
     variation_count,
-    strength_model,
-    seed_strategy,
-    base_seed,
     width,
     height,
-    lora_name,
-    clip_model_type="qwen_image",
     pipeline_type="image.subject_environment",
     workflow_overrides=None,
     workflow_name=None,
@@ -171,13 +165,8 @@ def process_image_task(
                 workflow_type=workflow_type,
                 vision_model=vision_model,
                 variation_count=variation_count,
-                strength_model=strength_model,
-                seed_strategy=seed_strategy,
-                base_seed=base_seed,
                 width=width,
                 height=height,
-                lora_name=lora_name,
-                clip_model_type=clip_model_type,
                 pipeline_type=pipeline_type,
                 workflow_overrides=workflow_overrides or {},
                 workflow_name=workflow_name,
@@ -193,7 +182,7 @@ def process_image_task(
 
 async def async_process_image(
     dest_image_path, persona, workflow_type, vision_model, variation_count,
-    strength_model, seed_strategy, base_seed, width, height, lora_name, clip_model_type,
+    width, height,
     task, pipeline_type="image.subject_environment", workflow_overrides=None,
     workflow_name=None, project_id=None, created_by_member_id=None, brief=None,
     run_id=None,
@@ -227,6 +216,8 @@ async def async_process_image(
             workflow_type=workflow_type,
             vision_model=vision_model,
             variation_count=variation_count,
+            width=width,
+            height=height,
         )
     except Exception as e:
         if trace_storage is not None:
@@ -287,16 +278,10 @@ async def async_process_image(
         "persona": persona,
         "vision_model": vision_model,
         "workflow_type": workflow_type,
-        "strength_model": strength_model,
-        "seed_strategy": seed_strategy,
-        "base_seed": base_seed,
         "width": width,
         "height": height,
-        "lora_name": lora_name,
-        "clip_model_type": clip_model_type,
         "pipeline_type": pipeline_type,
         "workflow_overrides": workflow_overrides or {},
-        "negative_prompt": DEFAULT_NEGATIVE_PROMPT,
         "brief": brief,
     }
     created = GenerationRequestsStorage().create_requests(
@@ -388,6 +373,90 @@ def caption_export_task(
     }
 
 
+@celery_app.task(bind=True, name="backend.tasks.run_workflow_direct_task")
+def run_workflow_direct_task(
+    self,
+    image_path,
+    workflow_name,
+    workflow_type="image_upscaler",
+    prompt=None,
+    workflow_overrides=None,
+    project_id=None,
+    created_by_member_id=None,
+):
+    """Submit a workflow graph straight to ComfyUI — no prompt-writing agent.
+
+    Uploads the source image and patches it into the LoadImage node; ``prompt``
+    (when given) is patched into the CLIPTextEncode node if the graph has one.
+    All other node inputs come from the workflow JSON plus ``workflow_overrides``.
+    """
+    from backend.pipelines import (
+        apply_workflow_overrides,
+        load_workflow_template,
+        patch_load_image,
+        resolve_image_overrides,
+    )
+    from backend.pipelines.image import _inject_single_prompt
+
+    _, client, storage = get_instances()
+
+    self.update_state(
+        state="STARTING",
+        meta={"status": f"⏳ Preparing {workflow_name}...", "progress": 10},
+    )
+    workflow_data = load_workflow_template(workflow_name)
+
+    self.update_state(
+        state="UPLOADING",
+        meta={"status": "⬆️ Uploading image to ComfyUI...", "progress": 30},
+    )
+    uploaded_filename = asyncio.run(client.upload_image(image_path))
+    if not patch_load_image(workflow_data, uploaded_filename):
+        logger.warning(
+            f"[run_workflow_direct_task] {workflow_name} has no LoadImage node — "
+            "the selected image is ignored"
+        )
+
+    if prompt and prompt.strip():
+        _inject_single_prompt(workflow_data, prompt.strip())
+
+    if workflow_overrides:
+        # LoadImage overrides picked from the image library are local files —
+        # upload them so the override carries a ComfyUI filename.
+        asyncio.run(
+            resolve_image_overrides(workflow_data, workflow_overrides, client.upload_image)
+        )
+    apply_workflow_overrides(workflow_data, workflow_overrides or {})
+
+    self.update_state(
+        state="QUEUEING",
+        meta={"status": "🎨 Queueing workflow on ComfyUI...", "progress": 60},
+    )
+    execution_id = asyncio.run(client.queue_prompt(workflow_data))
+    if not execution_id:
+        raise RuntimeError("ComfyUI returned no execution id")
+
+    storage.log_execution(
+        execution_id=execution_id,
+        prompt=prompt or f"[{workflow_type}] {workflow_name}",
+        image_ref_path=image_path,
+        persona=None,
+        project_id=project_id,
+        created_by_member_id=created_by_member_id,
+    )
+    download_execution_task.apply_async(
+        args=[execution_id, image_path],
+        countdown=DOWNLOAD_POLL_INTERVAL,
+        queue="image",
+    )
+
+    self.update_state(
+        state="SUCCESS",
+        meta={"status": f"✅ Queued on ComfyUI ({execution_id})", "progress": 100},
+    )
+    return {"success": True, "execution_id": execution_id, "image_path": image_path}
+
+
 @celery_app.task(bind=True, name="backend.tasks.regenerate_request_task")
 def regenerate_request_task(self, request_id: str):
     """Re-run the image→prompt workflow for a pending_review row and replace its
@@ -410,9 +479,11 @@ def regenerate_request_task(self, request_id: str):
             image_path=row.get("source_image_path"),
             brief=settings.get("brief"),
             persona_name=settings.get("persona") or "Jennie",
-            workflow_type=settings.get("workflow_type") or "turbo",
+            workflow_type=settings.get("workflow_type") or "image_generation",
             vision_model=settings.get("vision_model") or "gpt-4o",
             variation_count=1,
+            width=settings.get("width") or 1024,
+            height=settings.get("height") or 1536,
         ))
     except Exception as e:
         logger.error(f"[regenerate] {request_id} workflow failed: {e}")
@@ -580,21 +651,52 @@ def dispatch_generation_request_task(self, request_id: str):
     try:
         if provider == "comfy_image":
             _, client, image_storage = get_instances()
+
+            # The graph is read fresh here, so a row queued before a workflow
+            # edit can carry overrides the graph no longer has. Those are
+            # dropped silently by apply_workflow_overrides — say so in the log.
+            workflow_template = None
+            try:
+                from backend.pipelines import (
+                    find_unresolved_overrides,
+                    load_workflow_template,
+                )
+
+                workflow_template = load_workflow_template(row["workflow_name"])
+                stale = find_unresolved_overrides(
+                    workflow_template, settings.get("workflow_overrides") or {}
+                )
+                if stale:
+                    logger.warning(
+                        f"[dispatch] {request_id}: {len(stale)} saved override(s) no longer exist "
+                        f"in {row['workflow_name'] or 'workflow.json'}; generating with the "
+                        f"graph's defaults instead: {', '.join(stale)}"
+                    )
+            except Exception as e:
+                logger.warning(f"[dispatch] override check skipped for {request_id}: {e}")
+
+            # If the workflow graph has a LoadImage node, upload the source
+            # image to ComfyUI so it can drive it (e.g. control-net workflows).
+            input_image = None
+            source_image_path = row.get("source_image_path")
+            if workflow_template is not None and source_image_path and Path(source_image_path).exists():
+                try:
+                    from backend.pipelines import workflow_has_load_image
+
+                    if workflow_has_load_image(workflow_template):
+                        input_image = asyncio.run(client.upload_image(source_image_path))
+                        logger.info(f"[dispatch] uploaded source image as {input_image}")
+                except Exception as e:
+                    logger.warning(f"[dispatch] source image upload skipped for {request_id}: {e}")
+
             execution_id = asyncio.run(client.generate_image(
                 positive_prompt=row["prompt"],
-                negative_prompt=settings.get("negative_prompt", DEFAULT_NEGATIVE_PROMPT),
                 kol_persona=settings.get("persona"),
                 workflow_type=settings.get("workflow_type"),
-                strength_model=settings.get("strength_model"),
-                seed_strategy=settings.get("seed_strategy"),
-                base_seed=settings.get("base_seed"),
-                width=settings.get("width"),
-                height=settings.get("height"),
-                lora_name=settings.get("lora_name"),
-                clip_model_type=settings.get("clip_model_type", "qwen_image"),
                 pipeline_type=settings.get("pipeline_type", "image.subject_environment"),
                 workflow_overrides=settings.get("workflow_overrides") or {},
                 workflow_name=row["workflow_name"],
+                input_image=input_image,
             ))
             if not execution_id:
                 raise RuntimeError("ComfyUI returned no execution id")

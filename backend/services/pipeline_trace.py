@@ -217,6 +217,17 @@ def record_tool_call(
         step.append_tool_call(tool_name, input_payload, output_payload, error)
 
 
+def record_llm_call(call_payload: dict) -> None:
+    """Record a provider call made outside litellm (see backend.services.vision_llm)."""
+    step = current_trace_step.get()
+    if step is None:
+        return
+    try:
+        step.append_llm_call(call_payload)
+    except Exception as storage_error:
+        logger.warning("[pipeline_trace] llm call capture failed: %s", storage_error)
+
+
 class PipelineTraceRecorder:
     def __init__(self, storage: PipelineRunsStorage, run_id: str):
         self.storage = storage

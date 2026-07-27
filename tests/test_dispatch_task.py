@@ -32,7 +32,7 @@ def _create(storage, provider, settings=None, claim=True):
 def test_dispatch_comfy_image(storage):
     from backend import tasks as tasks_module
     rid = _create(storage, "comfy_image", settings={
-        "persona": "p1", "workflow_type": "turbo", "pipeline_type": "image.subject_environment",
+        "persona": "p1", "workflow_type": "image_generation", "pipeline_type": "image.subject_environment",
         "width": 1024, "height": 1024,
     })
 

@@ -46,6 +46,35 @@ def _allowed_image_roots() -> list[Path]:
     ]
 
 
+def _annotate_stale_overrides(rows: list) -> list:
+    """Tag each row with the saved overrides its workflow no longer accepts.
+
+    The graph is read fresh from disk at dispatch, so editing a workflow can
+    orphan a pending row's node-id-keyed overrides; they are then dropped
+    without an error. Templates are loaded once per workflow name per
+    response. A workflow that fails to load is left unannotated — dispatch
+    surfaces that loudly on its own, and this flag is about the silent case.
+    """
+    from backend.pipelines import find_unresolved_overrides, load_workflow_template
+
+    templates = {}
+    for row in rows:
+        overrides = (row.get("settings") or {}).get("workflow_overrides")
+        if not overrides:
+            continue
+        name = row.get("workflow_name")
+        if name not in templates:
+            try:
+                templates[name] = load_workflow_template(name)
+            except Exception as e:
+                logger.warning(f"[review] cannot check overrides against {name!r}: {e}")
+                templates[name] = None
+        template = templates[name]
+        if template is not None:
+            row["stale_overrides"] = find_unresolved_overrides(template, overrides)
+    return rows
+
+
 def _source_path_in_roots(raw: str) -> Optional[Path]:
     """Resolved path if it stays within the app's image directories, else None."""
     path = Path(raw).resolve()
@@ -67,10 +96,12 @@ def list_requests(
     per_page: int = Query(default=50, ge=1, le=200),
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
-    return storage.list_requests(
+    result = storage.list_requests(
         status=status, batch_id=batch_id, project_id=project_id,
         page=page, per_page=per_page
     )
+    _annotate_stale_overrides(result["items"])
+    return result
 
 
 @router.post("/requests", response_model=ReviewCreateResponse)
@@ -107,7 +138,7 @@ def patch_request(
         raise HTTPException(status_code=409, detail=str(e))
     if row is None:
         raise HTTPException(status_code=404, detail="Request not found")
-    return row
+    return _annotate_stale_overrides([row])[0]
 
 
 @router.delete("/requests/{request_id}", response_model=ReviewRequestItem)
@@ -165,7 +196,7 @@ def redispatch_request(
     is skipped.  The original row is untouched (audit trail preserved).
     """
     try:
-        return storage.clone_request(request_id)
+        return _annotate_stale_overrides([storage.clone_request(request_id)])[0]
     except KeyError:
         raise HTTPException(status_code=404, detail="Request not found")
     except InvalidStateError as e:
@@ -178,7 +209,7 @@ def redispatch_bulk(
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
     """Clone multiple completed/failed requests back to pending_review."""
-    created = storage.clone_requests_bulk(body.ids)
+    created = _annotate_stale_overrides(storage.clone_requests_bulk(body.ids))
     skipped = [i for i in body.ids if i not in {r["id"] for r in created}]
     return {"created": created, "skipped": skipped}
 

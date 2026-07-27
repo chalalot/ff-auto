@@ -37,7 +37,6 @@ except ImportError as exc:  # pragma: no cover - dependency guard
 
 from backend.config import GlobalConfig
 from backend.utils.image_filters import apply_stable_film_look
-from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 from .comfyui_queue_manager import execute_with_queue
 
 # Set up logging
@@ -435,7 +434,6 @@ class ComfyUIClient:
     async def generate_image(
         self,
         positive_prompt: str,
-        negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
         workflow_type: str = "turbo",
         lora_name: Optional[str] = None,
         kol_persona: Optional[str] = None,
@@ -448,6 +446,7 @@ class ComfyUIClient:
         pipeline_type: str = "image.subject_environment",
         workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         workflow_name: Optional[str] = None,
+        input_image: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -456,12 +455,17 @@ class ComfyUIClient:
         Workflow construction is delegated to the selected generation pipeline
         (see ``backend.pipelines``); this client only submits the result. The
         default ``image.subject_environment`` pipeline auto-detects
-        ``#Subject`` / ``#Environment`` prompts and falls back to a single CLIP
-        node, preserving the original generate_image behaviour.
+        ``#Prompt`` / ``#Environment`` narratives and falls back to the full
+        narrative in a single text-conditioning node.
         """
         # Imported lazily: the pipelines package imports node-patching helpers
         # from this module at load time, so a top-level import would cycle.
-        from backend.pipelines import GenerationInputs, get_pipeline
+        from backend.pipelines import (
+            GenerationInputs,
+            get_pipeline,
+            load_workflow_template,
+            resolve_image_overrides,
+        )
 
         logger.info("=" * 80)
         logger.info("🎨 COMFYUI IMAGE GENERATION REQUEST (CLOUD API)")
@@ -471,9 +475,20 @@ class ComfyUIClient:
         )
         logger.info("=" * 80)
 
+        workflow_overrides = workflow_overrides or {}
+        if workflow_overrides:
+            # LoadImage overrides picked from the image library are local
+            # files — upload them so the override carries a ComfyUI filename.
+            try:
+                template = load_workflow_template(workflow_name)
+                await resolve_image_overrides(
+                    template, workflow_overrides, self.upload_image
+                )
+            except Exception as e:
+                logger.warning(f"Skipping library-image override resolution: {e}")
+
         inputs = GenerationInputs(
             prompt=positive_prompt,
-            negative_prompt=negative_prompt,
             lora_name=lora_name,
             kol_persona=kol_persona,
             strength_model=strength_model,
@@ -482,7 +497,8 @@ class ComfyUIClient:
             width=width,
             height=height,
             clip_model_type=clip_model_type,
-            workflow_overrides=workflow_overrides or {},
+            images=[input_image] if input_image else [],
+            workflow_overrides=workflow_overrides,
             workflow_name=workflow_name,
         )
 
@@ -825,7 +841,6 @@ class ComfyUIClient:
     async def generate_and_wait(
         self,
         positive_prompt: str,
-        negative_prompt: str = DEFAULT_NEGATIVE_PROMPT,
         product_name: Optional[str] = None,
         kol_persona: Optional[str] = None,
         image_type: str = "marketing",
@@ -843,7 +858,6 @@ class ComfyUIClient:
         async def _execute_generation():
             execution_id = await self.generate_image(
                 positive_prompt,
-                negative_prompt,
                 lora_name=lora_name,
                 kol_persona=kol_persona,
                 **kwargs
@@ -1059,7 +1073,6 @@ class ComfyUIClient:
     async def generate_and_upload(
         self,
         positive_prompt: str,
-        negative_prompt: str,
         product_name: str,
         kol_persona: str,
         image_type: str = "marketing",
@@ -1070,7 +1083,6 @@ class ComfyUIClient:
 
         Args:
             positive_prompt: Description of desired image
-            negative_prompt: Description of what to avoid
             product_name: Product being marketed
             kol_persona: KOL/persona type
             image_type: Type of image
@@ -1081,7 +1093,6 @@ class ComfyUIClient:
         """
         return await self.generate_and_wait(
             positive_prompt=positive_prompt,
-            negative_prompt=negative_prompt,
             product_name=product_name,
             kol_persona=kol_persona,
             image_type=image_type,

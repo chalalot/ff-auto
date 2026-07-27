@@ -65,15 +65,16 @@ def test_get_workflows_lists_json_files(client):
     resp = client.get("/api/workspace/workflows")
     assert resp.status_code == 200
     names = resp.json()
-    assert "workflow.json" in names
-    assert "kling.json" in names
+    assert "Z-image-control-net.json" in names
+    assert "SeedVR_Image_Upscaler.json" in names
+    assert "Qwen-2511-Multi-Angle (1).json" in names
 
 
 def test_get_workflow_parameters_ok(client):
-    resp = client.get("/api/workspace/workflows/workflow.json/parameters")
+    resp = client.get("/api/workspace/workflows/Z-image-control-net.json/parameters")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["workflow"] == "workflow.json"
+    assert body["workflow"] == "Z-image-control-net.json"
     assert len(body["nodes"]) > 0
 
 
@@ -138,11 +139,9 @@ async def test_async_process_image_forwards_workflow_name(monkeypatch, clean_tab
     )
 
     result = await tasks.async_process_image(
-        dest_image_path="/x.png", persona="emi", workflow_type="turbo",
-        vision_model="gpt-4o", variation_count=1, strength_model=0.8,
-        seed_strategy="random", base_seed=0, width=1024, height=1600,
-        lora_name="", clip_model_type="qwen_image", task=_FakeTask(),
-        workflow_name="alt.json",
+        dest_image_path="/x.png", persona="emi", workflow_type="image_generation",
+        vision_model="gpt-4o", variation_count=1, width=1024, height=1600,
+        task=_FakeTask(), workflow_name="alt.json",
     )
     row = GenerationRequestsStorage().get_request(result["request_ids"][0])
     assert row["workflow_name"] == "alt.json"

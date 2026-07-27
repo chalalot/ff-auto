@@ -58,8 +58,8 @@ def test_describe_infers_types():
 
 def test_describe_marks_locked_inputs():
     nodes = describe_workflow_parameters(SAMPLE_WF)
-    assert _inputs(nodes, "3")["seed"]["locked"] is True
-    assert "Seed strategy" in _inputs(nodes, "3")["seed"]["locked_reason"]
+    # Seeds are workflow-owned now — editable directly in the panel.
+    assert _inputs(nodes, "3")["seed"]["locked"] is False
     assert _inputs(nodes, "4")["text"]["locked"] is True
     assert _inputs(nodes, "5")["device"]["locked"] is True
     # editable ones are not locked (lora_name is panel-controlled per node)
@@ -93,9 +93,9 @@ def test_apply_overrides_skips_locked_keys():
     apply_workflow_overrides(wf, {"3": {"seed": 999, "steps": 12},
                                   "4": {"text": "HACK"},
                                   "1": {"lora_name": "other.safetensors"}})
-    assert wf["3"]["inputs"]["seed"] == 42             # locked, untouched
+    assert wf["3"]["inputs"]["seed"] == 999            # workflow-owned, applied
     assert wf["3"]["inputs"]["steps"] == 12            # editable, applied
-    assert wf["4"]["inputs"]["text"] == "hello"        # locked, untouched
+    assert wf["4"]["inputs"]["text"] == "hello"        # locked (prompt-owned), untouched
     assert wf["1"]["inputs"]["lora_name"] == "other.safetensors"  # panel-controlled
 
 
@@ -110,6 +110,40 @@ def test_apply_overrides_empty_is_noop():
     wf = copy.deepcopy(SAMPLE_WF)
     apply_workflow_overrides(wf, {})
     assert wf == SAMPLE_WF
+
+
+from backend.pipelines import find_unresolved_overrides
+
+
+def test_find_unresolved_returns_empty_when_everything_applies():
+    assert find_unresolved_overrides(SAMPLE_WF, {"2": {"width": 640}, "3": {"steps": 12}}) == []
+    assert find_unresolved_overrides(SAMPLE_WF, {}) == []
+
+
+def test_find_unresolved_reports_deleted_node_and_renamed_key():
+    stale = find_unresolved_overrides(SAMPLE_WF, {"99": {"width": 1}, "2": {"nope": 5}})
+    assert sorted(stale) == ["2.nope", "99.width"]
+
+
+def test_find_unresolved_reports_input_that_became_a_connection():
+    # "model" on node 1 is wiring (a list), so an override targeting it is dead.
+    assert find_unresolved_overrides(SAMPLE_WF, {"1": {"model": 0}}) == ["1.model"]
+
+
+def test_find_unresolved_ignores_locked_keys():
+    # Locked keys are a by-design skip, not staleness — no false alarm.
+    assert find_unresolved_overrides(SAMPLE_WF, {"4": {"text": "HACK"}}) == []
+
+
+def test_find_unresolved_matches_what_apply_silently_drops():
+    overrides = {"99": {"width": 1}, "2": {"nope": 5, "width": 640}, "1": {"model": 0}}
+    wf = copy.deepcopy(SAMPLE_WF)
+    apply_workflow_overrides(wf, overrides)
+
+    assert wf["2"]["inputs"]["width"] == 640                 # the one that landed
+    assert sorted(find_unresolved_overrides(SAMPLE_WF, overrides)) == [
+        "1.model", "2.nope", "99.width",
+    ]
 
 
 import pytest
@@ -137,12 +171,12 @@ def patched_template(monkeypatch):
     monkeypatch.setattr(image_mod, "_load_workflow_json", lambda *a, **k: copy.deepcopy(IMAGE_WF))
 
 
-def test_build_workflow_override_beats_dimension_patch(patched_template):
+def test_build_workflow_override_sets_dimensions(patched_template):
     pipe = get_pipeline("image.unified")
     inputs = GenerationInputs(prompt="hi",
                               workflow_overrides={"latent": {"width": 700, "height": 900}})
     wf = pipe.build_workflow(inputs)
-    assert wf["latent"]["inputs"]["width"] == 700   # override beats the auto-half (256)
+    assert wf["latent"]["inputs"]["width"] == 700
     assert wf["latent"]["inputs"]["height"] == 900
 
 
@@ -154,7 +188,7 @@ def test_build_workflow_override_sets_strength(patched_template):
 
 
 def test_build_workflow_override_lora_beats_selector(patched_template):
-    """Per-node panel override wins over the legacy top-level lora_name."""
+    """Per-node panel override wins; the legacy top-level lora_name is ignored."""
     pipe = get_pipeline("image.unified")
     wf = pipe.build_workflow(GenerationInputs(
         prompt="hi", lora_name="selector.safetensors",
@@ -162,18 +196,20 @@ def test_build_workflow_override_lora_beats_selector(patched_template):
     assert wf["lora"]["inputs"]["lora_name"] == "panel.safetensors"
 
 
-def test_build_workflow_does_not_override_locked_seed(patched_template):
+def test_build_workflow_override_sets_seed(patched_template):
+    """Seeds are workflow-owned — the panel override is applied verbatim."""
     pipe = get_pipeline("image.unified")
     wf = pipe.build_workflow(GenerationInputs(
-        prompt="hi", seed_strategy="fixed", base_seed=100,
-        workflow_overrides={"ks": {"seed": 5}}))
-    assert wf["ks"]["inputs"]["seed"] == 100  # app strategy owns seed; override ignored
+        prompt="hi", workflow_overrides={"ks": {"seed": 5}}))
+    assert wf["ks"]["inputs"]["seed"] == 5
 
 
-def test_build_workflow_empty_overrides_matches_legacy(patched_template):
+def test_build_workflow_empty_overrides_keeps_authored_values(patched_template):
     pipe = get_pipeline("image.unified")
-    wf = pipe.build_workflow(GenerationInputs(prompt="hi", seed_strategy="fixed", base_seed=7))
-    # No overrides: dims come from the legacy patch (output=1024x1600, latent halved).
+    wf = pipe.build_workflow(GenerationInputs(prompt="hi"))
+    # No overrides: everything stays exactly as authored in the workflow JSON.
     assert wf["scale"]["inputs"]["width"] == 1024
     assert wf["latent"]["inputs"]["width"] == 512
-    assert wf["ks"]["inputs"]["seed"] == 7
+    assert wf["ks"]["inputs"]["seed"] == 1
+    assert wf["lora"]["inputs"]["lora_name"] == "base.safetensors"
+    assert wf["clip"]["inputs"]["type"] == "qwen_image"

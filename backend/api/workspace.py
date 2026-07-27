@@ -1,8 +1,13 @@
 import asyncio
 import io
+import ipaddress
+import socket
 import zipfile
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
@@ -15,6 +20,7 @@ from backend.models.workspace import (
     RefImage,
     ProcessImageRequest,
     ProcessBatchRequest,
+    RunWorkflowDirectRequest,
     TaskStatusResponse,
     DispatchResponse,
     BatchDispatchResponse,
@@ -37,6 +43,31 @@ from backend.api.identity import Identity, get_identity
 from backend.database.uploads_storage import UploadsStorage
 
 router = APIRouter()
+
+
+def _assert_paths_in_roots(raw_paths: List[str]) -> None:
+    """Reject dispatch paths that leave the app's image directories.
+
+    Every path handed to a dispatch endpoint is eventually read off disk and
+    uploaded to ComfyUI (or sent to a vision model), so an unconstrained path
+    here is an arbitrary local-file read. Same roots as the review queue.
+    """
+    from backend.api.review import _source_path_in_roots
+
+    outside, missing = [], []
+    for raw in raw_paths:
+        path = _source_path_in_roots(raw)
+        if path is None:
+            outside.append(raw)
+        elif not path.is_file():
+            missing.append(raw)
+    if outside:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image(s) outside the allowed directories: {', '.join(outside)}",
+        )
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Image(s) not found: {', '.join(missing)}")
 
 
 def _validate_image_pipeline_type(pipeline_type: str) -> None:
@@ -162,6 +193,9 @@ def process_image(
     identity: Identity = Depends(get_identity),
 ):
     _validate_image_pipeline_type(body.pipeline_type)
+    # A brief-only run has no source image; anything else must be in the library.
+    if body.image_path:
+        _assert_paths_in_roots([body.image_path])
     try:
         dispatch = svc.dispatch_processing(
             image_path=body.image_path,
@@ -169,13 +203,8 @@ def process_image(
             workflow_type=body.workflow_type,
             vision_model=body.vision_model,
             variation_count=body.variation_count,
-            strength=body.strength,
-            seed_strategy=body.seed_strategy,
-            base_seed=body.base_seed,
             width=body.width,
             height=body.height,
-            lora_name=body.lora_name,
-            clip_model_type=body.clip_model_type,
             pipeline_type=body.pipeline_type,
             workflow_overrides=body.workflow_overrides,
             workflow_name=body.workflow_name,
@@ -192,8 +221,13 @@ def process_image(
 
 
 @router.post("/process-batch", response_model=BatchDispatchResponse)
-def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depends(get_image_processing_service)):
+def process_batch(
+    body: ProcessBatchRequest,
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+    identity: Identity = Depends(get_identity),
+):
     _validate_image_pipeline_type(body.pipeline_type)
+    _assert_paths_in_roots(body.image_paths)
     try:
         dispatches = svc.dispatch_batch(
             image_paths=body.image_paths,
@@ -201,22 +235,51 @@ def process_batch(body: ProcessBatchRequest, svc: ImageProcessingService = Depen
             workflow_type=body.workflow_type,
             vision_model=body.vision_model,
             variation_count=body.variation_count,
-            strength=body.strength,
-            seed_strategy=body.seed_strategy,
-            base_seed=body.base_seed,
             width=body.width,
             height=body.height,
-            lora_name=body.lora_name,
-            clip_model_type=body.clip_model_type,
             pipeline_type=body.pipeline_type,
             workflow_overrides=body.workflow_overrides,
             workflow_name=body.workflow_name,
+            project_id=identity.project_id,
+            member_id=identity.member_id,
             prepare=not body.skip_prepare,
         )
         return {
             "task_ids": [item["task_id"] for item in dispatches],
             "run_ids": [item.get("run_id") for item in dispatches],
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/run-direct", response_model=BatchDispatchResponse)
+def run_workflow_direct(
+    body: RunWorkflowDirectRequest,
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+    identity: Identity = Depends(get_identity),
+):
+    """Submit selected image(s) straight to a ComfyUI workflow.
+
+    Image → LoadImage node; optional prompt → CLIPTextEncode node; everything
+    else is edited via workflow_overrides. Used by the Image Upscaler and
+    Multiangle-Edit workflow types, and by Image Generation with a manual prompt.
+    """
+    from backend.pipelines import list_workflow_files
+
+    if body.workflow_name not in list_workflow_files():
+        raise HTTPException(status_code=404, detail=f"Unknown workflow '{body.workflow_name}'")
+    _assert_paths_in_roots(body.image_paths)
+    try:
+        dispatches = svc.dispatch_direct(
+            image_paths=body.image_paths,
+            workflow_name=body.workflow_name,
+            workflow_type=body.workflow_type,
+            prompt=body.prompt,
+            workflow_overrides=body.workflow_overrides,
+            project_id=identity.project_id,
+            member_id=identity.member_id,
+        )
+        return {"task_ids": [item["task_id"] for item in dispatches], "run_ids": []}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -261,6 +324,139 @@ async def upload_ref_images(
             raise HTTPException(status_code=400, detail=str(e))
     use_counts = storage.get_ref_path_use_counts()
     return svc.scan_ref_images(use_counts)
+
+
+class FetchImageRequest(BaseModel):
+    url: str
+
+
+_FETCH_IMAGE_MAX_BYTES = 30 * 1024 * 1024
+_FETCH_IMAGE_MIME_TO_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+}
+_FETCH_IMAGE_EXT_TO_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+def _resolve_host_ips(host: str) -> List[str]:
+    """Resolve a hostname to its addresses (separate function so tests can patch it)."""
+    return [info[4][0] for info in socket.getaddrinfo(host, None)]
+
+
+async def _resolve_public_http_url(url: str) -> str:
+    """SSRF guard: only http(s) URLs whose host resolves to public addresses.
+
+    The backend can reach internal services (redis, postgres, ComfyUI) that
+    the browser cannot, so it must not be usable as a proxy into them.
+
+    Returns the single address the request must then be pinned to. Handing
+    the hostname back to httpx instead would let it resolve a second time,
+    and a host with a short TTL or several A records can answer the guard
+    with a public IP and the client with 127.0.0.1 (DNS rebinding).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only http(s) URLs are supported")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="URL has no host")
+    try:
+        ips = await asyncio.to_thread(_resolve_host_ips, parsed.hostname)
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {parsed.hostname}")
+    if not ips:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {parsed.hostname}")
+    # Strip any IPv6 zone id (fe80::1%eth0) before parsing.
+    parsed_ips = [ipaddress.ip_address(raw.split("%")[0]) for raw in ips]
+    for ip in parsed_ips:
+        if not ip.is_global:
+            raise HTTPException(status_code=400, detail="URL resolves to a non-public address")
+    # Pinning gives up httpx's multi-address fallback, so prefer IPv4 — most
+    # deployments here have no working IPv6 route.
+    v4 = [ip for ip in parsed_ips if ip.version == 4]
+    return str(v4[0] if v4 else parsed_ips[0])
+
+
+def _pin_to_ip(url: str, ip: str) -> tuple[httpx.URL, dict, dict]:
+    """Rewrite the URL to connect to `ip`, keeping the original host for
+    routing (Host header) and TLS (SNI + certificate verification)."""
+    parsed = httpx.URL(url)
+    host = parsed.host
+    authority = f"[{host}]" if ":" in host else host
+    if parsed.port is not None:
+        authority = f"{authority}:{parsed.port}"
+    headers = {
+        "Host": authority,
+        # Some image hosts reject non-browser user agents.
+        "User-Agent": "Mozilla/5.0 (compatible; ff-auto/1.0)",
+    }
+    return parsed.copy_with(host=ip), headers, {"sni_hostname": host}
+
+
+async def _read_capped(resp: httpx.Response) -> bytes:
+    """Buffer the body, aborting as soon as it exceeds the size limit."""
+    declared = resp.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > _FETCH_IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Image exceeds the 30MB limit")
+    chunks, total = [], 0
+    async for chunk in resp.aiter_bytes():
+        total += len(chunk)
+        if total > _FETCH_IMAGE_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Image exceeds the 30MB limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/fetch-image")
+async def fetch_image(body: FetchImageRequest, identity: Identity = Depends(get_identity)):
+    """Download an image from a URL and relay the bytes.
+
+    Dragging an image from another web page hands the browser a URL rather
+    than a File, and fetching it client-side is blocked by CORS on most image
+    hosts — so the frontend delegates the download to us.
+    """
+    url = body.url
+    try:
+        # Redirects are followed manually so every hop passes the SSRF guard.
+        async with httpx.AsyncClient(follow_redirects=False, timeout=30.0) as http:
+            for _ in range(5):
+                ip = await _resolve_public_http_url(url)
+                pinned, headers, extensions = _pin_to_ip(url, ip)
+                # Streamed so an oversized body is cut off mid-download rather
+                # than buffered in full and rejected afterwards.
+                async with http.stream("GET", pinned, headers=headers, extensions=extensions) as resp:
+                    if resp.is_redirect:
+                        location = resp.headers.get("location")
+                        if not location:
+                            raise HTTPException(status_code=502, detail="Redirect without Location header")
+                        url = str(httpx.URL(url).join(location))
+                        continue
+                    resp.raise_for_status()
+                    content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                    data = await _read_capped(resp)
+                break
+            else:
+                raise HTTPException(status_code=502, detail="Too many redirects")
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch image: {e}")
+    ext = _FETCH_IMAGE_MIME_TO_EXT.get(content_type)
+    if ext is None:
+        # Hosts sometimes serve images as octet-stream; fall back to the URL
+        # extension (of the final hop, after redirects).
+        url_ext = Path(urlparse(url).path).suffix.lower()
+        ext = url_ext if url_ext in _FETCH_IMAGE_EXT_TO_MIME else None
+    if ext is None:
+        raise HTTPException(
+            status_code=415,
+            detail="URL does not point to a supported image type (PNG, JPG, WEBP)",
+        )
+    return Response(content=data, media_type=_FETCH_IMAGE_EXT_TO_MIME[ext])
 
 
 @router.delete("/ref-images/{filename}")
@@ -321,31 +517,19 @@ def list_executions(
 
 @router.get("/persona-instructions/{persona_name}")
 def get_persona_instructions(persona_name: str):
-    from backend.workflows.config_manager import WorkflowConfigManager
     from backend.config import GlobalConfig
 
-    cfg = WorkflowConfigManager()
-    persona_config = cfg.get_persona_config(persona_name)
-    persona_type = persona_config.get("type", "instagirl")
-
-    template_dir = Path(GlobalConfig.PROMPTS_DIR) / "templates" / persona_type
-    if not template_dir.exists():
-        template_dir = Path(GlobalConfig.PROMPTS_DIR) / "templates" / "instagirl"
-
-    def read(name: str) -> str:
+    def read_prompt(*parts: str) -> str:
         try:
-            return (template_dir / name).read_text(encoding="utf-8")
+            return (Path(GlobalConfig.PROMPTS_DIR).joinpath(*parts)).read_text(encoding="utf-8")
         except Exception:
             return ""
 
+    # Single-agent pipeline: one global system prompt drives the writer, and the
+    # per-character identity lock supplies the fixed "who" injected into the prompt.
     return {
-        "persona_type": persona_type,
-        "analyst_task": read("analyst_task.txt"),
-        "analyst_agent": read("analyst_agent.txt"),
-        "turbo_agent": read("turbo_agent.txt"),
-        "turbo_framework": read("turbo_framework.txt"),
-        "turbo_constraints": read("turbo_constraints.txt"),
-        "turbo_example": read("turbo_example.txt"),
+        "agent_system": read_prompt("agents", "agent_system.txt"),
+        "identity_lock": read_prompt("personas", persona_name, "identity_lock.txt"),
     }
 
 

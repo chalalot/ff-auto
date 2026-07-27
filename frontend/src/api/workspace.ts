@@ -40,6 +40,19 @@ export const workspaceApi = {
       ...sharedConfig,
     }).then(r => r.data),
 
+  // Direct ComfyUI submission — image → LoadImage, optional prompt → CLIPTextEncode.
+  runDirect: (payload: {
+    image_paths: string[]
+    workflow_name: string
+    workflow_type: string
+    prompt?: string
+    workflow_overrides?: Record<string, Record<string, unknown>>
+  }) =>
+    apiClient.post<{ task_ids: string[]; run_ids: Array<string | null> }>(
+      '/workspace/run-direct',
+      payload,
+    ).then(r => r.data),
+
   getTaskStatus: (taskId: string) =>
     apiClient.get<TaskStatusResponse>(`/workspace/task/${taskId}/status`).then(r => r.data),
 
@@ -70,6 +83,26 @@ export const workspaceApi = {
 
   deleteRefImage: (filename: string) =>
     apiClient.delete(`/workspace/ref-images/${encodeURIComponent(filename)}`).then(r => r.data),
+
+  // Server-side download for images dragged in from other web pages — the
+  // backend fetches the URL (client-side fetch is blocked by CORS) and relays
+  // the bytes; the Blob's type carries the resolved content type.
+  fetchImageFromUrl: async (url: string): Promise<Blob> => {
+    try {
+      const r = await apiClient.post('/workspace/fetch-image', { url }, { responseType: 'blob' })
+      return r.data as Blob
+    } catch (err) {
+      // With responseType 'blob' the error body is a Blob; surface the JSON detail.
+      const body = (err as { response?: { data?: unknown } })?.response?.data
+      if (body instanceof Blob) {
+        const text = await body.text().catch(() => '')
+        let detail: string | undefined
+        try { detail = (JSON.parse(text) as { detail?: string }).detail } catch { /* not JSON */ }
+        if (detail) throw new Error(detail)
+      }
+      throw err
+    }
+  },
 
   // Caption Export
   captionExportUpload: (files: File[]) => {
@@ -186,12 +219,7 @@ export const workspaceApi = {
 
   getPersonaInstructions: (personaName: string) =>
     apiClient.get<{
-      persona_type: string
-      analyst_task: string
-      analyst_agent: string
-      turbo_agent: string
-      turbo_framework: string
-      turbo_constraints: string
-      turbo_example: string
+      agent_system: string
+      identity_lock: string
     }>(`/workspace/persona-instructions/${encodeURIComponent(personaName)}`).then(r => r.data),
 }

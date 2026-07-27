@@ -108,16 +108,11 @@ class ImageProcessingService:
         self,
         image_path: str,
         persona: str,
-        workflow_type: str = "turbo",
+        workflow_type: str = "image_generation",
         vision_model: str = "gpt-4o",
         variation_count: int = 1,
-        strength: float = 0.8,
-        seed_strategy: str = "random",
-        base_seed: int = 0,
         width: int = 1024,
         height: int = 1600,
-        lora_name: str = "",
-        clip_model_type: str = "qwen_image",
         pipeline_type: str = "image.subject_environment",
         workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         workflow_name: Optional[str] = None,
@@ -147,13 +142,8 @@ class ImageProcessingService:
                     "workflow_type": workflow_type,
                     "vision_model": vision_model,
                     "variation_count": variation_count,
-                    "strength": strength,
-                    "seed_strategy": seed_strategy,
-                    "base_seed": base_seed,
                     "width": width,
                     "height": height,
-                    "lora_name": lora_name,
-                    "clip_model_type": clip_model_type,
                     "pipeline_type": pipeline_type,
                     "workflow_overrides": workflow_overrides or {},
                     "workflow_name": workflow_name,
@@ -174,13 +164,8 @@ class ImageProcessingService:
                 "workflow_type": workflow_type,
                 "vision_model": vision_model,
                 "variation_count": variation_count,
-                "strength_model": strength,
-                "seed_strategy": seed_strategy,
-                "base_seed": base_seed,
                 "width": width,
                 "height": height,
-                "lora_name": lora_name,
-                "clip_model_type": clip_model_type,
                 "pipeline_type": pipeline_type,
                 "workflow_overrides": workflow_overrides or {},
                 "workflow_name": workflow_name,
@@ -212,6 +197,53 @@ class ImageProcessingService:
         dispatches = []
         for path in image_paths:
             dispatches.append(self.dispatch_processing(image_path=path, **kwargs))
+        return dispatches
+
+    def dispatch_direct(
+        self,
+        image_paths: List[str],
+        workflow_name: str,
+        workflow_type: str,
+        prompt: Optional[str] = None,
+        workflow_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        project_id: Optional[str] = None,
+        member_id: Optional[str] = None,
+    ) -> List[dict]:
+        """Dispatch one direct ComfyUI run per image — no prompt-writing agent.
+
+        Used by the Image Upscaler / Multiangle-Edit workflow types (and manual
+        prompts): the image goes to the LoadImage node, ``prompt`` to the
+        CLIPTextEncode node, everything else via ``workflow_overrides``.
+        """
+        dispatches = []
+        for image_path in image_paths:
+            task = celery_app.send_task(
+                "backend.tasks.run_workflow_direct_task",
+                kwargs={
+                    "image_path": image_path,
+                    "workflow_name": workflow_name,
+                    "workflow_type": workflow_type,
+                    "prompt": prompt,
+                    "workflow_overrides": workflow_overrides or {},
+                    "project_id": project_id,
+                    "created_by_member_id": member_id,
+                },
+                queue="image",
+            )
+            logger.info(f"Dispatched direct workflow task {task.id} for {image_path}")
+            try:
+                r = _redis_client()
+                meta = json.dumps({
+                    "image_path": image_path,
+                    "workflow_name": workflow_name,
+                    "workflow_type": workflow_type,
+                    "dispatched_at": time.time(),
+                })
+                r.sadd(_ACTIVE_TASKS_SET, task.id)
+                r.setex(_TASK_META_PREFIX + task.id, _TASK_META_TTL, meta)
+            except Exception as e:
+                logger.warning(f"Could not register task {task.id} in Redis: {e}")
+            dispatches.append({"task_id": task.id})
         return dispatches
 
     # ------------------------------------------------------------------

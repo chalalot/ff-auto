@@ -25,6 +25,9 @@ export interface ReviewRequestItem {
   created_by_member_id?: string | null
   created_at: string | null
   updated_at: string | null
+  // "<node_id>.<input_key>" for saved overrides the current workflow JSON no
+  // longer accepts; they are dropped silently at dispatch.
+  stale_overrides?: string[]
 }
 
 export interface ReviewListResponse {

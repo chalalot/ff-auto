@@ -30,6 +30,10 @@ services:
       - ./processed:/app/processed
       - ./results:/app/results
       - ./prompts:/app/prompts
+      # Workflow graphs are read fresh from disk per request/dispatch, so
+      # mounting them makes edits live without a rebuild. Also baked into the
+      # image (Dockerfile.backend) so the app still starts without mounts.
+      - ./workflows:/app/workflows
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
       - ./ff-auto-drive.json:/app/ff-auto-drive.json:ro
       # Archive: read-only mounts from other server environments
@@ -74,6 +78,8 @@ services:
       - ./processed:/app/processed
       - ./results:/app/results
       - ./prompts:/app/prompts
+      # Dispatch re-reads the graph here — keep in step with the backend mount.
+      - ./workflows:/app/workflows
       - ./soulie-gcp-bucket.json:/app/soulie-gcp-bucket.json:ro
       - ./ff-auto-drive.json:/app/ff-auto-drive.json:ro
     env_file:

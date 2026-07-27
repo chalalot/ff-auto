@@ -43,6 +43,10 @@ class ReviewRequestItem(BaseModel):
     created_by_member_id: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+    # "<node_id>.<input_key>" for saved overrides the current workflow JSON no
+    # longer accepts — these are dropped silently at dispatch. Computed per
+    # response against the workflow on disk, never persisted.
+    stale_overrides: List[str] = Field(default_factory=list)
 
 
 class ReviewListResponse(BaseModel):

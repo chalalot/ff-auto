@@ -229,3 +229,67 @@ def test_create_requests_without_headers_unstamped(client, storage):
     item = client.get("/api/review/requests").json()["items"][0]
     assert item["project_id"] is None
     assert item["created_by_member_id"] is None
+
+
+# --- stale override detection -------------------------------------------------
+# The graph is re-read from disk at dispatch, so editing a workflow can orphan a
+# pending row's node-id-keyed overrides. They are dropped silently; the API
+# flags them so the queue can warn instead.
+
+import json
+
+
+@pytest.fixture
+def wf_dir(tmp_path, monkeypatch):
+    """A controlled workflows/ dir holding the `wf.json` that _payload() names."""
+    def write(nodes):
+        (tmp_path / "wf.json").write_text(json.dumps(nodes))
+
+    write({"2": {"class_type": "EmptySD3LatentImage",
+                 "inputs": {"width": 512, "height": 768}}})
+    monkeypatch.setenv("WORKFLOWS_DIR", str(tmp_path))
+    monkeypatch.delenv("WORKFLOW_JSON_PATH", raising=False)
+    return write
+
+
+def test_list_flags_overrides_the_workflow_no_longer_has(client, storage, wf_dir):
+    client.post("/api/review/requests", json=_payload(
+        settings={"workflow_overrides": {"2": {"width": 640}, "9": {"seed": 1}}},
+    ))
+    item = client.get("/api/review/requests").json()["items"][0]
+    assert item["stale_overrides"] == ["9.seed"]
+
+
+def test_editing_the_workflow_makes_a_pending_row_stale(client, storage, wf_dir):
+    client.post("/api/review/requests", json=_payload(
+        settings={"workflow_overrides": {"2": {"width": 640}}},
+    ))
+    assert client.get("/api/review/requests").json()["items"][0]["stale_overrides"] == []
+
+    wf_dir({"7": {"class_type": "EmptySD3LatentImage",   # node renumbered on re-export
+                  "inputs": {"width": 512, "height": 768}}})
+    assert client.get("/api/review/requests").json()["items"][0]["stale_overrides"] == ["2.width"]
+
+
+def test_rows_without_overrides_are_not_flagged(client, storage, wf_dir):
+    client.post("/api/review/requests", json=_payload())
+    assert client.get("/api/review/requests").json()["items"][0]["stale_overrides"] == []
+
+
+def test_patch_response_carries_stale_overrides(client, storage, wf_dir):
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    r = client.patch(f"/api/review/requests/{rid}",
+                     json={"settings": {"workflow_overrides": {"9": {"seed": 1}}}})
+    assert r.status_code == 200
+    assert r.json()["stale_overrides"] == ["9.seed"]
+
+
+def test_missing_workflow_file_does_not_break_listing(client, storage, monkeypatch, tmp_path):
+    # Dispatch fails loudly on a missing graph; listing must still render.
+    monkeypatch.setenv("WORKFLOWS_DIR", str(tmp_path))
+    client.post("/api/review/requests", json=_payload(
+        settings={"workflow_overrides": {"2": {"width": 640}}},
+    ))
+    r = client.get("/api/review/requests")
+    assert r.status_code == 200
+    assert r.json()["items"][0]["stale_overrides"] == []

@@ -111,42 +111,32 @@ async def test_generate_image_patches_current_workflow_nodes(monkeypatch, tmp_pa
 
     prompt_id = await client.generate_image(
         "a prompt",
-        lora_name="custom_lora.safetensors",
-        strength_model="0.8",
-        seed_strategy="fixed",
-        base_seed=123,
-        width="640",
-        height="960",
-        clip_model_type="qwen_image",
+        workflow_overrides={"7": {"strength_model": 0.8}},
     )
 
     assert prompt_id == "prompt-123"
-    # ImageScale node present -> upscale node gets final dims; latent node "2" is
-    # halved by _patch_workflow_dimensions ("base latent to half").
-    assert captured_workflow["2"]["inputs"]["width"] == 320
-    assert captured_workflow["2"]["inputs"]["height"] == 480
-    assert captured_workflow["15"]["inputs"]["width"] == 640
-    assert captured_workflow["15"]["inputs"]["height"] == 960
-    assert captured_workflow["7"]["inputs"]["lora_name"] == "custom_lora.safetensors"
+    # Seeds, LoRA, dims, CLIP type are workflow-owned — untouched unless overridden.
+    assert captured_workflow["2"]["inputs"]["width"] == 512
+    assert captured_workflow["2"]["inputs"]["height"] == 768
+    assert captured_workflow["15"]["inputs"]["width"] == 1024
+    assert captured_workflow["15"]["inputs"]["height"] == 1536
+    assert captured_workflow["7"]["inputs"]["lora_name"] == ""
     assert captured_workflow["7"]["inputs"]["strength_model"] == 0.8
     assert captured_workflow["9"]["inputs"]["text"] == "a prompt"
-    assert captured_workflow["10"]["inputs"]["seed"] == 123
-    assert captured_workflow["11"]["inputs"]["type"] == "qwen_image"
+    assert captured_workflow["10"]["inputs"]["seed"] == 1
+    assert captured_workflow["11"]["inputs"]["type"] == "sd3"
     assert captured_workflow["11"]["inputs"]["device"] == "cpu"
-    assert captured_workflow["16"]["inputs"]["seed"] == 124
+    assert captured_workflow["16"]["inputs"]["seed"] == 2
 
 
 @pytest.mark.asyncio
-async def test_generate_image_patches_legacy_workflow_ids(monkeypatch, tmp_path):
+async def test_generate_image_patches_input_image_into_load_image(monkeypatch, tmp_path):
     workflow_path = tmp_path / "workflow.json"
     workflow_path.write_text(
         """
         {
-          "39": {"inputs": {"type": "qwen_image"}},
-          "41": {"inputs": {"width": 1, "height": 1}},
-          "44": {"inputs": {"seed": 1}},
-          "45": {"inputs": {"text": ""}},
-          "53": {"inputs": {"lora_name": "", "strength_model": 1.0}}
+          "1": {"class_type": "LoadImage", "inputs": {"image": "baked.png"}},
+          "45": {"class_type": "CLIPTextEncode", "inputs": {"text": ""}}
         }
         """,
         encoding="utf-8",
@@ -165,23 +155,53 @@ async def test_generate_image_patches_legacy_workflow_ids(monkeypatch, tmp_path)
 
     prompt_id = await client.generate_image(
         "a prompt",
-        lora_name="legacy_lora.safetensors",
-        strength_model="0.9",
-        seed_strategy="fixed",
-        base_seed=456,
-        width="768",
-        height="1152",
-        clip_model_type="qwen_image",
+        input_image="uploaded_ref.png",
     )
 
     assert prompt_id == "prompt-123"
-    assert captured_workflow["39"]["inputs"]["type"] == "qwen_image"
-    assert captured_workflow["41"]["inputs"]["width"] == 768
-    assert captured_workflow["41"]["inputs"]["height"] == 1152
-    assert captured_workflow["44"]["inputs"]["seed"] == 456
+    assert captured_workflow["1"]["inputs"]["image"] == "uploaded_ref.png"
     assert captured_workflow["45"]["inputs"]["text"] == "a prompt"
-    assert captured_workflow["53"]["inputs"]["lora_name"] == "legacy_lora.safetensors"
-    assert captured_workflow["53"]["inputs"]["strength_model"] == 0.9
+
+
+@pytest.mark.asyncio
+async def test_generate_image_uploads_library_image_override(monkeypatch, tmp_path):
+    """A LoadImage override picked from the image library is uploaded to
+    ComfyUI and the uploaded filename lands in the submitted graph."""
+    from backend.config import GlobalConfig
+
+    workflow_path = tmp_path / "workflow.json"
+    workflow_path.write_text(
+        '{"1": {"class_type": "LoadImage", "inputs": {"image": "baked.png"}}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WORKFLOW_JSON_PATH", str(workflow_path))
+
+    library = tmp_path / "library"
+    library.mkdir()
+    (library / "ref.png").write_bytes(b"png")
+    monkeypatch.setattr(GlobalConfig, "PROCESSED_DIR", str(library))
+
+    captured_workflow = {}
+
+    async def fake_queue_prompt(self, workflow):
+        captured_workflow.update(workflow)
+        return "prompt-123"
+
+    async def fake_upload_image(self, path):
+        assert path == str(library / "ref.png")
+        return "uploaded_ref.png"
+
+    monkeypatch.setattr(ComfyUIClient, "queue_prompt", fake_queue_prompt)
+    monkeypatch.setattr(ComfyUIClient, "upload_image", fake_upload_image)
+
+    client = ComfyUIClient(cloud_api_url="https://comfy.example", api_key=None)
+    prompt_id = await client.generate_image(
+        "a prompt",
+        workflow_overrides={"1": {"image": "ref.png"}},
+    )
+
+    assert prompt_id == "prompt-123"
+    assert captured_workflow["1"]["inputs"]["image"] == "uploaded_ref.png"
 
 
 def test_extract_comfy_error_message_from_nested_json_string():

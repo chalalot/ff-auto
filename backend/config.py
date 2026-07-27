@@ -15,6 +15,10 @@ class GlobalConfig:
 
     # GEMINI (Google)
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GOOGLE_OPENAI_API_BASE = os.getenv(
+        "GOOGLE_OPENAI_API_BASE",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+    )
 
     # LLM media evaluator (OpenAI-compatible endpoint)
     EVALUATOR_MODEL = os.getenv("EVALUATOR_MODEL", "gemma-4-31b-it")

@@ -18,7 +18,6 @@ import re
 from urllib.parse import unquote
 from typing import Any, Dict, List, Optional
 
-from backend.utils.constants import DEFAULT_NEGATIVE_PROMPT
 
 
 def clean_lora_name(val: Optional[str]) -> Optional[str]:
@@ -46,9 +45,7 @@ def clean_lora_name(val: Optional[str]) -> Optional[str]:
 
 
 LOCKED_INPUT_KEYS: Dict[str, str] = {
-    "seed": "Controlled by the Seed strategy",
-    "noise_seed": "Controlled by the Seed strategy",
-    "text": "Set from the generated prompt",
+    "text": "Set from the prompt",
     "device": "Controlled by deployment (COMFYUI_CLIP_DEVICE)",
 }
 
@@ -111,6 +108,37 @@ def _coerce_to(existing: Any, value: Any) -> Any:
         return existing  # leave the original value untouched on bad input
 
 
+def _split_overrides(
+    workflow_data: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]
+) -> tuple:
+    """Split overrides into applicable targets and unresolved ``node.key`` labels.
+
+    One walk shared by :func:`apply_workflow_overrides` and
+    :func:`find_unresolved_overrides` so what gets applied and what gets
+    reported as stale can never drift apart. Locked keys are by-design skips,
+    not staleness, so they appear in neither list.
+    """
+    targets = []
+    unresolved = []
+    for node_id, patch in overrides.items():
+        node = workflow_data.get(node_id)
+        node_inputs = node.get("inputs") if isinstance(node, dict) else None
+        if not isinstance(node_inputs, dict):
+            node_inputs = None
+        for key, value in (patch or {}).items():
+            if key in LOCKED_INPUT_KEYS:
+                continue
+            if (
+                node_inputs is None
+                or key not in node_inputs
+                or isinstance(node_inputs[key], list)
+            ):
+                unresolved.append(f"{node_id}.{key}")
+                continue
+            targets.append((node_inputs, key, value))
+    return targets, unresolved
+
+
 def apply_workflow_overrides(
     workflow_data: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]
 ) -> None:
@@ -122,24 +150,30 @@ def apply_workflow_overrides(
     """
     if not overrides:
         return
-    for node_id, patch in overrides.items():
-        node = workflow_data.get(node_id)
-        if not isinstance(node, dict):
-            continue
-        node_inputs = node.get("inputs")
-        if not isinstance(node_inputs, dict):
-            continue
-        for key, value in (patch or {}).items():
-            if key in LOCKED_INPUT_KEYS:
-                continue
-            if key not in node_inputs or isinstance(node_inputs[key], list):
-                continue
-            if key == "lora_name" and isinstance(value, str):
-                cleaned = clean_lora_name(value)
-                if cleaned:
-                    node_inputs[key] = cleaned
-            else:
-                node_inputs[key] = _coerce_to(node_inputs[key], value)
+    targets, _ = _split_overrides(workflow_data, overrides)
+    for node_inputs, key, value in targets:
+        if key == "lora_name" and isinstance(value, str):
+            cleaned = clean_lora_name(value)
+            if cleaned:
+                node_inputs[key] = cleaned
+        else:
+            node_inputs[key] = _coerce_to(node_inputs[key], value)
+
+
+def find_unresolved_overrides(
+    workflow_data: Dict[str, Any], overrides: Dict[str, Dict[str, Any]]
+) -> List[str]:
+    """``"<node_id>.<input_key>"`` for every override the graph no longer accepts.
+
+    :func:`apply_workflow_overrides` drops these silently, so a row saved
+    against an older revision of the workflow generates with the graph's
+    defaults instead of the values someone actually chose. Workflow JSON is
+    read fresh at dispatch, which is what lets a row go stale in place.
+    """
+    if not overrides:
+        return []
+    _, unresolved = _split_overrides(workflow_data, overrides)
+    return unresolved
 
 
 @dataclass
@@ -153,7 +187,6 @@ class GenerationInputs:
     """
 
     prompt: str = ""
-    negative_prompt: str = DEFAULT_NEGATIVE_PROMPT
     lora_name: Optional[str] = None
     kol_persona: Optional[str] = None
     strength_model: Optional[str] = None

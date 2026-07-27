@@ -13,8 +13,7 @@ def test_workflow_types(client):
     r = client.get("/api/config/workflow-types")
     assert r.status_code == 200
     data = r.json()
-    assert isinstance(data, list)
-    assert "turbo" in data
+    assert data == ["image_generation", "image_upscaler", "multiangle_edit"]
 
 
 def test_vision_models(client):
@@ -23,6 +22,7 @@ def test_vision_models(client):
     data = r.json()
     assert isinstance(data, list)
     assert any(m["value"] == "gpt-4o" for m in data)
+    assert any(m["value"] == "gemma-4-31b-it" for m in data)
 
 
 def test_clip_model_types(client):
@@ -47,38 +47,41 @@ def test_list_personas_empty(client):
     assert isinstance(r.json(), list)
 
 
-def test_persona_not_found(client):
-    r = client.get("/api/config/personas/nonexistent")
-    assert r.status_code == 404
+# ---- identity locks (per-character preset user-prompt text) ----
 
-
-def test_create_and_read_persona(client, _temp_dirs):
-    """Create a persona directory manually, then read via API."""
+def test_identity_locks_lists_persona_content(client, _temp_dirs):
     personas_dir = Path(_temp_dirs["PROMPTS_DIR"]) / "personas" / "TestGirl"
     personas_dir.mkdir(parents=True, exist_ok=True)
-    (personas_dir / "type.txt").write_text("instagirl")
-    (personas_dir / "hair_color.txt").write_text("black")
-    (personas_dir / "hairstyles.txt").write_text("straight\nwavy")
+    (personas_dir / "identity_lock.txt").write_text("a young adult woman")
 
-    r = client.get("/api/config/personas/TestGirl")
+    r = client.get("/api/config/identity-locks")
     assert r.status_code == 200
-    data = r.json()
-    assert data["name"] == "TestGirl"
-    assert data["type"] == "instagirl"
-    assert data["hair_color"] == "black"
-    assert "straight" in data["hairstyles"]
+    assert r.json()["TestGirl"] == "a young adult woman"
 
 
-def test_update_persona(client, _temp_dirs):
-    personas_dir = Path(_temp_dirs["PROMPTS_DIR"]) / "personas" / "TestGirl"
+def test_save_identity_lock_round_trip(client, _temp_dirs):
+    personas_dir = Path(_temp_dirs["PROMPTS_DIR"]) / "personas" / "Blondie"
     personas_dir.mkdir(parents=True, exist_ok=True)
 
-    r = client.put("/api/config/personas/TestGirl", json={"hair_color": "blonde"})
+    r = client.put(
+        "/api/config/identity-locks/Blondie",
+        content="a blonde woman in her 20s",
+        headers={"Content-Type": "text/plain"},
+    )
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
-    r2 = client.get("/api/config/personas/TestGirl")
-    assert r2.json()["hair_color"] == "blonde"
+    r2 = client.get("/api/config/identity-locks")
+    assert r2.json()["Blondie"] == "a blonde woman in her 20s"
+
+
+def test_save_identity_lock_unknown_persona_404(client):
+    r = client.put(
+        "/api/config/identity-locks/NoSuchPersona",
+        content="x",
+        headers={"Content-Type": "text/plain"},
+    )
+    assert r.status_code == 404
 
 
 # ---- presets ----
@@ -123,24 +126,17 @@ def test_get_last_used_returns_dict(client):
 
 def test_save_and_get_last_used(client):
     payload = {
-        "kol_persona": "Sephera",
-        "workflow_choice": "Turbo",
-        "vision_model_choice": "ChatGPT (gpt-4o)",
-        "clip_model_type": "sd3",
-        "limit_choice": 5,
-        "variation_count": 2,
-        "strength_model": 0.9,
-        "width": "1024",
-        "height": "1600",
-        "seed_strategy": "random",
-        "base_seed": 0,
-        "lora_name_override": "",
-        "persona_config_select": "Sephera",
-        "editor_type_select": "instagirl",
+        "persona": "Sephera",
+        "workflow_type": "image_upscaler",
+        "workflow_name": "SeedVR_Image_Upscaler.json",
+        "vision_model": "gpt-4o",
+        "variations": 2,
     }
     r = client.put("/api/config/presets/_last_used", json=payload)
     assert r.status_code == 200
 
     r2 = client.get("/api/config/presets/_last_used")
-    assert r2.json()["kol_persona"] == "Sephera"
-    assert r2.json()["variation_count"] == 2
+    assert r2.json()["persona"] == "Sephera"
+    assert r2.json()["workflow_type"] == "image_upscaler"
+    assert r2.json()["workflow_name"] == "SeedVR_Image_Upscaler.json"
+    assert r2.json()["variations"] == 2

@@ -12,6 +12,7 @@ from .base import (
     apply_workflow_overrides,
     available_pipelines,
     describe_workflow_parameters,
+    find_unresolved_overrides,
     get_pipeline,
     pipelines_metadata,
     register,
@@ -22,7 +23,14 @@ from . import image  # noqa: F401,E402  (registers image pipelines)
 from . import video  # noqa: F401,E402  (registers video pipelines)
 
 # Workflow-file helpers (ComfyUI graph selection) live with the image pipeline.
-from .image import list_workflow_files, load_workflow_template  # noqa: E402
+from .image import (  # noqa: E402
+    find_library_image,
+    list_workflow_files,
+    load_workflow_template,
+    patch_load_image,
+    resolve_image_overrides,
+    workflow_has_load_image,
+)
 
 __all__ = [
     "GenerationInputs",
@@ -33,9 +41,14 @@ __all__ = [
     "apply_workflow_overrides",
     "available_pipelines",
     "describe_workflow_parameters",
+    "find_library_image",
+    "find_unresolved_overrides",
     "get_pipeline",
     "list_workflow_files",
+    "resolve_image_overrides",
     "load_workflow_template",
+    "patch_load_image",
     "pipelines_metadata",
+    "workflow_has_load_image",
     "register",
 ]

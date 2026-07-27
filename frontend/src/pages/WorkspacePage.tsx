@@ -21,20 +21,144 @@ import { Separator } from '@/components/ui/separator'
 import { formatDistanceToNow, format } from 'date-fns'
 import { Play, RefreshCw, CheckSquare, Square, Loader2, Image as ImageIcon, Clock, Zap, Upload, Trash2, Info, X, Download, FileText, HardDrive, CheckCircle2, Cpu, CalendarDays, ChevronLeft, ChevronRight, PenLine, Copy, ExternalLink, BookOpen } from 'lucide-react'
 import { Textarea } from '@/components/ui/textarea'
-import { WorkflowParametersPanel, buildInitialOverrides } from '@/components/workspace/WorkflowParametersPanel'
+import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParametersPanel'
+import { ReviewQueueSection } from '@/components/review/ReviewQueueSection'
 import type { ProcessImageConfig, RefImage, ExecutionRecord, ActiveTask, CaptionExportEntry, WorkflowParameters } from '@/types'
 import type { PipelineRunSummary } from '@/types/pipeline'
+
+// The three workflow categories. Each declares which input components the
+// sidebar shows and which workflows/*.json file it starts from.
+const WORKFLOW_TYPES: Array<{
+  value: string
+  label: string
+  defaultWorkflow: string
+  usesText: boolean
+  usesAI: boolean
+  hint: string
+}> = [
+  {
+    value: 'image_generation',
+    label: 'Image Generation',
+    defaultWorkflow: 'Z-image-control-net.json',
+    usesText: true,
+    usesAI: true,
+    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Leave the prompt empty to let the AI write it from the image.',
+  },
+  {
+    value: 'image_upscaler',
+    label: 'Image Upscaler',
+    defaultWorkflow: 'SeedVR_Image_Upscaler.json',
+    usesText: false,
+    usesAI: false,
+    hint: 'Image → LoadImage. Runs the workflow directly on each selected image.',
+  },
+  {
+    value: 'multiangle_edit',
+    label: 'Multiangle Edit',
+    defaultWorkflow: 'Qwen-2511-Multi-Angle (1).json',
+    usesText: true,
+    usesAI: false,
+    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Camera angles are edited in Workflow Parameters.',
+  },
+]
+
+const workflowTypeMeta = (value: string) =>
+  WORKFLOW_TYPES.find(t => t.value === value) ?? WORKFLOW_TYPES[0]
+
+// Drop the `image` override from a node, removing the node entry when empty.
+const withoutImageOverride = (
+  prev: Record<string, Record<string, unknown>>,
+  nodeId: string,
+): Record<string, Record<string, unknown>> => {
+  if (prev[nodeId]?.image === undefined) return prev
+  const node = { ...prev[nodeId] }
+  delete node.image
+  const next = { ...prev }
+  if (Object.keys(node).length === 0) delete next[nodeId]
+  else next[nodeId] = node
+  return next
+}
+
+const DROPPED_MIME_TO_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+}
+
+// Dragging an image from another web page yields a URL or data: URI rather
+// than a File — pull image URLs out of whatever the source put on the drag.
+const extractDroppedImageUrls = (dt: DataTransfer): string[] => {
+  const html = dt.getData('text/html')
+  if (html) {
+    const srcs = Array.from(new DOMParser().parseFromString(html, 'text/html').querySelectorAll('img'))
+      .map(img => img.getAttribute('src') ?? '')
+      .filter(src => /^(https?:|data:image\/)/i.test(src))
+    if (srcs.length) return srcs
+  }
+  const uriList = dt.getData('text/uri-list')
+  if (uriList) {
+    const urls = uriList.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'))
+    if (urls.length) return urls
+  }
+  const text = dt.getData('text/plain').trim()
+  if (/^(https?:|data:image\/)/i.test(text)) return [text]
+  return []
+}
+
+const dataUrlToFile = (dataUrl: string): File | null => {
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i)
+  if (!match) return null
+  const mime = match[1].toLowerCase()
+  const ext = DROPPED_MIME_TO_EXT[mime]
+  if (!ext) return null
+  const bytes = Uint8Array.from(atob(match[2]), c => c.charCodeAt(0))
+  return new File([bytes], `dropped.${ext}`, { type: mime })
+}
+
+const filenameFromUrl = (url: string, ext: string): string => {
+  try {
+    const stem = (new URL(url).pathname.split('/').pop() ?? '').replace(/\.[a-z0-9]+$/i, '')
+    if (stem) return `${stem}.${ext}`
+  } catch { /* malformed URL — fall through */ }
+  return `dropped.${ext}`
+}
+
+// Resolve a drop into File objects: real files pass through untouched, data:
+// URIs are decoded locally, and http(s) URLs are downloaded via the backend
+// (fetching them from the browser is blocked by CORS on most image hosts).
+// Must be CALLED synchronously from the drop handler — DataTransfer contents
+// are only readable during the event tick, and this reads them before its
+// first await.
+const resolveDroppedFiles = async (dt: DataTransfer): Promise<File[]> => {
+  if (dt.files.length > 0) return Array.from(dt.files)
+  const urls = extractDroppedImageUrls(dt)
+  const files: File[] = []
+  for (const url of urls) {
+    if (url.startsWith('data:')) {
+      const file = dataUrlToFile(url)
+      if (file) files.push(file)
+      continue
+    }
+    const blob = await workspaceApi.fetchImageFromUrl(url)
+    const ext = DROPPED_MIME_TO_EXT[blob.type] ?? 'png'
+    files.push(new File([blob], filenameFromUrl(url, ext), { type: blob.type }))
+  }
+  return files
+}
+
+const uploadErrorMessage = (err: unknown, fallback = 'Upload failed'): string => {
+  const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+  if (detail) return detail
+  return err instanceof Error ? err.message : fallback
+}
 
 // Default config
 const DEFAULT_CONFIG: Omit<ProcessImageConfig, 'image_path'> = {
   persona: '',
-  brief: '',
-  workflow_type: 'turbo',
+  workflow_type: 'image_generation',
   vision_model: 'gpt-4o',
   variation_count: 1,
-  seed_strategy: 'random',
-  base_seed: 0,
-  workflow_name: 'workflow.json',
+  workflow_name: '',
 }
 
 export const WorkspacePage: React.FC = () => {
@@ -44,6 +168,7 @@ export const WorkspacePage: React.FC = () => {
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
+  const [promptText, setPromptText] = useState('')
   const [overrides, setOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const configInitializedRef = React.useRef(false)
 
@@ -52,7 +177,13 @@ export const WorkspacePage: React.FC = () => {
     queryFn: workspaceApi.getWorkflows,
   })
 
-  const workflowName = config.workflow_name || 'workflow.json'
+  const typeMeta = workflowTypeMeta(config.workflow_type)
+  // Selected workflow file: explicit choice → the type's default → first available.
+  const workflowName =
+    (config.workflow_name && workflows.includes(config.workflow_name) && config.workflow_name) ||
+    (workflows.includes(typeMeta.defaultWorkflow) && typeMeta.defaultWorkflow) ||
+    workflows[0] ||
+    ''
   const {
     data: workflowParams = null,
     isLoading: paramsLoading,
@@ -60,11 +191,13 @@ export const WorkspacePage: React.FC = () => {
   } = useQuery<WorkflowParameters>({
     queryKey: ['workflow-params', workflowName],
     queryFn: () => workspaceApi.getWorkflowParameters(workflowName),
+    enabled: Boolean(workflowName),
   })
 
-  // Re-seed override values whenever a new parameter set loads.
+  // Overrides are sparse (only user-edited inputs); clear them whenever a
+  // new parameter set loads so edits don't leak across workflows.
   React.useEffect(() => {
-    if (workflowParams) setOverrides(buildInitialOverrides(workflowParams))
+    setOverrides({})
   }, [workflowParams])
 
   const { data: activeTasks = [] } = useActiveTasks()
@@ -72,16 +205,6 @@ export const WorkspacePage: React.FC = () => {
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
   const { data: loraOptions = [] } = useLoraOptions()
-  const [addLoraOpen, setAddLoraOpen] = useState(false)
-  const [addLoraValue, setAddLoraValue] = useState('')
-  const addLoraMutation = useMutation({
-    mutationFn: (name: string) => configApi.addLoraOption(name),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['config', 'lora-options'] })
-      setAddLoraOpen(false)
-      setAddLoraValue('')
-    },
-  })
   const { data: lastUsed, isSuccess: lastUsedLoaded } = useLastUsed()
   const { data: executions = [] } = useQuery({
     queryKey: ['workspace', 'executions', projectId ?? 'all'],
@@ -98,18 +221,77 @@ export const WorkspacePage: React.FC = () => {
     queryFn: () => workspaceApi.getRefImages({ project_id: projectId }),
   })
 
+  // The LoadImage node whose `image` input mirrors the library selection —
+  // the first one with an editable image input.
+  const loadImageNodeId = React.useMemo(() => {
+    if (!workflowParams) return null
+    const node = workflowParams.nodes.find(
+      n => n.class_type === 'LoadImage' && n.inputs.some(i => i.key === 'image' && !i.locked),
+    )
+    return node?.node_id ?? null
+  }, [workflowParams])
+
+  // Library grid → LoadImage dropdown: a single selected image becomes the
+  // node's `image` override; multi-select clears it so batch dispatch keeps
+  // the per-image patch (overrides are applied after it and would clobber
+  // every run with one file). An empty selection leaves the pick alone — it
+  // may be a deliberate dropdown choice, incl. a baked-in ComfyUI name.
+  // (Declared after the overrides-reset effect above so that on a workflow
+  // switch it re-applies the selection to the freshly cleared overrides.)
+  React.useEffect(() => {
+    if (!loadImageNodeId || selectedPaths.size === 0) return
+    if (selectedPaths.size > 1) {
+      setOverrides(prev => withoutImageOverride(prev, loadImageNodeId))
+      return
+    }
+    const only = Array.from(selectedPaths)[0]
+    const match = library.find(i => i.path === only)
+    if (!match) return
+    setOverrides(prev =>
+      prev[loadImageNodeId]?.image === match.filename
+        ? prev
+        : { ...prev, [loadImageNodeId]: { ...prev[loadImageNodeId], image: match.filename } },
+    )
+  }, [selectedPaths, loadImageNodeId, workflowParams, library])
+
+  // A library image picked in the LoadImage dropdown counts as the run image
+  // when nothing is selected in the grid — both point at the same library.
+  const overrideImagePath = React.useMemo(() => {
+    if (!workflowParams) return null
+    for (const node of workflowParams.nodes) {
+      if (node.class_type !== 'LoadImage') continue
+      const chosen = overrides[node.node_id]?.image
+      if (typeof chosen === 'string' && chosen) {
+        const match = library.find(i => i.filename === chosen)
+        if (match) return match.path
+      }
+    }
+    return null
+  }, [workflowParams, overrides, library])
+
+  const effectivePaths = React.useMemo(
+    () =>
+      selectedPaths.size > 0
+        ? Array.from(selectedPaths)
+        : overrideImagePath
+          ? [overrideImagePath]
+          : [],
+    [selectedPaths, overrideImagePath],
+  )
+
   // Load last used config on mount — runs once when query resolves
   React.useEffect(() => {
     if (!lastUsedLoaded) return
     if (lastUsed) {
+      const knownType = WORKFLOW_TYPES.some(t => t.value === lastUsed.workflow_type)
       setConfig(prev => ({
         ...prev,
         persona: lastUsed.persona || prev.persona,
         vision_model: lastUsed.vision_model || prev.vision_model,
         variation_count: lastUsed.variations ?? prev.variation_count,
-        seed_strategy: lastUsed.seed_strategy || prev.seed_strategy,
-        base_seed: lastUsed.base_seed ?? prev.base_seed,
-        workflow_type: lastUsed.workflow_type || prev.workflow_type,
+        // Legacy values ("turbo"/"standard") fall back to the default type.
+        workflow_type: knownType ? lastUsed.workflow_type! : prev.workflow_type,
+        workflow_name: (knownType && lastUsed.workflow_name) || prev.workflow_name,
       }))
     }
     configInitializedRef.current = true
@@ -123,9 +305,8 @@ export const WorkspacePage: React.FC = () => {
         persona: config.persona,
         vision_model: config.vision_model,
         variations: config.variation_count,
-        seed_strategy: config.seed_strategy,
-        base_seed: config.base_seed,
         workflow_type: config.workflow_type,
+        workflow_name: config.workflow_name || undefined,
       })
     }, 600)
     return () => clearTimeout(timer)
@@ -141,15 +322,29 @@ export const WorkspacePage: React.FC = () => {
   // All images live in processed/ — always skip prepare
   const processMutation = useMutation({
     mutationFn: async () => {
-      const paths = Array.from(selectedPaths)
+      const paths = effectivePaths
+      const prompt = promptText.trim()
+      // Image Generation without a manual prompt → AI prompt pipeline.
+      // Everything else submits the workflow straight to ComfyUI.
+      const useAIPipeline = typeMeta.usesAI && !prompt
       let taskIds: string[]
       let runIds: Array<string | null>
-      if (paths.length === 1) {
-        const result = await workspaceApi.process({ ...config, workflow_overrides: overrides, image_path: paths[0], skip_prepare: true })
+      if (!useAIPipeline) {
+        const result = await workspaceApi.runDirect({
+          image_paths: paths,
+          workflow_name: workflowName,
+          workflow_type: config.workflow_type,
+          prompt: typeMeta.usesText && prompt ? prompt : undefined,
+          workflow_overrides: overrides,
+        })
+        taskIds = result.task_ids
+        runIds = result.run_ids ?? []
+      } else if (paths.length === 1) {
+        const result = await workspaceApi.process({ ...config, workflow_name: workflowName, workflow_overrides: overrides, image_path: paths[0], skip_prepare: true })
         taskIds = [result.task_id]
         runIds = [result.run_id ?? null]
       } else {
-        const result = await workspaceApi.processBatch(paths, { ...config, workflow_overrides: overrides, skip_prepare: true })
+        const result = await workspaceApi.processBatch(paths, { ...config, workflow_name: workflowName, workflow_overrides: overrides, skip_prepare: true })
         taskIds = result.task_ids
         runIds = result.run_ids
       }
@@ -169,12 +364,34 @@ export const WorkspacePage: React.FC = () => {
   })
 
   const [uploading, setUploading] = useState(false)
-  const handleUpload = async (files: FileList | null) => {
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const handleUpload = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0) return
     setUploading(true)
+    setUploadError(null)
     try {
       await workspaceApi.uploadRefImages(Array.from(files))
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
+    } catch (err) {
+      setUploadError(uploadErrorMessage(err))
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDrop = async (dt: DataTransfer) => {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const files = await resolveDroppedFiles(dt)
+      if (files.length === 0) {
+        setUploadError('No image found in the dropped content')
+        return
+      }
+      await workspaceApi.uploadRefImages(files)
+      queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
+    } catch (err) {
+      setUploadError(uploadErrorMessage(err))
     } finally {
       setUploading(false)
     }
@@ -189,7 +406,11 @@ export const WorkspacePage: React.FC = () => {
     })
   }
 
-  const clearSelection = () => setSelectedPaths(new Set())
+  const clearSelection = () => {
+    setSelectedPaths(new Set())
+    // An explicit deselect-all also clears the mirrored LoadImage pick.
+    if (loadImageNodeId) setOverrides(prev => withoutImageOverride(prev, loadImageNodeId))
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (filename: string) => workspaceApi.deleteRefImage(filename),
@@ -201,6 +422,14 @@ export const WorkspacePage: React.FC = () => {
         }
         return next
       })
+      // A LoadImage pick pointing at the deleted file is now dangling.
+      if (loadImageNodeId) {
+        setOverrides(prev =>
+          prev[loadImageNodeId]?.image === filename
+            ? withoutImageOverride(prev, loadImageNodeId)
+            : prev,
+        )
+      }
       queryClient.invalidateQueries({ queryKey: ['workspace', 'ref-images'] })
     },
   })
@@ -214,7 +443,27 @@ export const WorkspacePage: React.FC = () => {
         </div>
 
         <div className="p-4 space-y-4 flex-1">
-          {/* Workflow */}
+          {/* Workflow Type — drives which input components are shown */}
+          <div className="space-y-2">
+            <Label>Workflow Type</Label>
+            <Select
+              value={config.workflow_type}
+              onValueChange={(v) => {
+                const meta = workflowTypeMeta(v)
+                setConfig(p => ({ ...p, workflow_type: v, workflow_name: meta.defaultWorkflow }))
+              }}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {WORKFLOW_TYPES.map(t => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{typeMeta.hint}</p>
+          </div>
+
+          {/* Workflow JSON graph */}
           <div className="space-y-2">
             <Label>Workflow</Label>
             <Select
@@ -230,135 +479,67 @@ export const WorkspacePage: React.FC = () => {
             </Select>
           </div>
 
-          {/* Persona */}
-          <div className="space-y-2">
-            <Label>Persona</Label>
-            <Select value={config.persona} onValueChange={(v) => setConfig(p => ({ ...p, persona: v }))}>
-              <SelectTrigger><SelectValue placeholder="Select persona" /></SelectTrigger>
-              <SelectContent>
-                {personas.map(p => (
-                  <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Workflow Type */}
-          <div className="space-y-2">
-            <Label>Workflow Type</Label>
-            <Select value={config.workflow_type} onValueChange={(v) => setConfig(p => ({ ...p, workflow_type: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="turbo">Turbo</SelectItem>
-                <SelectItem value="standard">Standard</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Vision Model */}
-          <div className="space-y-2">
-            <Label>Vision Model</Label>
-            <Select value={config.vision_model} onValueChange={(v) => setConfig(p => ({ ...p, vision_model: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {visionModels.map(m => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator />
-
-          {/* Creative brief (optional) — steers the analyst on top of the reference. */}
-          <div className="space-y-2">
-            <Label>Brief <span className="text-muted-foreground text-xs">(optional)</span></Label>
-            <Textarea
-              placeholder="Optional creative direction, e.g. 'golden-hour mood, candid street style'"
-              value={config.brief ?? ''}
-              onChange={(e) => setConfig(p => ({ ...p, brief: e.target.value }))}
-              rows={2}
-            />
-          </div>
-
-          <Separator />
-
-          {/* Variations */}
-          <div className="space-y-2">
-            <Label>Variations: {config.variation_count}</Label>
-            <Slider
-              min={1} max={5} step={1}
-              value={[config.variation_count]}
-              onValueChange={([v]) => setConfig(p => ({ ...p, variation_count: v }))}
-            />
-          </div>
-
-          {/* Seed Strategy */}
-          <div className="space-y-2">
-            <Label>Seed Strategy</Label>
-            <Select value={config.seed_strategy} onValueChange={(v) => setConfig(p => ({ ...p, seed_strategy: v }))}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="random">Random</SelectItem>
-                <SelectItem value="fixed">Fixed</SelectItem>
-              </SelectContent>
-            </Select>
-            {config.seed_strategy === 'fixed' && (
-              <Input
-                type="number"
-                placeholder="Base seed"
-                value={config.base_seed}
-                onChange={(e) => setConfig(p => ({ ...p, base_seed: parseInt(e.target.value) || 0 }))}
+          {/* Prompt text — goes to the CLIP Text Encode node (image gen / multiangle) */}
+          {typeMeta.usesText && (
+            <div className="space-y-2">
+              <Label>
+                Prompt <span className="text-muted-foreground text-xs">(optional)</span>
+              </Label>
+              <Textarea
+                placeholder={
+                  typeMeta.usesAI
+                    ? 'Leave empty to let the AI write the prompt from the selected image'
+                    : 'Edit instruction, e.g. "rotate the camera to a low three-quarter view"'
+                }
+                value={promptText}
+                onChange={(e) => setPromptText(e.target.value)}
+                rows={3}
               />
-            )}
-          </div>
-
-          {/* LoRA */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>LoRA</Label>
-              <button
-                className="text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => {
-                  setAddLoraValue('')
-                  setAddLoraOpen(v => !v)
-                }}
-              >
-                + add new
-              </button>
             </div>
-            {addLoraOpen && (
-              <div className="space-y-1.5">
-                <Input
-                  className="font-mono text-xs"
-                  value={addLoraValue}
-                  onChange={e => setAddLoraValue(e.target.value)}
-                  placeholder="owner__repo__name.safetensors"
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && addLoraValue.trim()) addLoraMutation.mutate(addLoraValue.trim())
-                    if (e.key === 'Escape') setAddLoraOpen(false)
-                  }}
-                  autoFocus
-                />
-                <div className="flex gap-1.5 justify-end">
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAddLoraOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    disabled={!addLoraValue.trim() || addLoraMutation.isPending}
-                    onClick={() => addLoraMutation.mutate(addLoraValue.trim())}
-                  >
-                    {addLoraMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
-                  </Button>
-                </div>
+          )}
+
+          {/* AI prompt pipeline settings — Image Generation only */}
+          {typeMeta.usesAI && (
+            <>
+              <Separator />
+
+              {/* Persona */}
+              <div className="space-y-2">
+                <Label>Persona</Label>
+                <Select value={config.persona} onValueChange={(v) => setConfig(p => ({ ...p, persona: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select persona" /></SelectTrigger>
+                  <SelectContent>
+                    {personas.map(p => (
+                      <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Pick LoRA models per node in Workflow Parameters below. "+ add new" registers a file for those dropdowns.
-            </p>
-          </div>
+
+              {/* Vision Model */}
+              <div className="space-y-2">
+                <Label>Vision Model</Label>
+                <Select value={config.vision_model} onValueChange={(v) => setConfig(p => ({ ...p, vision_model: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {visionModels.map(m => (
+                      <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Variations */}
+              <div className="space-y-2">
+                <Label>Variations: {config.variation_count}</Label>
+                <Slider
+                  min={1} max={5} step={1}
+                  value={[config.variation_count]}
+                  onValueChange={([v]) => setConfig(p => ({ ...p, variation_count: v }))}
+                />
+              </div>
+            </>
+          )}
 
           <Separator />
 
@@ -367,11 +548,21 @@ export const WorkspacePage: React.FC = () => {
             loading={paramsLoading}
             error={paramsError ? 'Failed to load workflow parameters' : null}
             loraOptions={loraOptions}
+            imageOptions={library.map(i => i.filename)}
+            imageThumbnailUrl={workspaceApi.getRefImageThumbnailUrl}
             values={overrides}
-            onChange={(nodeId, key, value) =>
+            onChange={(nodeId, key, value) => {
               setOverrides(prev => ({ ...prev, [nodeId]: { ...prev[nodeId], [key]: value } }))
-            }
-            onReset={() => workflowParams && setOverrides(buildInitialOverrides(workflowParams))}
+              // LoadImage dropdown → library grid: select the matching
+              // library image; a baked-in ComfyUI name matches nothing, so
+              // clear the grid rather than leave it claiming another image.
+              if (nodeId === loadImageNodeId && key === 'image') {
+                const match =
+                  typeof value === 'string' ? library.find(i => i.filename === value) : undefined
+                setSelectedPaths(match ? new Set([match.path]) : new Set())
+              }
+            }}
+            onReset={() => setOverrides({})}
           />
         </div>
       </aside>
@@ -381,16 +572,28 @@ export const WorkspacePage: React.FC = () => {
         <div className="p-4 border-b flex items-center justify-between">
           <h1 className="text-xl font-bold">Workspace</h1>
           <div className="flex items-center gap-2">
-            {selectedPaths.size > 0 && (
-              <Badge variant="secondary">{selectedPaths.size} selected</Badge>
+            {/* Dispatch failures used to be silent — a batch that 500s just
+                stopped spinning, which read as "multi-select doesn't work". */}
+            {processMutation.isError && (
+              <span
+                className="text-xs text-destructive max-w-xs truncate"
+                title={uploadErrorMessage(processMutation.error, 'Dispatch failed')}
+              >
+                {uploadErrorMessage(processMutation.error, 'Dispatch failed')}
+              </span>
             )}
+            {selectedPaths.size > 0 ? (
+              <Badge variant="secondary">{selectedPaths.size} selected</Badge>
+            ) : effectivePaths.length > 0 ? (
+              <Badge variant="secondary">from Load Image</Badge>
+            ) : null}
             <Button
               onClick={() => processMutation.mutate()}
-              disabled={selectedPaths.size === 0 || processMutation.isPending}
+              disabled={effectivePaths.length === 0 || processMutation.isPending}
               isLoading={processMutation.isPending}
             >
               <Play className="w-4 h-4 mr-2" />
-              Process {selectedPaths.size > 0 ? `(${selectedPaths.size})` : ''}
+              Process {effectivePaths.length > 0 ? `(${effectivePaths.length})` : ''}
             </Button>
           </div>
         </div>
@@ -398,6 +601,7 @@ export const WorkspacePage: React.FC = () => {
         <Tabs defaultValue="library" className="flex-1 flex flex-col overflow-hidden">
           <TabsList className="mx-4 mt-4 w-fit">
             <TabsTrigger value="library">Library ({library.length})</TabsTrigger>
+            <TabsTrigger value="review">Review</TabsTrigger>
             <TabsTrigger value="history">Execution History</TabsTrigger>
             <TabsTrigger value="tasks">Active Tasks ({activeTasks.length})</TabsTrigger>
             <TabsTrigger value="caption-export">Caption Export</TabsTrigger>
@@ -409,7 +613,7 @@ export const WorkspacePage: React.FC = () => {
             <label
               className="flex flex-col items-center justify-center w-full mb-4 p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
+              onDrop={(e) => { e.preventDefault(); void handleDrop(e.dataTransfer) }}
             >
               <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp" multiple
                 onChange={(e) => void handleUpload(e.target.files)} />
@@ -420,6 +624,7 @@ export const WorkspacePage: React.FC = () => {
                 {uploading ? 'Uploading...' : 'Drop images here or click to upload'}
               </p>
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP</p>
+              {uploadError && <p className="text-xs text-destructive mt-1">{uploadError}</p>}
             </label>
 
             <ImageLibrary
@@ -432,6 +637,11 @@ export const WorkspacePage: React.FC = () => {
               onClearSelection={clearSelection}
               onRefresh={() => refetchLibrary()}
             />
+          </TabsContent>
+
+          {/* Review Queue Tab */}
+          <TabsContent value="review" className="flex-1 overflow-auto px-4 pb-4">
+            <ReviewQueueSection />
           </TabsContent>
 
           {/* Execution History Tab */}
@@ -898,6 +1108,7 @@ const CaptionExportTab: React.FC<{
   const [persona, setPersona] = useState(defaultConfig.persona)
   const [visionModel, setVisionModel] = useState(defaultConfig.vision_model)
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null)
+  const [dropError, setDropError] = useState<string | null>(null)
   const [taskId, setTaskId] = useState<string | null>(() => {
     try { return sessionStorage.getItem('ff:ce:taskId') } catch { return null }
   })
@@ -1044,7 +1255,7 @@ const CaptionExportTab: React.FC<{
     staleTime: 60_000,
   })
 
-  const handleUpload = async (files: FileList | null) => {
+  const handleUpload = async (files: FileList | File[] | null) => {
     if (!files || files.length === 0 || uploadProgress !== null) return
     const arr = Array.from(files)
     setUploadProgress({ current: 0, total: arr.length })
@@ -1058,6 +1269,21 @@ const CaptionExportTab: React.FC<{
       setUploadProgress({ current: i + 1, total: arr.length })
     }
     setUploadProgress(null)
+  }
+
+  const handleDrop = async (dt: DataTransfer) => {
+    if (uploadProgress !== null) return
+    setDropError(null)
+    try {
+      const files = await resolveDroppedFiles(dt)
+      if (files.length === 0) {
+        setDropError('No image found in the dropped content')
+        return
+      }
+      await handleUpload(files)
+    } catch (err) {
+      setDropError(uploadErrorMessage(err))
+    }
   }
 
   const handleDriveFetch = async () => {
@@ -1184,7 +1410,7 @@ const CaptionExportTab: React.FC<{
       image_entries: entries,
       persona,
       vision_model: visionModel,
-      workflow_type: 'turbo',
+      workflow_type: 'image_generation',
     })
     setTaskId(res.task_id)
     setStarted(true)
@@ -1310,7 +1536,7 @@ const CaptionExportTab: React.FC<{
             <label
               className="flex flex-col items-center justify-center w-full p-6 border-2 border-dashed border-muted-foreground/30 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); void handleUpload(e.dataTransfer.files) }}
+              onDrop={(e) => { e.preventDefault(); void handleDrop(e.dataTransfer) }}
             >
               <input
                 type="file"
@@ -1336,6 +1562,7 @@ const CaptionExportTab: React.FC<{
                 </div>
               )}
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
+              {dropError && <p className="text-xs text-destructive mt-1">{dropError}</p>}
             </label>
           )}
 
@@ -1777,7 +2004,6 @@ const CaptionExportTab: React.FC<{
                 <BookOpen className="w-4 h-4 text-muted-foreground" />
                 <span className="font-semibold text-sm">
                   Instructions — {persona}
-                  {instructions && <span className="ml-1.5 text-xs font-normal text-muted-foreground">({instructions.persona_type})</span>}
                 </span>
               </div>
               <button onClick={() => setShowInstructions(false)} className="text-muted-foreground hover:text-foreground">
@@ -1792,12 +2018,8 @@ const CaptionExportTab: React.FC<{
               ) : instructions ? (
                 <>
                   {[
-                    { label: 'Step 1 — Vision Prompt (analyst_task.txt)', content: instructions.analyst_task },
-                    { label: 'Analyst Agent Backstory', content: instructions.analyst_agent },
-                    { label: 'Prompt Engineer Backstory', content: instructions.turbo_agent },
-                    { label: 'Step 2 — Framework (turbo_framework.txt)', content: instructions.turbo_framework },
-                    { label: 'Constraints (turbo_constraints.txt)', content: instructions.turbo_constraints },
-                    { label: 'Example Output (turbo_example.txt)', content: instructions.turbo_example },
+                    { label: 'System Prompt (agent_system.txt)', content: instructions.agent_system },
+                    { label: 'Identity Lock (personas/' + persona + '/identity_lock.txt)', content: instructions.identity_lock },
                   ].filter(s => s.content).map(section => (
                     <div key={section.label}>
                       <p className="text-xs font-medium text-muted-foreground mb-1.5">{section.label}</p>

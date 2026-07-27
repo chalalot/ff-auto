@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.api.deps import get_config_service
-from backend.models.config import PersonaSummary, PersonaUpdateRequest, PresetConfig, LastUsedConfig
+from backend.models.config import PersonaSummary, PresetConfig, LastUsedConfig
 from backend.services.config import ConfigService
 
 router = APIRouter()
@@ -13,22 +13,6 @@ router = APIRouter()
 @router.get("/personas", response_model=List[PersonaSummary])
 def list_personas(svc: ConfigService = Depends(get_config_service)):
     return svc.list_personas()
-
-
-@router.get("/personas/{name}", response_model=PersonaSummary)
-def get_persona(name: str, svc: ConfigService = Depends(get_config_service)):
-    persona = svc.get_persona(name)
-    if not persona:
-        raise HTTPException(status_code=404, detail=f"Persona '{name}' not found")
-    return persona
-
-
-@router.put("/personas/{name}")
-def update_persona(name: str, body: PersonaUpdateRequest, svc: ConfigService = Depends(get_config_service)):
-    ok = svc.update_persona(name, body.model_dump(exclude_none=True))
-    if not ok:
-        raise HTTPException(status_code=500, detail="Failed to update persona")
-    return {"ok": True}
 
 
 @router.get("/presets", response_model=List[str])
@@ -105,51 +89,43 @@ def add_lora_option(body: AddLoraOptionRequest, svc: ConfigService = Depends(get
     return svc.add_lora_option(body.name)
 
 
-@router.get("/persona-types", response_model=List[str])
-def persona_types(svc: ConfigService = Depends(get_config_service)):
-    return svc.get_persona_types()
+# ------------------------------------------------------------------
+# Character identity locks (per-character preset user-prompt text)
+# ------------------------------------------------------------------
+
+@router.get("/identity-locks", response_model=Dict[str, str])
+def get_identity_locks(svc: ConfigService = Depends(get_config_service)):
+    return svc.get_identity_locks()
 
 
-class CreatePersonaTypeRequest(BaseModel):
-    name: str
-
-
-@router.post("/persona-types")
-def create_persona_type(body: CreatePersonaTypeRequest, svc: ConfigService = Depends(get_config_service)):
-    name = body.name.strip().lower().replace(" ", "_")
-    if not name:
-        raise HTTPException(status_code=400, detail="Type name cannot be empty")
-    ok = svc.create_persona_type(name)
+@router.put("/identity-locks/{name}")
+def save_identity_lock(
+    name: str,
+    content: str = Body(..., media_type="text/plain"),
+    svc: ConfigService = Depends(get_config_service),
+):
+    ok = svc.save_identity_lock(name, content)
     if not ok:
-        raise HTTPException(status_code=500, detail="Failed to create persona type")
-    return {"ok": True, "name": name}
+        raise HTTPException(status_code=404, detail=f"Persona '{name}' not found")
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------
-# Template file editor
+# Global agent prompts (the single system prompt + its task template)
 # ------------------------------------------------------------------
 
-@router.get("/templates", response_model=List[str])
-def list_templates(svc: ConfigService = Depends(get_config_service)):
-    return svc.list_template_types()
+@router.get("/agent-prompts", response_model=Dict[str, str])
+def get_agent_prompts(svc: ConfigService = Depends(get_config_service)):
+    return svc.get_agent_prompts()
 
 
-@router.get("/templates/{type_name}", response_model=Dict[str, str])
-def get_template(type_name: str, svc: ConfigService = Depends(get_config_service)):
-    types = svc.list_template_types()
-    if type_name not in types:
-        raise HTTPException(status_code=404, detail=f"Template type '{type_name}' not found")
-    return svc.get_template_files(type_name)
-
-
-@router.put("/templates/{type_name}/{filename}")
-def save_template(
-    type_name: str,
+@router.put("/agent-prompts/{filename}")
+def save_agent_prompt(
     filename: str,
     content: str = Body(..., media_type="text/plain"),
     svc: ConfigService = Depends(get_config_service),
 ):
-    ok = svc.save_template_file(type_name, filename, content)
+    ok = svc.save_agent_prompt(filename, content)
     if not ok:
         raise HTTPException(status_code=400, detail=f"Invalid filename '{filename}'")
     return {"ok": True}

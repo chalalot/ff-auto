@@ -1,0 +1,31 @@
+{{MODE_DIRECTIVE}}
+
+Character identity lock — the fixed description of WHO the subject is. It is binding: inject it
+verbatim into the prompt immediately after the shot type, and never paraphrase, reorder, drop, or
+override any of its traits (see IDENTITY LOCK PLACEMENT in your system contract). It may be empty,
+in which case describe the subject from the image/brief instead:
+<identity_lock>
+{{IDENTITY_LOCK}}
+</identity_lock>
+
+{{BRIEF_BLOCK}}
+
+Return only the final prompt: exactly one single prose paragraph in the shape of the output examples below — no headers, section markers, JSON, or commentary. Silently verify before returning that the output is one plain paragraph, that no detail was invented, that the identity lock is present verbatim right after the shot type, that framing/placement/lens/lighting agree, that aperture and depth of field do not contradict each other, and that the closing grade matches the light you actually observed.{{VARIATION_NOTE}}
+
+OUTPUT EXAMPLES
+Three examples follow. They exist to show the SHAPE and the section order, not a phrasebook to copy
+from. Read them for what CHANGES between them: the light direction, the optics, and the closing
+grade are different in each because the references were lit differently. Never carry a closing
+clause, a lens, or a light description over from an example — derive each one from the reference in
+front of you. Note also where the identity lock sits in all three: immediately after the shot type,
+before any variable face detail, with camera height folded into the shot-type clause ahead of it.
+
+EXAMPLE A — backlit interior, heavy flare, low camera, foreground intrusion, hazy low-contrast grade
+A close-up selfie shot taken from below chest height and angled up, of a young adult Western woman in her early 20s. She has atypical small rounded oval face, almond-shaped pale eyes and long lashes, fair luminous skin, long voluminous wavy blonde hair, light natural makeup with soft pink lips, neutral expression, her chin lowered and her head canted toward her left shoulder, her eyes flicked up and looking directly into the lens. She is wearing an off-shoulder cream ribbed-knit crop top and dark high-waisted trousers with a wide black belt, a thin black choker and layered fine silver necklaces. She is extending her right arm forward to hold the camera, and her fuzzy white knit sleeve enters the bottom-left foreground heavily out of focus and close to the lens. The environment is a sunlit indoor studio with a tall arched window, framed canvases hung on the pale plaster wall, and a green potted plant at the right edge. 35mm film photography with halation around the bright edges and fine grain, hard afternoon sunlight streaming through the window directly behind her, rim-lighting her hair into glowing separated strands, heavy veiling glare washing across the frame and a prismatic rainbow lens-flare streak through the right side, the window blown out to featureless white, soft gradient falloff onto her face and chest, 35mm lens, f/2.8, shallow depth of field, sharp focus on her face, warm low-contrast grade with lifted blacks.
+
+EXAMPLE B — hard midday sun outdoors, moderate focus, punchy saturated grade, signage described rather than quoted
+A medium shot at eye level of a young adult Western woman in her early 20s. She has atypical small rounded oval face, almond-shaped pale eyes and long lashes, fair luminous skin, long voluminous wavy blonde hair, light natural makeup with soft pink lips, gentle smile, looking directly at the camera. She is wearing a loose white short-sleeve cotton top with rolled cuffs tucked into a blue and white gingham midi skirt, with a light blue crossbody bag strap running across her chest. She is standing with her weight shifted onto one leg, her right arm raised and her hand resting flat on the wall above her head, holding a clear plastic cup of iced coffee with a straw in her left hand. The environment is a narrow sunlit side street with a pale tiled wall, red and white Japanese signage and a small wall-mounted alarm box behind her, and orange-red bougainvillea crowding in from the left frame edge. Casual street photography on 35mm film with natural grain, hard overhead midday sunlight slightly overexposing her white top, crisp hard-edged shadows falling across the tiled wall, warm bounce off the pavement filling the shaded side of her face, 35mm lens, f/4, moderate depth of field with the far street softly out of focus, sharp focus on the subject, saturated warm color, high contrast.
+
+EXAMPLE C — backlit golden hour, dissolved background, long lens, low-contrast film grade
+A tight close-up shot taken from slightly below eye level, of a young adult Western woman in her early 20s. She has atypical small rounded oval face, almond-shaped pale eyes and long lashes, fair luminous skin, long voluminous wavy blonde hair, light natural makeup with neutral lip color, calm expression, her chin level, her face turned back over her right shoulder and her head canted slightly toward that same shoulder, looking directly at the camera. She is wearing a plain black tank top with one bare shoulder toward the lens, fine strands of her hair blown loose across her cheek. The background is completely dissolved into featureless warm bokeh. 35mm film photography with halation around the bright edges and fine grain, golden hour sunlight low and directly behind her, strong warm rim light igniting the edge of her hair into glowing separated filaments, soft haze drifting across her cheek and a gentle gradient falloff into shadow on the shaded side of her face, 85mm lens, f/1.4, extremely shallow depth of field, sharp focus on her eyes, warm low-contrast grade with lifted blacks.
+
