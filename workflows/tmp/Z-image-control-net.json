@@ -1,0 +1,413 @@
+{
+  "827": {
+    "inputs": {
+      "image": "42cbfe8535281cb45147ccc0485b4ef075060851f668b0ebcb00cdfa1b5eeca2.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  },
+  "828": {
+    "inputs": {
+      "resize_type": "scale dimensions",
+      "resize_type.width": 1024,
+      "resize_type.height": [
+        "858",
+        1
+      ],
+      "resize_type.crop": "disabled",
+      "scale_method": "lanczos",
+      "input": [
+        "827",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize Image/Mask"
+    }
+  },
+  "830": {
+    "inputs": {
+      "ckpt_name": "depth_anything_v2_vitl.pth",
+      "resolution": 512,
+      "image": [
+        "828",
+        0
+      ]
+    },
+    "class_type": "DepthAnythingV2Preprocessor",
+    "_meta": {
+      "title": "Depth Anything V2 - Relative"
+    }
+  },
+  "831": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "832": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "833": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "834": {
+    "inputs": {
+      "name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"
+    },
+    "class_type": "ModelPatchLoader",
+    "_meta": {
+      "title": "Load Model Patch"
+    }
+  },
+  "835": {
+    "inputs": {
+      "samples": [
+        "837",
+        0
+      ],
+      "vae": [
+        "833",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "836": {
+    "inputs": {
+      "shift": 4,
+      "model": [
+        "838",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "837": {
+    "inputs": {
+      "seed": 140274352381802,
+      "steps": 8,
+      "cfg": 1.1,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1,
+      "model": [
+        "836",
+        0
+      ],
+      "positive": [
+        "840",
+        0
+      ],
+      "negative": [
+        "847",
+        0
+      ],
+      "latent_image": [
+        "839",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "838": {
+    "inputs": {
+      "strength": 0.8,
+      "model": [
+        "842",
+        0
+      ],
+      "model_patch": [
+        "834",
+        0
+      ],
+      "vae": [
+        "833",
+        0
+      ],
+      "image": [
+        "830",
+        0
+      ]
+    },
+    "class_type": "QwenImageDiffsynthControlnet",
+    "_meta": {
+      "title": "Apply Qwen Image DiffSynth ControlNet"
+    }
+  },
+  "839": {
+    "inputs": {
+      "width": [
+        "841",
+        0
+      ],
+      "height": [
+        "841",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "840": {
+    "inputs": {
+      "text": "A photo captured young adult Western woman in her early 20s. She has atypical small rounded oval face, almond-shaped pale eyes and long lashes, fair luminous skin, long voluminous wavy blonde hair, neutral expression with mouth slightly parted, gaze directed downward. She is wearing a brown cotton baseball cap with white embroidered polo-player logo on front, an olive-green suede-like zip-front jacket with collar, snap pockets, and ribbed cuffs, and a white tiered ruffled mini skirt with lace hem trim. She is standing upright with torso angled slightly right, head tilted forward and down so the cap brim obscures the upper face, both hands inserted into jacket pockets. The environment is an outdoor urban historic site featuring large ashlar stone masonry with arched openings and a modern glass-and-metal railing above a concrete retaining wall, with cobblestone pavement in the foreground. Realistic candid photography, cool diffused daylight from above-left, soft low-contrast shadows cast downward and slightly to the right, photorealistic, highly detailed skin texture, 35mm lens, f/8, natural depth of field, sharp focus on the subject, correct hand anatomy and scale.",
+      "clip": [
+        "831",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "841": {
+    "inputs": {
+      "image": [
+        "828",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "842": {
+    "inputs": {
+      "lora_name": "khiemle__xz-comfy__jennie_outdoor_v1.safetensors",
+      "strength_model": 1.15,
+      "model": [
+        "832",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "843": {
+    "inputs": {
+      "vae_name": "UltraFlux-v1.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "844": {
+    "inputs": {
+      "pixels": [
+        "852",
+        0
+      ],
+      "vae": [
+        "833",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "845": {
+    "inputs": {
+      "samples": [
+        "846",
+        0
+      ],
+      "vae": [
+        "843",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "846": {
+    "inputs": {
+      "seed": 636532936542181,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "linear_quadratic",
+      "denoise": 0.1,
+      "model": [
+        "871",
+        0
+      ],
+      "positive": [
+        "840",
+        0
+      ],
+      "negative": [
+        "847",
+        0
+      ],
+      "latent_image": [
+        "844",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "847": {
+    "inputs": {
+      "conditioning": [
+        "840",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Conditioning Zero Out"
+    }
+  },
+  "852": {
+    "inputs": {
+      "resize_type": "scale by multiplier",
+      "resize_type.multiplier": 1.5,
+      "scale_method": "area",
+      "input": [
+        "835",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "Resize Image/Mask"
+    }
+  },
+  "853": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "845",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "856": {
+    "inputs": {
+      "image": [
+        "827",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "858": {
+    "inputs": {
+      "expression": "a*1024",
+      "values.a": [
+        "859",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "859": {
+    "inputs": {
+      "expression": "b/a",
+      "values.a": [
+        "856",
+        0
+      ],
+      "values.b": [
+        "856",
+        1
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "Math Expression"
+    }
+  },
+  "871": {
+    "inputs": {
+      "lora_name": "RealisticSnapshot-Zimage-Turbov5.safetensors",
+      "strength_model": 0.3,
+      "model": [
+        "842",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "873": {
+    "inputs": {
+      "compare_view": {
+        "__value__": [
+          "",
+          ""
+        ]
+      },
+      "image_a": [
+        "835",
+        0
+      ],
+      "image_b": [
+        "853",
+        0
+      ]
+    },
+    "class_type": "ImageCompare",
+    "_meta": {
+      "title": "Compare Images"
+    }
+  }
+}
