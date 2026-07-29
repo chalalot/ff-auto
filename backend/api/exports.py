@@ -1,0 +1,500 @@
+"""Caption-export and LoRA-training delivery routes.
+
+Split out of :mod:`backend.api.workspace`: the caption-export flow (upload →
+CrewAI captioning → ZIP), its Google Drive integration, RunPod LoRA training
+jobs, and the Hugging Face upload. Mounted under the same ``/api/workspace``
+prefix so every URL is unchanged.
+"""
+import io
+import logging
+import zipfile
+from pathlib import Path
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from backend.api.deps import (
+    get_caption_exports_storage,
+    get_image_processing_service,
+    get_runpod_jobs_storage,
+)
+from backend.api.identity import Identity, get_identity
+from backend.models.workspace import (
+    CaptionExportEntry,
+    CaptionExportUploadResponse,
+    CaptionExportRequest,
+    GDriveFetchRequest,
+    GDriveUploadZipRequest,
+    RunpodSubmitRequest,
+    ManualExportToDriveRequest,
+)
+from backend.services.image_processing import ImageProcessingService
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+# ------------------------------------------------------------------
+# Caption Export — run CrewAI, export ZIP of images + .txt prompts
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/upload", response_model=CaptionExportUploadResponse)
+async def caption_export_upload(
+    files: List[UploadFile] = File(...),
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+):
+    """Upload images for caption export. Saves to PROCESSED_DIR; returns stem mapping."""
+    entries = []
+    for f in files:
+        data = await f.read()
+        original_name = f.filename or "upload"
+        stem = Path(original_name).stem
+        ext = Path(original_name).suffix.lower() or ".jpg"
+        try:
+            saved_path = svc.save_ref_image(original_name, data)
+            entries.append(CaptionExportEntry(stem=stem, path=saved_path, original_ext=ext))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return CaptionExportUploadResponse(entries=entries)
+
+
+@router.post("/caption-export/start")
+def caption_export_start(body: CaptionExportRequest):
+    """Dispatch caption_export_task to run CrewAI on each uploaded image."""
+    import json as _json
+    import time as _time
+    from backend.celery_app import celery_app as _celery
+    from backend.services.image_processing import _redis_client, _ACTIVE_TASKS_SET, _TASK_META_PREFIX, _TASK_META_TTL
+
+    task = _celery.send_task(
+        "backend.tasks.caption_export_task",
+        kwargs={
+            "image_entries": [e.model_dump() for e in body.image_entries],
+            "persona": body.persona,
+            "vision_model": body.vision_model,
+            "workflow_type": body.workflow_type,
+        },
+        queue="image",
+    )
+
+    # Register in Redis so any session/user can track this task
+    try:
+        r = _redis_client()
+        meta = _json.dumps({
+            "task_type": "caption_export",
+            "persona": body.persona,
+            "image_count": len(body.image_entries),
+            "dispatched_at": _time.time(),
+        })
+        r.sadd(_ACTIVE_TASKS_SET, task.id)
+        r.setex(_TASK_META_PREFIX + task.id, _TASK_META_TTL, meta)
+    except Exception as exc:
+        logger.warning(f"Could not register caption export task {task.id} in Redis: {exc}")
+
+    return {"task_id": task.id}
+
+
+def _caption_zip_from_task(task_id: str) -> bytes:
+    """Build the (image + .txt prompt) ZIP from a completed caption task."""
+    from celery.result import AsyncResult
+    from backend.celery_app import celery_app as _celery
+
+    result = AsyncResult(task_id, app=_celery)
+    if result.state != "SUCCESS":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task not ready (state: {result.state}). Wait for it to finish.",
+        )
+
+    data = result.result or {}
+    results = data.get("results", [])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for item in results:
+            stem = item.get("stem", "image")
+            ext = item.get("original_ext", ".jpg")
+            image_path = Path(item.get("path", ""))
+            prompt = item.get("prompt", "")
+            if image_path.exists():
+                zf.write(image_path, f"{stem}{ext}")
+            zf.writestr(f"{stem}.txt", prompt)
+    return buf.getvalue()
+
+
+@router.get("/caption-export/{task_id}/download")
+def caption_export_download(task_id: str):
+    """Build and stream a ZIP of (image + .txt prompt) pairs once the task succeeds."""
+    zip_data = _caption_zip_from_task(task_id)
+    return StreamingResponse(
+        io.BytesIO(zip_data),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="caption_export_{task_id[:8]}.zip"'},
+    )
+
+
+# ------------------------------------------------------------------
+# Caption Export — Google Drive integration
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/gdrive/fetch", response_model=CaptionExportUploadResponse)
+async def caption_export_gdrive_fetch(
+    body: GDriveFetchRequest,
+    svc: ImageProcessingService = Depends(get_image_processing_service),
+):
+    """
+    Fetch images from a Google Drive folder, downscale with Pillow, save to
+    PROCESSED_DIR, and return entries in the same format as the upload endpoint.
+    """
+    import io as _io
+    from PIL import Image
+    from backend.third_parties import gdrive_client
+
+    try:
+        folder_id = gdrive_client.get_folder_id(body.folder_url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        files = gdrive_client.list_images_in_folder(folder_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to list Drive folder: {e}")
+
+    if not files:
+        raise HTTPException(status_code=404, detail="No images found in the specified Drive folder")
+
+    entries = []
+    errors = []
+    for file in files:
+        try:
+            raw = gdrive_client.download_file(file["id"])
+            img = Image.open(_io.BytesIO(raw)).convert("RGB")
+            if body.max_dimension and max(img.size) > body.max_dimension:
+                img.thumbnail((body.max_dimension, body.max_dimension), Image.LANCZOS)
+            buf = _io.BytesIO()
+            img.save(buf, format="JPEG", quality=90)
+            data = buf.getvalue()
+
+            stem = Path(file["name"]).stem
+            ext = ".jpg"
+            saved_path = svc.save_ref_image(f"{stem}{ext}", data)
+            entries.append(CaptionExportEntry(stem=stem, path=saved_path, original_ext=ext))
+        except Exception as e:
+            errors.append(f"{file['name']}: {e}")
+
+    if not entries:
+        detail = "Failed to process any images from Drive"
+        if errors:
+            detail += f". Errors: {'; '.join(errors[:3])}"
+        raise HTTPException(status_code=500, detail=detail)
+
+    return CaptionExportUploadResponse(entries=entries)
+
+
+@router.post("/caption-export/gdrive/upload-zip")
+def caption_export_gdrive_upload_zip(body: GDriveUploadZipRequest):
+    """
+    Build the ZIP (images + .txt prompts) from a completed caption task, upload it
+    to the configured GDRIVE_UPLOAD_FOLDER_ID, and make it publicly readable.
+    """
+    from backend.third_parties import gdrive_client
+    from backend.config import GlobalConfig
+
+    folder_id = GlobalConfig.GDRIVE_UPLOAD_FOLDER_ID
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="GDRIVE_UPLOAD_FOLDER_ID is not set in .env")
+
+    zip_data = _caption_zip_from_task(body.task_id)
+
+    try:
+        zip_filename = f"caption_export_{body.task_id[:8]}.zip"
+        file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
+        public_url = gdrive_client.make_file_public(file_id)
+        return {"file_id": file_id, "filename": zip_filename, "public_url": public_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
+
+
+# ------------------------------------------------------------------
+# Caption Export — manual captions → ZIP → Drive
+# ------------------------------------------------------------------
+
+@router.post("/caption-export/manual/export-to-drive")
+def caption_export_manual_to_drive(
+    body: ManualExportToDriveRequest,
+    db: "CaptionExportsStorage" = Depends(get_caption_exports_storage),
+    identity: Identity = Depends(get_identity),
+):
+    """Build ZIP from manually-supplied captions and upload to Google Drive."""
+    import time as _time
+    from backend.third_parties import gdrive_client
+    from backend.config import GlobalConfig
+
+    folder_id = GlobalConfig.GDRIVE_UPLOAD_FOLDER_ID
+    if not folder_id:
+        raise HTTPException(status_code=400, detail="GDRIVE_UPLOAD_FOLDER_ID is not set in .env")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for entry in body.entries:
+            image_path = Path(entry.path)
+            caption = body.captions.get(entry.stem, "")
+            if image_path.exists():
+                zf.write(image_path, f"{entry.stem}{entry.original_ext}")
+            zf.writestr(f"{entry.stem}.txt", caption)
+    zip_data = buf.getvalue()
+
+    ts = int(_time.time())
+    zip_filename = f"manual_captions_{ts}.zip"
+    try:
+        file_id = gdrive_client.upload_file(zip_filename, zip_data, "application/zip", folder_id)
+        public_url = gdrive_client.make_file_public(file_id)
+        db.insert(
+            file_id=file_id,
+            filename=zip_filename,
+            public_url=public_url,
+            image_count=len(body.entries),
+            project_id=identity.project_id,
+            created_by_member_id=identity.member_id,
+        )
+        return {
+            "file_id": file_id,
+            "filename": zip_filename,
+            "folder_id": folder_id,
+            "public_url": public_url,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload to Drive: {e}")
+
+
+@router.get("/caption-export/manual/exports")
+def caption_export_manual_list(
+    db: "CaptionExportsStorage" = Depends(get_caption_exports_storage),
+):
+    return db.list_exports()
+
+
+# ------------------------------------------------------------------
+# Caption Export — RunPod LoRA training
+# ------------------------------------------------------------------
+
+@router.get("/caption-export/runpod/jobs")
+def caption_export_runpod_jobs(
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    return db.list_jobs()
+
+
+@router.post("/caption-export/runpod/submit")
+def caption_export_runpod_submit(
+    body: RunpodSubmitRequest,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Submit a LoRA training job to the RunPod serverless endpoint and persist it."""
+    import requests as _requests
+    from datetime import datetime
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    endpoint_id = body.endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not endpoint_id:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"input": body.job_input.model_dump()}
+
+    try:
+        resp = _requests.post(url, json=payload, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
+
+    result = resp.json()
+    job_id = result["id"]
+
+    db.insert(
+        job_id=job_id,
+        endpoint_id=endpoint_id,
+        lora_name=body.job_input.lora_name,
+        submitted_at=datetime.utcnow().isoformat(),
+        job_input=body.job_input.model_dump(),
+    )
+
+    return {"job_id": job_id, "endpoint_id": endpoint_id}
+
+
+@router.get("/caption-export/runpod/status/{job_id}")
+def caption_export_runpod_status(
+    job_id: str,
+    endpoint_id: Optional[str] = None,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Check the current status of a RunPod job and update the DB record."""
+    import requests as _requests
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not eid:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{eid}/status/{job_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        resp = _requests.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        if e.response.status_code == 404:
+            # Job cleared from RunPod history. If we already have output saved, keep COMPLETED.
+            # If output was never captured, mark EXPIRED so the user knows to rerun.
+            existing = db.get_job(job_id)
+            if existing and existing.get("output"):
+                status = "COMPLETED"
+            else:
+                status = "EXPIRED"
+            db.update_status(job_id=job_id, status=status)
+            return {"id": job_id, "status": status, "message": "Job cleared from RunPod queue."}
+        raise HTTPException(status_code=502, detail=f"RunPod API error: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to reach RunPod: {e}")
+
+    data = resp.json()
+    db.update_status(
+        job_id=job_id,
+        status=data.get("status", ""),
+        output=data.get("output"),
+    )
+    return data
+
+
+@router.post("/caption-export/runpod/cancel/{job_id}")
+def caption_export_runpod_cancel(
+    job_id: str,
+    endpoint_id: Optional[str] = None,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Send a cancel request to RunPod for an in-flight job, then mark it CANCELLED locally."""
+    import requests as _requests
+    from backend.config import GlobalConfig
+
+    api_key = GlobalConfig.RUNPOD_API_KEY
+    eid = endpoint_id or GlobalConfig.RUNPOD_ENDPOINT_ID
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="RUNPOD_API_KEY is not configured in .env")
+    if not eid:
+        raise HTTPException(status_code=400, detail="RUNPOD_ENDPOINT_ID is not configured in .env")
+
+    url = f"https://api.runpod.ai/v2/{eid}/cancel/{job_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    try:
+        resp = _requests.post(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+    except _requests.HTTPError as e:
+        # 404 means job is already done — still mark cancelled locally
+        if e.response.status_code != 404:
+            raise HTTPException(status_code=502, detail=f"RunPod cancel error: {e.response.text}")
+
+    db.update_status(job_id, "CANCELLED")
+    return {"job_id": job_id, "status": "CANCELLED"}
+
+
+@router.delete("/caption-export/runpod/jobs/{job_id}")
+def caption_export_runpod_delete(
+    job_id: str,
+    db: "RunpodJobsStorage" = Depends(get_runpod_jobs_storage),
+):
+    """Remove a job record from the local DB."""
+    db.delete_job(job_id)
+    return {"deleted": job_id}
+
+
+class HFUploadRequest(BaseModel):
+    file_url: str   # signed S3 URL to download from
+    lora_name: str  # e.g. "Macincesht__ff-loras__emi_v8.safetensors"
+
+
+@router.post("/caption-export/runpod/upload-to-hf")
+def caption_export_upload_to_hf(body: HFUploadRequest):
+    """Download a file from a signed S3 URL and push it to Hugging Face Hub."""
+    import tempfile
+    import requests as _requests
+    from huggingface_hub import HfApi
+    from backend.config import GlobalConfig
+
+    hf_token = GlobalConfig.HF_TOKEN
+    if not hf_token:
+        raise HTTPException(status_code=400, detail="HF_TOKEN is not configured in .env")
+
+    # Parse lora_name into (owner, repo, filename):
+    #   owner__repo__name.safetensors  → explicit owner + repo
+    #   owner__name.safetensors        → explicit owner, repo = "ff-loras"
+    #   name.safetensors               → owner from HF token whoami, repo = "ff-loras"
+    parts = body.lora_name.split("__", 2)
+    if len(parts) == 3:
+        hf_owner, hf_repo, filename = parts
+    elif len(parts) == 2:
+        hf_owner, filename = parts
+        hf_repo = "ff-loras"
+    else:
+        try:
+            from huggingface_hub import HfApi as _HfApi
+            hf_owner = _HfApi(token=hf_token).whoami()["name"]
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"lora_name has no owner prefix and HF whoami failed: {e}. Use format: owner__name.safetensors")
+        hf_repo = "ff-loras"
+        filename = body.lora_name
+
+    if not filename.endswith(".safetensors"):
+        filename = f"{filename}.safetensors"
+
+    repo_id = f"{hf_owner}/{hf_repo}"
+
+    # Download the file from the signed URL
+    try:
+        dl = _requests.get(body.file_url, timeout=300, stream=True)
+        dl.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to download file from S3: {e}")
+
+    # Upload to HF Hub
+    try:
+        with tempfile.NamedTemporaryFile(suffix=f"_{filename}", delete=False) as tmp:
+            for chunk in dl.iter_content(chunk_size=8 * 1024 * 1024):
+                tmp.write(chunk)
+            tmp_path = tmp.name
+
+        api = HfApi(token=hf_token)
+        api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True, private=False)
+        api.upload_file(
+            path_or_fileobj=tmp_path,
+            path_in_repo=filename,
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message=f"Upload {filename}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Hugging Face upload failed: {e}")
+    finally:
+        import os
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+    download_url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    return {"repo_id": repo_id, "filename": filename, "url": download_url}

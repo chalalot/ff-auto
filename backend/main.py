@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.api import (
     workspace,
+    workflows as workflows_module,
+    exports as exports_module,
     gallery,
     config_routes,
     monitor,
@@ -53,7 +55,11 @@ app.add_middleware(
 )
 
 # API routers
+# workspace, workflows, and exports share the /api/workspace prefix: they were
+# one module and every existing URL is preserved across the split.
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
+app.include_router(workflows_module.router, prefix="/api/workspace", tags=["workflows"])
+app.include_router(exports_module.router, prefix="/api/workspace", tags=["exports"])
 app.include_router(gallery.router, prefix="/api/gallery", tags=["gallery"])
 app.include_router(config_routes.router, prefix="/api/config", tags=["config"])
 app.include_router(monitor.router, prefix="/api/monitor", tags=["monitor"])
