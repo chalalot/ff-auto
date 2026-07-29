@@ -121,6 +121,9 @@ class ConfigService:
     AGENT_PROMPT_FILES = [
         "agent_system.txt",
         "agent_instruction.txt",
+        # Mode directives substituted into {{MODE_DIRECTIVE}} in the instruction.
+        "mode_image_directive.txt",
+        "mode_brief_directive.txt",
     ]
 
     def get_agent_prompts(self) -> Dict[str, str]:
@@ -149,26 +152,55 @@ class ConfigService:
             return False
 
     # ------------------------------------------------------------------
-    # Static option lists (replaces Streamlit selectbox values)
+    # Selector option lists (prompts/options.json)
     # ------------------------------------------------------------------
+    # The lists live in prompts/options.json — the prompts dir is bind-mounted,
+    # so edits take effect without a rebuild or restart. The constants below are
+    # fallbacks for a missing/broken file, and the seed for the repo copy.
+
+    _DEFAULT_WORKFLOW_TYPES = ["image_generation", "image_upscaler", "multiangle_edit"]
+
+    _DEFAULT_VISION_MODELS = [
+        {"label": "ChatGPT (gpt-4o)", "value": "gpt-4o"},
+        {"label": "Grok (grok-4.3)", "value": "grok-4.3"},
+        {"label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro"},
+        {"label": "Gemma 4 31B IT (gemma-4-31b-it)", "value": "gemma-4-31b-it"},
+    ]
+
+    _DEFAULT_CLIP_MODEL_TYPES = [
+        "stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi",
+        "ltxv", "pixart", "cosmos", "lumina2", "wan", "hidream", "chroma",
+        "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image",
+    ]
+
+    @property
+    def _options_file(self) -> Path:
+        return self.prompts_dir / "options.json"
+
+    def _load_options(self) -> dict:
+        if not self._options_file.exists():
+            return {}
+        try:
+            data = json.loads(self._options_file.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logger.error(f"Failed to load {self._options_file}: {e}")
+            return {}
+
+    def _option_list(self, key: str, default: list) -> list:
+        value = self._load_options().get(key)
+        if isinstance(value, list) and value:
+            return value
+        return default
 
     def get_workflow_types(self) -> List[str]:
-        return ["image_generation", "image_upscaler", "multiangle_edit"]
+        return self._option_list("workflow_types", self._DEFAULT_WORKFLOW_TYPES)
 
     def get_vision_models(self) -> List[Dict[str, str]]:
-        return [
-            {"label": "ChatGPT (gpt-4o)", "value": "gpt-4o"},
-            {"label": "Grok (grok-4.3)", "value": "grok-4.3"},
-            {"label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro"},
-            {"label": "Gemma 4 31B IT (gemma-4-31b-it)", "value": "gemma-4-31b-it"},
-        ]
+        return self._option_list("vision_models", self._DEFAULT_VISION_MODELS)
 
     def get_clip_model_types(self) -> List[str]:
-        return [
-            "stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi",
-            "ltxv", "pixart", "cosmos", "lumina2", "wan", "hidream", "chroma",
-            "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image",
-        ]
+        return self._option_list("clip_model_types", self._DEFAULT_CLIP_MODEL_TYPES)
 
     _BUILTIN_LORA_OPTIONS = [
         "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
@@ -201,10 +233,11 @@ class ConfigService:
             return []
 
     def get_lora_options(self) -> List[str]:
+        base = self._option_list("lora_options", self._BUILTIN_LORA_OPTIONS)
         custom = self._load_custom_loras()
-        seen = set(self._BUILTIN_LORA_OPTIONS)
+        seen = set(base)
         extras = [c for c in custom if c not in seen]
-        return self._BUILTIN_LORA_OPTIONS + extras
+        return base + extras
 
     def add_lora_option(self, name: str) -> List[str]:
         name = name.strip()

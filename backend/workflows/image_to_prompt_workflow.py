@@ -16,21 +16,34 @@ from backend.services import vision_llm
 from backend.services.pipeline_trace import current_trace_step
 
 
-# Mode directives injected into the single task instruction. Kept inline (not as
-# separate prompt files) so the pipeline has exactly one system prompt and one
-# task template.
-_IMAGE_MODE_DIRECTIVE = (
+# Mode directives injected into the single task instruction. They live as
+# editable files in prompts/agents/ (bind-mounted, so edits are live); the
+# inline strings are only the fallback when a directive file is missing or
+# blank, keeping the pipeline bootable from a bare checkout.
+_IMAGE_MODE_DIRECTIVE_FILE = "mode_image_directive.txt"
+_BRIEF_MODE_DIRECTIVE_FILE = "mode_brief_directive.txt"
+
+_IMAGE_MODE_DIRECTIVE_DEFAULT = (
     "A reference image is attached to this message. Read it directly, then compile the "
     "final prompt. Preserve the reference's subject, pose intent, wardrobe, objects, and "
     "setting; change a photographic technique only when you can name the observed problem and "
     "why the new choice better serves the same intent."
 )
-_BRIEF_MODE_DIRECTIVE = (
+_BRIEF_MODE_DIRECTIVE_DEFAULT = (
     "This is a brief-only request — no reference image was supplied. Enhance the user's idea "
     "into a full, detailed, camera-style Z-Image prompt: choose one coherent photographic "
     "approach from the brief and expand it across the whole craft scaffold rather than echoing "
     "it or describing a correction."
 )
+
+
+def _mode_directive(has_image: bool) -> str:
+    filename = _IMAGE_MODE_DIRECTIVE_FILE if has_image else _BRIEF_MODE_DIRECTIVE_FILE
+    default = _IMAGE_MODE_DIRECTIVE_DEFAULT if has_image else _BRIEF_MODE_DIRECTIVE_DEFAULT
+    try:
+        return _read_agent_prompt(filename)
+    except (FileNotFoundError, ValueError):
+        return default
 
 
 def _wrap_brief(brief: str) -> str:
@@ -45,7 +58,9 @@ def _wrap_brief(brief: str) -> str:
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_AGENT_PROMPTS_DIR = _PROJECT_ROOT / "prompts" / "agents"
+# Same resolution rule as WorkflowConfigManager/ConfigService, so prompts the
+# UI edits are the prompts this workflow reads.
+_AGENT_PROMPTS_DIR = Path(os.getenv("PROMPTS_DIR", str(_PROJECT_ROOT / "prompts"))) / "agents"
 
 
 def _read_agent_prompt(filename: str) -> str:
@@ -121,7 +136,7 @@ class ImageToPromptWorkflow:
             )
         return _render_agent_prompt(
             "agent_instruction.txt",
-            MODE_DIRECTIVE=_IMAGE_MODE_DIRECTIVE if has_image else _BRIEF_MODE_DIRECTIVE,
+            MODE_DIRECTIVE=_mode_directive(has_image),
             IDENTITY_LOCK=identity_lock,
             WIDTH=width,
             HEIGHT=height,

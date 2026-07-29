@@ -1,0 +1,35 @@
+{
+  "workflow_types": [
+    "image_generation",
+    "image_upscaler",
+    "multiangle_edit"
+  ],
+  "vision_models": [
+    { "label": "ChatGPT (gpt-4o)", "value": "gpt-4o" },
+    { "label": "Grok (grok-4.3)", "value": "grok-4.3" },
+    { "label": "Gemini 2.5 Pro (gemini-2.5-pro)", "value": "gemini-2.5-pro" },
+    { "label": "Gemma 4 31B IT (gemma-4-31b-it)", "value": "gemma-4-31b-it" }
+  ],
+  "clip_model_types": [
+    "stable_diffusion", "stable_cascade", "sd3", "stable_audio", "mochi",
+    "ltxv", "pixart", "cosmos", "lumina2", "wan", "hidream", "chroma",
+    "ace", "omnigen2", "qwen_image", "hunyuan_image", "flux2", "ovis", "longcat_image"
+  ],
+  "lora_options": [
+    "khiemle__xz-comfy__jennie_turbo_v4.safetensors",
+    "khiemle__xz-comfy__jennie_outdoor_v1.safetensors",
+    "khiemle__xz-comfy__jennie_indoor_v1.safetensors",
+    "khiemle__xz-comfy__jennie_selfie_v2.safetensors",
+    "khiemle__xz-comfy__sephera_turbo_v6.safetensors",
+    "khiemle__xz-comfy__sephera_turbo_v2_gymer.safetensors",
+    "khiemle__xz-comfy__emi_turbo_v2.safetensors",
+    "Macincesht__ff-loras__emi_v3.safetensors",
+    "Macincesht__ff-loras__emi_v4.safetensors",
+    "Macincesht__ff-loras__emi_v5.safetensors",
+    "Macincesht__ff-loras__emi_v6.safetensors",
+    "Macincesht__ff-loras__emi_v7.safetensors",
+    "khiemle__xz-comfy__roxie_v3.safetensors",
+    "khiemle__xz-comfy__roxie_v4_000001250.safetensors",
+    "khiemle__xz-comfy__Sephera_v7.safetensors"
+  ]
+}

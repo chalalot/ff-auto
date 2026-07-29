@@ -19,6 +19,8 @@ prompts/
 prompts/*
 !prompts/agents/
 !prompts/agents/*.txt
+# Seed for the runtime-editable selector option lists (backend/services/config.py)
+!prompts/options.json
 .agents/
 docs/*
 !docs/superpowers/
