@@ -128,6 +128,60 @@ class WorkflowFileParametersResponse(BaseModel):
     nodes: List[WorkflowParamNode]
 
 
+class WorkflowSummary(BaseModel):
+    """One workflow file as the management list shows it.
+
+    ``valid`` is False for files that fail JSON parsing or API-format
+    validation; they stay listed (with ``error``) so they can be repaired.
+    """
+
+    name: str
+    node_count: int
+    size_bytes: int
+    modified_at: float
+    valid: bool
+    error: Optional[str] = None
+
+
+class WorkflowGraphResponse(BaseModel):
+    """A workflow opened for editing.
+
+    ``raw`` is always the file's text so the JSON editor can open (and repair)
+    a file that doesn't parse; ``graph`` is populated only when it validates,
+    and ``error`` explains why it didn't.
+    """
+
+    name: str
+    raw: str
+    graph: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class WorkflowCreateRequest(BaseModel):
+    name: str
+    # Omitted → a minimal valid starter graph (see workflow_library.blank_graph).
+    graph: Optional[Dict[str, Any]] = None
+
+
+class WorkflowSaveRequest(BaseModel):
+    graph: Dict[str, Any]
+
+
+class WorkflowRenameRequest(BaseModel):
+    new_name: str
+
+
+class WorkflowDuplicateRequest(BaseModel):
+    # Omitted → "<name> copy.json", auto-incremented on collision.
+    new_name: Optional[str] = None
+
+
+class WorkflowMutationResponse(BaseModel):
+    """The resulting filename — the server may adjust it (suffix, collision)."""
+
+    name: str
+
+
 class ComfyUIQueueStatus(BaseModel):
     running: List[dict]
     pending: List[dict]

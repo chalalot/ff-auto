@@ -67,6 +67,30 @@ export interface WorkflowParameters {
 // The three workflow categories the Configuration sidebar offers.
 export type WorkflowType = 'image_generation' | 'image_upscaler' | 'multiangle_edit'
 
+// ---------------------------------------------------------------------------
+// Workflow file management (the /workflows page)
+// ---------------------------------------------------------------------------
+
+/** One node of a ComfyUI API-format graph. Array-valued inputs are wiring. */
+export interface WorkflowGraphNode {
+  class_type: string
+  inputs: Record<string, unknown>
+  _meta?: { title?: string }
+}
+
+/** A whole API-format workflow: node id → node. */
+export type WorkflowGraph = Record<string, WorkflowGraphNode>
+
+export interface WorkflowSummary {
+  name: string
+  node_count: number
+  size_bytes: number
+  modified_at: number
+  /** False for files that fail to parse or aren't API format; `error` says why. */
+  valid: boolean
+  error?: string | null
+}
+
 export interface ProcessImageConfig {
   image_path?: string
   persona: string
