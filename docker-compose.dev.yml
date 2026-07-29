@@ -1,0 +1,35 @@
+# Development override — makes backend code changes live without an image
+# rebuild. Usage:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# What it changes:
+#   - backend: bind-mounts the source and runs uvicorn with --reload, so
+#     editing backend/**.py takes effect on save.
+#   - worker:  bind-mounts the source too. Celery has no autoreload, so after
+#     editing task/pipeline code run:  docker compose restart worker
+#     (fast — no rebuild needed, the mount already has the new code).
+#
+# Frontend: for live-reload UI development run Vite on the host instead of
+# the nginx image:  cd frontend && npm run dev
+# (vite.config.ts already proxies /api and /ws to localhost:$BACKEND_PORT).
+
+services:
+  backend:
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini:ro
+
+  worker:
+    volumes:
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini:ro
+
+  video_worker:
+    volumes:
+      - ./backend:/app/backend
+      - ./scripts:/app/scripts
+      - ./alembic.ini:/app/alembic.ini:ro
