@@ -8,6 +8,7 @@ from backend.workflows.image_to_prompt_workflow import ImageToPromptWorkflow
 from backend.third_parties.comfyui_client import ComfyUIClient
 from backend.database.image_logs_storage import ImageLogsStorage
 from backend.database.pipeline_runs_storage import PipelineRunsStorage
+from backend.services.gallery import ensure_thumbnail
 from backend.services.pipeline_trace import PipelineTraceRecorder
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,11 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
             local_result_path.write_bytes(image_bytes)
             saved_paths.append(str(local_result_path))
             logger.info(f"[download_execution_task] ✅ Saved {local_result_path}")
+
+            # Pre-generate the gallery thumbnail here in the worker so the
+            # first gallery view doesn't pay for a batch of LANCZOS resizes.
+            # Best-effort: ensure_thumbnail logs and returns None on failure.
+            ensure_thumbnail(local_result_path, output_dir / ".thumbnails")
 
         if not saved_paths:
             storage.mark_as_failed(execution_id)

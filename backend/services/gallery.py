@@ -32,6 +32,36 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 THUMBNAIL_MAX = 1024
 
 
+def ensure_thumbnail(original_path: Path, thumbnails_dir: Path) -> Optional[bytes]:
+    """Return thumbnail bytes for ``original_path``, generating and caching if
+    missing or stale.
+
+    Module-level so the Celery worker can pre-generate thumbnails the moment a
+    result image lands, instead of the first gallery view paying for a batch of
+    LANCZOS resizes.
+    """
+    if not original_path.exists():
+        return None
+    thumb_path = thumbnails_dir / f"thumb_{THUMBNAIL_MAX}_{original_path.name}"
+    if thumb_path.exists() and thumb_path.stat().st_mtime >= original_path.stat().st_mtime:
+        return thumb_path.read_bytes()
+
+    try:
+        thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        with Image.open(original_path) as img:
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            img.thumbnail((THUMBNAIL_MAX, THUMBNAIL_MAX), Image.Resampling.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            data = buf.getvalue()
+            thumb_path.write_bytes(data)
+            return data
+    except Exception as e:
+        logger.error(f"Thumbnail generation failed for {original_path.name}: {e}")
+        return None
+
+
 class GalleryService:
     def __init__(self):
         self.output_dir = Path(GlobalConfig.OUTPUT_DIR)
@@ -122,27 +152,7 @@ class GalleryService:
     # ------------------------------------------------------------------
 
     def get_thumbnail(self, filename: str, status: str = "pending") -> Optional[bytes]:
-        original_path = self._dir_for_status(status) / filename
-        if not original_path.exists():
-            return None
-
-        thumb_path = self.thumbnails_dir / f"thumb_{THUMBNAIL_MAX}_{filename}"
-        if thumb_path.exists() and thumb_path.stat().st_mtime >= original_path.stat().st_mtime:
-            return thumb_path.read_bytes()
-
-        try:
-            with Image.open(original_path) as img:
-                if img.mode in ("RGBA", "P"):
-                    img = img.convert("RGB")
-                img.thumbnail((THUMBNAIL_MAX, THUMBNAIL_MAX), Image.Resampling.LANCZOS)
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=85)
-                data = buf.getvalue()
-                thumb_path.write_bytes(data)
-                return data
-        except Exception as e:
-            logger.error(f"Thumbnail generation failed for {filename}: {e}")
-            return None
+        return ensure_thumbnail(self._dir_for_status(status) / filename, self.thumbnails_dir)
 
     # ------------------------------------------------------------------
     # Metadata extraction
