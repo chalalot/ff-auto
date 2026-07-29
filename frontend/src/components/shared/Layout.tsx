@@ -1,7 +1,7 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Settings, Archive, Loader2, BarChart3 } from 'lucide-react'
+import { Image, Grid, Video, Activity, FileText, Archive, Loader2, BarChart3, Workflow } from 'lucide-react'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import type { ActiveTask } from '@/types'
 import { MemberPickerModal } from '@/components/shared/MemberPickerModal'
@@ -37,6 +37,7 @@ const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSV
   { to: '/video', label: 'Video', icon: Video },
   { to: '/monitor', label: 'Monitor', icon: Activity },
   { to: '/prompts', label: 'Prompts', icon: FileText },
+  { to: '/workflows', label: 'Workflows', icon: Workflow },
 ]
 
 export const Layout: React.FC = () => {
@@ -82,22 +83,6 @@ export const Layout: React.FC = () => {
           ))}
         </nav>
 
-        <div className="p-2 border-t">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              )
-            }
-          >
-            <Settings className="w-5 h-5 shrink-0" />
-            <span className="hidden lg:block">Settings</span>
-          </NavLink>
-        </div>
       </aside>
 
       {/* Main */}
@@ -118,7 +103,16 @@ export const Layout: React.FC = () => {
           </div>
         )}
         <div className="flex-1 overflow-auto">
-          <Outlet />
+          {/* Pages are lazy chunks (see App.tsx); keep the shell visible while one loads */}
+          <React.Suspense
+            fallback={
+              <div className="flex items-center justify-center h-full text-muted-foreground">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            }
+          >
+            <Outlet />
+          </React.Suspense>
         </div>
       </main>
     </div>

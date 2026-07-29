@@ -430,7 +430,10 @@ export const ReviewQueueSection: React.FC = () => {
         per_page: 200,
         project_id: projectId,
       }),
-    refetchInterval: 5000,
+    // 200 rows per fetch — poll fast only while something is dispatched and
+    // its result is still pending; otherwise a slow refresh is enough.
+    refetchInterval: query =>
+      (query.state.data?.items ?? []).some(i => i.status === 'dispatched') ? 5000 : 30000,
   })
 
   const { data: personas = [] } = usePersonas()
