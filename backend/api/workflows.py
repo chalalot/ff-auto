@@ -7,7 +7,7 @@ workspace. Mounted under the same ``/api/workspace`` prefix so every URL is
 unchanged.
 """
 import logging
-from typing import List
+from typing import Dict, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
 
@@ -22,6 +22,9 @@ from backend.models.workspace import (
     WorkflowRenameRequest,
     WorkflowDuplicateRequest,
     WorkflowMutationResponse,
+    WorkflowKind,
+    WorkflowKindsRequest,
+    WorkflowTagEntry,
 )
 
 logger = logging.getLogger(__name__)
@@ -126,6 +129,63 @@ def list_workflow_library():
     from backend.services.workflow_library import summarize_workflows
 
     return summarize_workflows()
+
+
+# ---------------------------------------------------------------------------
+# Kinds and tags — what each workflow is, and where its inputs go.
+#
+# Declared before the /workflows/{workflow_name} routes so `tags` and `kinds`
+# are never read as a filename.
+# ---------------------------------------------------------------------------
+
+def _registry_op(fn, *args, **kwargs):
+    """Run a workflow_registry call, mapping its errors onto HTTP status codes."""
+    from backend.services.workflow_registry import RegistryValidationError
+
+    try:
+        return fn(*args, **kwargs)
+    except RegistryValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not write the registry: {exc}")
+
+
+@router.get("/workflows/kinds", response_model=List[WorkflowKind])
+def list_workflow_kinds():
+    """The Workflow Type / Mode vocabulary the Create sidebar is built from."""
+    from backend.services.workflow_registry import get_kinds
+
+    return get_kinds()
+
+
+@router.put("/workflows/kinds", response_model=List[WorkflowKind])
+def save_workflow_kinds(body: WorkflowKindsRequest):
+    """Replace the vocabulary. Tags naming a removed kind are dropped with it."""
+    from backend.services.workflow_registry import save_kinds
+
+    return _registry_op(save_kinds, [k.model_dump() for k in body.kinds])
+
+
+@router.get("/workflows/tags", response_model=Dict[str, WorkflowTagEntry])
+def list_workflow_tags():
+    """Every workflow file that has been tagged, keyed by filename.
+
+    Files with no entry are absent rather than listed empty — untagged is the
+    default state, and the Create sidebar shows those under their own heading.
+    """
+    from backend.services.workflow_registry import get_tags
+
+    return get_tags()
+
+
+@router.put("/workflows/{workflow_name}/tags", response_model=WorkflowTagEntry)
+def save_workflow_tags(workflow_name: str, body: WorkflowTagEntry):
+    """Set one workflow's kinds and node bindings."""
+    from backend.services.workflow_library import normalize_name
+    from backend.services.workflow_registry import save_entry
+
+    name = _workflow_op(normalize_name, workflow_name)
+    return _registry_op(save_entry, name, body.model_dump())
 
 
 @router.post("/workflows/import", response_model=WorkflowMutationResponse)

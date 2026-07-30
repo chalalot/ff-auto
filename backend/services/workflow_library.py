@@ -296,6 +296,10 @@ def rename_workflow(name: str, new_name: str) -> str:
         return target_name
     target = _require_free(target_name)
     os.replace(source, target)
+    # Tags and node bindings are keyed by filename, so they have to follow.
+    from backend.services import workflow_registry
+
+    workflow_registry.rename_entry(normalize_name(name), target_name)
     return target_name
 
 
@@ -303,7 +307,13 @@ def delete_workflow(name: str) -> str:
     """Delete a workflow file. Returns the name that was removed."""
     path = _require_exists(name)
     os.unlink(path)
-    return normalize_name(name)
+    # Leaving the tags behind would silently apply them to a later file that
+    # happens to reuse the name.
+    from backend.services import workflow_registry
+
+    removed = normalize_name(name)
+    workflow_registry.delete_entry(removed)
+    return removed
 
 
 def import_workflow(filename: str, raw: bytes) -> str:

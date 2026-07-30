@@ -21,11 +21,15 @@ docker compose ps
 ```
 
 The usual reason step 1 is dirty: the UI writes `workflows/*.json` back through
-the bind mount as `root:600`. Clear it first:
+the bind mount as `root:600`. `prompts/workflow_registry.json` (workflow tags and
+node bindings) is written the same way whenever tags are edited on this host.
+Clear both first — keep the registry's local edits if the tags here are the ones
+you want, otherwise take the incoming version:
 
 ```bash
-docker compose exec -T -u 0 backend chown -R 1000:1000 /app/workflows
+docker compose exec -T -u 0 backend chown -R 1000:1000 /app/workflows /app/prompts
 git checkout -- workflows/ || git stash push workflows/
+git checkout -- prompts/workflow_registry.json   # or: git stash push prompts/
 ```
 
 ```bash

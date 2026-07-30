@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { workflowsApi } from '@/api/workflows'
 import { WorkflowGraphForm } from '@/components/workspace/WorkflowGraphForm'
+import { WorkflowTagsPanel } from '@/components/workspace/WorkflowTagsPanel'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -45,7 +46,7 @@ type NamePrompt = {
 export const WorkflowsPage: React.FC = () => {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<string | null>(null)
-  const [tab, setTab] = useState<'form' | 'raw'>('form')
+  const [tab, setTab] = useState<'form' | 'raw' | 'tags'>('form')
   /** Edited JSON text; null means "unchanged from what the server returned". */
   const [draft, setDraft] = useState<string | null>(null)
   const [namePrompt, setNamePrompt] = useState<NamePrompt | null>(null)
@@ -463,6 +464,7 @@ export const WorkflowsPage: React.FC = () => {
               {([
                 ['form', 'Parameters'],
                 ['raw', 'Raw JSON'],
+                ['tags', 'Type & inputs'],
               ] as const).map(([key, label]) => (
                 <button
                   key={key}
@@ -523,6 +525,10 @@ export const WorkflowsPage: React.FC = () => {
                     onChange={e => setDraft(e.target.value)}
                   />
                 </div>
+              ) : tab === 'tags' ? (
+                // Reads the saved graph rather than the draft: a binding must
+                // point at a node that is actually on disk for the dispatcher.
+                <WorkflowTagsPanel workflowName={selected} graph={graphQuery.data?.graph ?? null} />
               ) : (
                 <div className="h-full overflow-y-auto pr-1">
                   {graphQuery.data?.error && !isDirty && (

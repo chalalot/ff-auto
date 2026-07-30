@@ -1,5 +1,7 @@
 import { apiClient } from '@/lib/api-client'
-import type { WorkflowGraph, WorkflowSummary } from '@/types'
+import type {
+  WorkflowGraph, WorkflowKind, WorkflowSummary, WorkflowTagEntry, WorkflowTagMap,
+} from '@/types'
 
 /**
  * Management of the ComfyUI workflow JSON files in the backend's workflows dir.
@@ -54,6 +56,22 @@ export const workflowsApi = {
   remove: (name: string) =>
     apiClient
       .delete<{ name: string }>(`/workspace/workflows/${encodeURIComponent(name)}`)
+      .then(r => r.data),
+
+  /** The Workflow Type / Mode vocabulary. */
+  getKinds: () =>
+    apiClient.get<WorkflowKind[]>('/workspace/workflows/kinds').then(r => r.data),
+
+  saveKinds: (kinds: WorkflowKind[]) =>
+    apiClient.put<WorkflowKind[]>('/workspace/workflows/kinds', { kinds }).then(r => r.data),
+
+  /** Tags and node bindings for every tagged file. Untagged files are absent. */
+  getTags: () =>
+    apiClient.get<WorkflowTagMap>('/workspace/workflows/tags').then(r => r.data),
+
+  saveTags: (name: string, entry: WorkflowTagEntry) =>
+    apiClient
+      .put<WorkflowTagEntry>(`/workspace/workflows/${encodeURIComponent(name)}/tags`, entry)
       .then(r => r.data),
 
   import: (file: File) => {

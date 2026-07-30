@@ -70,6 +70,39 @@ export interface WorkflowParameters {
 // The three workflow categories the Configuration sidebar offers.
 export type WorkflowType = 'image_generation' | 'image_upscaler' | 'multiangle_edit'
 
+/**
+ * One entry in the Workflow Type / Mode vocabulary, configured in
+ * Configure › Types rather than hardcoded here.
+ *
+ * `group` is the Type; kinds sharing a group become the Modes under it
+ * (image_generation → I2I / T2I). The flags drive the sidebar: `needs_image`
+ * decides whether Process can fire without a selected image, `uses_text`
+ * whether a prompt box is shown, `uses_ai` whether the prompt agent can be
+ * involved at all.
+ */
+export interface WorkflowKind {
+  value: string
+  label: string
+  group: string
+  group_label: string
+  needs_image: boolean
+  uses_text: boolean
+  uses_ai: boolean
+  hint: string
+}
+
+/** Which kinds a workflow file serves, and where its inputs are written. */
+export interface WorkflowTagEntry {
+  kinds: string[]
+  /** Node id the prompt is written to; null lets the dispatcher detect it. */
+  prompt_node?: string | null
+  /** Node id the source image is written to; null means detect. */
+  image_node?: string | null
+}
+
+/** filename → entry. Untagged files are absent, not empty. */
+export type WorkflowTagMap = Record<string, WorkflowTagEntry>
+
 // ---------------------------------------------------------------------------
 // Workflow file management (the /workflows page)
 // ---------------------------------------------------------------------------

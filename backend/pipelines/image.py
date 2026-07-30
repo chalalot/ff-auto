@@ -14,6 +14,7 @@ are owned by the workflow JSON itself and edited via ``workflow_overrides``.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from abc import abstractmethod
@@ -39,6 +40,12 @@ _ENVIRONMENT_RE = re.compile(
     r"#Environment\s*(.*?)(?=#(?:Prompt|Subject)|$)", re.IGNORECASE | re.DOTALL
 )
 _LORA_TAG_RE = re.compile(r"<lora:[^>]+>,\s*Instagirl,?\s*", re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
+
+# The input names ComfyUI text nodes use, in the order a bound node is tried.
+# CLIPTextEncode says "text"; Qwen's TextEncodeQwenImageEditPlus says "prompt".
+PROMPT_INPUT_KEYS = ("text", "prompt")
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +141,32 @@ def _find_load_image_node(workflow_data: Dict[str, Any]) -> Optional[Dict[str, A
     return None
 
 
-def patch_load_image(workflow_data: Dict[str, Any], image_filename: str) -> bool:
-    """Point the workflow's LoadImage node at an uploaded ComfyUI filename."""
-    node = _find_load_image_node(workflow_data)
+def patch_load_image(
+    workflow_data: Dict[str, Any],
+    image_filename: str,
+    node_id: Optional[str] = None,
+) -> bool:
+    """Point the workflow's image node at an uploaded ComfyUI filename.
+
+    ``node_id`` is the binding configured for this workflow (see
+    backend/services/workflow_registry.py). It wins over detection, which
+    otherwise takes the first LoadImage node — the wrong one in a graph that
+    loads a mask or a control image as well. A binding pointing at a node the
+    graph no longer has falls back to detection rather than silently doing
+    nothing.
+    """
+    node = None
+    if node_id:
+        candidate = workflow_data.get(str(node_id))
+        if isinstance(candidate, dict):
+            node = candidate
+        else:
+            logger.warning(
+                f"[patch_load_image] bound image node '{node_id}' is not in the "
+                "graph — detecting instead"
+            )
+    if node is None:
+        node = _find_load_image_node(workflow_data)
     if node is None:
         return False
     _workflow_node_inputs(node)["image"] = image_filename
@@ -238,7 +268,38 @@ def _inject_split_prompt(
     return False
 
 
-def _inject_single_prompt(workflow_data: Dict[str, Any], text: str) -> None:
+def _inject_single_prompt(
+    workflow_data: Dict[str, Any],
+    text: str,
+    node_id: Optional[str] = None,
+) -> None:
+    """Write the prompt into the graph's text node.
+
+    ``node_id`` is this workflow's configured binding and wins over detection,
+    which takes the first CLIPTextEncode with a literal ``text`` input — in a
+    graph with a negative prompt that is a coin toss.
+    """
+    if node_id:
+        candidate = workflow_data.get(str(node_id))
+        if isinstance(candidate, dict):
+            inputs = _workflow_node_inputs(candidate)
+            # Not every text node calls the input "text" — Qwen's
+            # TextEncodeQwenImageEditPlus calls it "prompt", and detection (which
+            # looks for CLIPTextEncode/text) cannot see it at all.
+            key = next((k for k in PROMPT_INPUT_KEYS if k in inputs), None)
+            if key:
+                inputs[key] = text
+                return
+            logger.warning(
+                f"[_inject_single_prompt] bound prompt node '{node_id}' has no "
+                f"{' or '.join(PROMPT_INPUT_KEYS)} input — detecting instead"
+            )
+        else:
+            logger.warning(
+                f"[_inject_single_prompt] bound prompt node '{node_id}' is not in "
+                "the graph — detecting instead"
+            )
+
     prompt_node = _find_workflow_node(
         workflow_data,
         class_type="CLIPTextEncode",
@@ -265,16 +326,21 @@ class ComfyImagePipeline(GenerationPipeline):
         return _load_workflow_json(workflow_name)
 
     def build_workflow(self, inputs: GenerationInputs) -> Dict[str, Any]:
+        from backend.services.workflow_registry import get_bindings
+
         cleaned_prompt = _clean_prompt(inputs.prompt)
         workflow_data = self.load_template(inputs.workflow_name)
 
+        # Configured in Configure › Workflows; None means "detect the node".
+        prompt_node, image_node = get_bindings(inputs.workflow_name)
+
         _patch_clip_device(workflow_data)
-        self.inject_prompt(workflow_data, cleaned_prompt)
+        self.inject_prompt(workflow_data, cleaned_prompt, prompt_node)
 
         # Reference/source image (uploaded to ComfyUI beforehand) feeds the
         # LoadImage node when the graph has one (e.g. control-net workflows).
         if inputs.images:
-            patch_load_image(workflow_data, inputs.images[0])
+            patch_load_image(workflow_data, inputs.images[0], image_node)
 
         # Seeds, LoRA, dimensions, CLIP type, etc. all belong to the workflow
         # JSON now and are edited per-run through workflow_overrides.
@@ -282,8 +348,17 @@ class ComfyImagePipeline(GenerationPipeline):
         return workflow_data
 
     @abstractmethod
-    def inject_prompt(self, workflow_data: Dict[str, Any], cleaned_prompt: str) -> None:
-        """Write the prompt into the appropriate node(s) for this strategy."""
+    def inject_prompt(
+        self,
+        workflow_data: Dict[str, Any],
+        cleaned_prompt: str,
+        prompt_node: Optional[str] = None,
+    ) -> None:
+        """Write the prompt into the appropriate node(s) for this strategy.
+
+        ``prompt_node`` is the workflow's configured binding, for the strategies
+        that write to a single node.
+        """
 
 
 @register
@@ -293,9 +368,14 @@ class UnifiedPromptPipeline(ComfyImagePipeline):
     pipeline_type = "image.unified"
     label = "Unified prompt"
 
-    def inject_prompt(self, workflow_data: Dict[str, Any], cleaned_prompt: str) -> None:
+    def inject_prompt(
+        self,
+        workflow_data: Dict[str, Any],
+        cleaned_prompt: str,
+        prompt_node: Optional[str] = None,
+    ) -> None:
         full_prompt, _ = _split_subject_environment(cleaned_prompt)
-        _inject_single_prompt(workflow_data, full_prompt or cleaned_prompt)
+        _inject_single_prompt(workflow_data, full_prompt or cleaned_prompt, prompt_node)
 
 
 @register
@@ -309,10 +389,17 @@ class SubjectEnvironmentPipeline(ComfyImagePipeline):
     pipeline_type = "image.subject_environment"
     label = "Subject + Environment"
 
-    def inject_prompt(self, workflow_data: Dict[str, Any], cleaned_prompt: str) -> None:
+    def inject_prompt(
+        self,
+        workflow_data: Dict[str, Any],
+        cleaned_prompt: str,
+        prompt_node: Optional[str] = None,
+    ) -> None:
         full_text, env_text = _split_subject_environment(cleaned_prompt)
+        # The split path writes two nodes it locates by their conditioning
+        # wiring; a single-node binding does not apply to it.
         if full_text and env_text and _inject_split_prompt(
             workflow_data, full_text, env_text
         ):
             return
-        _inject_single_prompt(workflow_data, full_text or cleaned_prompt)
+        _inject_single_prompt(workflow_data, full_text or cleaned_prompt, prompt_node)

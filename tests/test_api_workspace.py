@@ -273,7 +273,8 @@ def test_run_workflow_direct_task_t2i_skips_the_comfy_upload(monkeypatch):
     with patch("backend.pipelines.load_workflow_template", return_value={"1": {"class_type": "CLIPTextEncode"}}), \
          patch("backend.pipelines.patch_load_image") as patch_load, \
          patch("backend.pipelines.image._inject_single_prompt",
-               side_effect=lambda graph, text: injected.update(prompt=text)):
+               side_effect=lambda graph, text, node_id=None: injected.update(
+                   prompt=text, node_id=node_id)):
         result = tasks_module.run_workflow_direct_task.run(
             image_path=None,
             workflow_name="ZIB-ZIT.json",

@@ -1,0 +1,33 @@
+{
+  "workflows": {
+    "Qwen-2511-Multi-Angle.json": {
+      "kinds": [
+        "multiangle_edit"
+      ],
+      "prompt_node": null,
+      "image_node": null
+    },
+    "SeedVR_Image_Upscaler.json": {
+      "kinds": [
+        "image_upscaler"
+      ],
+      "prompt_node": null,
+      "image_node": null
+    },
+    "Z-image-control-net.json": {
+      "kinds": [
+        "image_generation.i2i"
+      ],
+      "prompt_node": null,
+      "image_node": null
+    },
+    "ZIB-ZIT.json": {
+      "kinds": [
+        "image_generation.t2i",
+        "image_generation.i2i"
+      ],
+      "prompt_node": null,
+      "image_node": null
+    }
+  }
+}

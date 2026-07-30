@@ -155,6 +155,40 @@ class WorkflowSummary(BaseModel):
     error: Optional[str] = None
 
 
+class WorkflowKind(BaseModel):
+    """One entry in the Workflow Type / Mode vocabulary.
+
+    ``group`` is the Type; kinds sharing a group are the Modes under it. The
+    three flags are what the Create sidebar reads to decide which controls to
+    show — a kind with ``needs_image`` False lets Process fire on a prompt alone.
+    """
+
+    value: str
+    label: str
+    group: str
+    group_label: str
+    needs_image: bool = True
+    uses_text: bool = True
+    uses_ai: bool = False
+    hint: str = ""
+
+
+class WorkflowKindsRequest(BaseModel):
+    kinds: List[WorkflowKind] = Field(min_length=1)
+
+
+class WorkflowTagEntry(BaseModel):
+    """Which kinds a workflow file can serve, and where its inputs go.
+
+    ``prompt_node`` / ``image_node`` are node ids from this graph. Left unset,
+    the dispatcher detects them as it always has.
+    """
+
+    kinds: List[str] = []
+    prompt_node: Optional[str] = None
+    image_node: Optional[str] = None
+
+
 class WorkflowGraphResponse(BaseModel):
     """A workflow opened for editing.
 

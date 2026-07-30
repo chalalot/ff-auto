@@ -420,6 +420,7 @@ def run_workflow_direct_task(
         resolve_image_overrides,
     )
     from backend.pipelines.image import _inject_single_prompt
+    from backend.services.workflow_registry import get_bindings
 
     _, client, storage = get_instances()
 
@@ -428,6 +429,9 @@ def run_workflow_direct_task(
         meta={"status": f"⏳ Preparing {workflow_name}...", "progress": 10},
     )
     workflow_data = load_workflow_template(workflow_name)
+    # Which node the prompt and the image go into, when this workflow says so
+    # (Configure › Workflows). None each means "detect the node".
+    prompt_node, image_node = get_bindings(workflow_name)
 
     if image_path:
         self.update_state(
@@ -435,14 +439,14 @@ def run_workflow_direct_task(
             meta={"status": "⬆️ Uploading image to ComfyUI...", "progress": 30},
         )
         uploaded_filename = asyncio.run(client.upload_image(image_path))
-        if not patch_load_image(workflow_data, uploaded_filename):
+        if not patch_load_image(workflow_data, uploaded_filename, image_node):
             logger.warning(
                 f"[run_workflow_direct_task] {workflow_name} has no LoadImage node — "
                 "the selected image is ignored"
             )
 
     if prompt and prompt.strip():
-        _inject_single_prompt(workflow_data, prompt.strip())
+        _inject_single_prompt(workflow_data, prompt.strip(), prompt_node)
 
     if workflow_overrides:
         # LoadImage overrides picked from the image library are local files —

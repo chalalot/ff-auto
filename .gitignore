@@ -21,6 +21,11 @@ prompts/*
 !prompts/agents/*.txt
 # Seed for the runtime-editable selector option lists (backend/services/config.py)
 !prompts/options.json
+# Which workflow file is which kind, and where its prompt/image go. Tracked so a
+# deployment arrives already tagged — an untagged deployment would show every
+# workflow under every type. Written by the UI, so expect it dirty on a host
+# where tags were edited (see deploy.md).
+!prompts/workflow_registry.json
 .agents/
 docs/*
 !docs/superpowers/

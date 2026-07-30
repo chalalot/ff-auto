@@ -18,80 +18,20 @@ import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParamete
 import { ImageLibrary } from '@/components/workspace/ImageLibrary'
 import { resolveDroppedFiles, uploadErrorMessage } from '@/lib/uploads'
 import { DEFAULT_CONFIG } from '@/lib/configDefaults'
-import type { ProcessImageConfig, WorkflowParameters } from '@/types'
+import { workflowsApi } from '@/api/workflows'
+import {
+  FALLBACK_KIND, groupsOf, kindsInGroup, pickWorkflow, resolveKind, workflowChoices,
+} from '@/lib/workflowKinds'
+import type { ProcessImageConfig, WorkflowKind, WorkflowParameters } from '@/types'
 
-// The three workflow categories. Each declares which input components the
-// sidebar shows and which workflows/*.json file it starts from.
-const WORKFLOW_TYPES: Array<{
-  value: string
-  label: string
-  defaultWorkflow: string
-  usesText: boolean
-  usesAI: boolean
-  hint: string
-}> = [
-  {
-    value: 'image_generation',
-    label: 'Image Generation',
-    // Nested one level further — see GENERATION_MODES, which supplies the real
-    // default workflow and hint for this type.
-    defaultWorkflow: 'Z-image-control-net.json',
-    usesText: true,
-    usesAI: true,
-    hint: '',
-  },
-  {
-    value: 'image_upscaler',
-    label: 'Image Upscaler',
-    defaultWorkflow: 'SeedVR_Image_Upscaler.json',
-    usesText: false,
-    usesAI: false,
-    hint: 'Image → LoadImage. Runs the workflow directly on each selected image.',
-  },
-  {
-    value: 'multiangle_edit',
-    label: 'Multiangle Edit',
-    defaultWorkflow: 'Qwen-2511-Multi-Angle (1).json',
-    usesText: true,
-    usesAI: false,
-    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Camera angles are edited in Workflow Parameters.',
-  },
-]
-
-const workflowTypeMeta = (value: string) =>
-  WORKFLOW_TYPES.find(t => t.value === value) ?? WORKFLOW_TYPES[0]
-
-// Image Generation is the one type with two shapes of input. T2I needs a prompt
-// and nothing else; I2I needs a source image. Nothing about the mode is sent to
-// the server — it already tells the two apart by whether a source image is
-// present, so a mode field on the request would be a second source of truth.
-export type GenerationMode = 't2i' | 'i2i'
-
-const GENERATION_MODES: Array<{
-  value: GenerationMode
-  label: string
-  defaultWorkflow: string
-  needsImage: boolean
-  hint: string
-}> = [
-  {
-    value: 'i2i',
-    label: 'I2I — from a source image',
-    defaultWorkflow: 'Z-image-control-net.json',
-    needsImage: true,
-    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Leave the prompt empty to let the AI write it from the image.',
-  },
-  {
-    value: 't2i',
-    label: 'T2I — prompt only',
-    defaultWorkflow: 'ZIB-ZIT.json',
-    needsImage: false,
-    hint: 'Prompt → CLIP Text Encode. A T2I graph has no LoadImage node, so there is no image to select.',
-  },
-]
-
-const generationModeMeta = (value: string) =>
-  GENERATION_MODES.find(m => m.value === value) ?? GENERATION_MODES[0]
+// What a workflow *is* — Type, Mode, and which controls each needs — is
+// configured in Configure › Types and tagged per file in Configure › Workflows,
+// not listed here. Adding a kind of workflow is a data change; this component
+// only knows how to read the vocabulary.
+//
+// Nothing about the kind is sent to the server: the backend already tells T2I
+// from I2I by whether a source image is present, so a kind field on the request
+// would be a second source of truth.
 
 // Drop the `image` override from a node, removing the node entry when empty.
 const withoutImageOverride = (
@@ -113,7 +53,9 @@ export const CreatePanel: React.FC = () => {
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
-  const [genMode, setGenMode] = useState<GenerationMode>('i2i')
+  // The selected kind's value, e.g. 'image_generation.t2i'. Empty until the
+  // vocabulary loads, at which point it resolves to the group's first kind.
+  const [kindValue, setKindValue] = useState<string>('')
   // T2I only: send the typed prompt to the prompt agent to be rewritten (via
   // Prompt Review) instead of straight to ComfyUI. Off by default — what you
   // type is what gets generated unless you ask for the rewrite.
@@ -126,25 +68,35 @@ export const CreatePanel: React.FC = () => {
     queryKey: ['workflows'],
     queryFn: workspaceApi.getWorkflows,
   })
+  const { data: kinds = [] } = useQuery<WorkflowKind[]>({
+    queryKey: ['workflow-kinds'],
+    queryFn: workflowsApi.getKinds,
+  })
+  const { data: tags = {} } = useQuery({
+    queryKey: ['workflow-tags'],
+    queryFn: workflowsApi.getTags,
+  })
 
-  const typeMeta = workflowTypeMeta(config.workflow_type)
-  const isImageGen = config.workflow_type === 'image_generation'
-  const modeMeta = generationModeMeta(genMode)
-  // Only Image Generation is nested; every other type runs on a source image.
-  const needsImage = !isImageGen || modeMeta.needsImage
-  const defaultWorkflow = isImageGen ? modeMeta.defaultWorkflow : typeMeta.defaultWorkflow
+  const groups = React.useMemo(() => groupsOf(kinds), [kinds])
+  const group =
+    groups.find(g => g.value === config.workflow_type)?.value ?? groups[0]?.value ?? ''
+  const modes = React.useMemo(() => kindsInGroup(kinds, group), [kinds, group])
+  // The vocabulary may not have arrived yet, or may have lost the remembered
+  // kind; resolveKind always yields something the sidebar can render.
+  const kind = kinds.length > 0 ? resolveKind(kinds, kindValue, group) : FALLBACK_KIND
+  const needsImage = kind.needs_image
   const prompt = promptText.trim()
-  // Which pipeline a Process press takes. I2I keeps today's rule (an empty
-  // prompt means "let the agent write one from the image"); T2I always has a
-  // prompt, so the checkbox is the only thing that can ask for the agent.
-  const useAIPipeline = isImageGen && (needsImage ? !prompt : enhancePrompt)
+  // Which pipeline a Process press takes. With an image, today's rule holds (an
+  // empty prompt means "let the agent write one from it"); without one there is
+  // always a prompt, so the checkbox is the only thing that can ask for the agent.
+  const useAIPipeline = kind.uses_ai && (needsImage ? !prompt : enhancePrompt)
 
-  // Selected workflow file: explicit choice → the type/mode default → first available.
-  const workflowName =
-    (config.workflow_name && workflows.includes(config.workflow_name) && config.workflow_name) ||
-    (workflows.includes(defaultWorkflow) && defaultWorkflow) ||
-    workflows[0] ||
-    ''
+  // Only the workflows tagged for this kind, plus any that nobody has tagged.
+  const choices = React.useMemo(
+    () => workflowChoices(workflows, tags, kind.value),
+    [workflows, tags, kind.value],
+  )
+  const workflowName = pickWorkflow(choices, config.workflow_name || undefined)
   const {
     data: workflowParams = null,
     isLoading: paramsLoading,
@@ -239,19 +191,18 @@ export const CreatePanel: React.FC = () => {
   React.useEffect(() => {
     if (!lastUsedLoaded) return
     if (lastUsed) {
-      const knownType = WORKFLOW_TYPES.some(t => t.value === lastUsed.workflow_type)
-      if (GENERATION_MODES.some(m => m.value === lastUsed.generation_mode)) {
-        setGenMode(lastUsed.generation_mode as GenerationMode)
-      }
+      // The kind is validated against the vocabulary when it renders
+      // (resolveKind), not here — the kinds query may still be in flight, and a
+      // value that no longer exists degrades to the group's first kind anyway.
+      if (lastUsed.generation_mode) setKindValue(lastUsed.generation_mode)
       setEnhancePrompt(Boolean(lastUsed.enhance_prompt))
       setConfig(prev => ({
         ...prev,
         persona: lastUsed.persona || prev.persona,
         vision_model: lastUsed.vision_model || prev.vision_model,
         variation_count: lastUsed.variations ?? prev.variation_count,
-        // Legacy values ("turbo"/"standard") fall back to the default type.
-        workflow_type: knownType ? lastUsed.workflow_type! : prev.workflow_type,
-        workflow_name: (knownType && lastUsed.workflow_name) || prev.workflow_name,
+        workflow_type: lastUsed.workflow_type || prev.workflow_type,
+        workflow_name: lastUsed.workflow_name || prev.workflow_name,
       }))
     }
     configInitializedRef.current = true
@@ -267,12 +218,15 @@ export const CreatePanel: React.FC = () => {
         variations: config.variation_count,
         workflow_type: config.workflow_type,
         workflow_name: config.workflow_name || undefined,
-        generation_mode: genMode,
+        // Stored under the old field name: it holds the full kind value now
+        // ('image_generation.t2i'), and resolveKind still accepts a bare 'i2i'
+        // written by an earlier build.
+        generation_mode: kind.value,
         enhance_prompt: enhancePrompt,
       })
     }, 600)
     return () => clearTimeout(timer)
-  }, [config, genMode, enhancePrompt])
+  }, [config, kind.value, enhancePrompt])
 
   // Set first persona as default
   React.useEffect(() => {
@@ -317,7 +271,7 @@ export const CreatePanel: React.FC = () => {
           image_paths: paths,
           workflow_name: workflowName,
           workflow_type: config.workflow_type,
-          prompt: typeMeta.usesText && prompt ? prompt : undefined,
+          prompt: kind.uses_text && prompt ? prompt : undefined,
           workflow_overrides: overrides,
         })
         taskIds = result.task_ids
@@ -406,12 +360,15 @@ export const CreatePanel: React.FC = () => {
     if (loadImageNodeId) setOverrides(prev => withoutImageOverride(prev, loadImageNodeId))
   }
 
-  const selectGenerationMode = (mode: GenerationMode) => {
-    setGenMode(mode)
-    setConfig(p => ({ ...p, workflow_name: generationModeMeta(mode).defaultWorkflow }))
-    // Leaving I2I hides the library, so drop the selection with it rather than
-    // keeping an invisible image that a later switch back would resurrect.
-    if (!generationModeMeta(mode).needsImage) clearSelection()
+  /** Switch kind: re-pick the workflow from the new kind's tagged files. */
+  const selectKind = (next: WorkflowKind) => {
+    setKindValue(next.value)
+    // Clearing the name lets pickWorkflow choose one tagged for the new kind,
+    // rather than keeping a file that no longer fits.
+    setConfig(p => ({ ...p, workflow_type: next.group, workflow_name: '' }))
+    // A kind that needs no image hides the library, so drop the selection with
+    // it rather than keeping an invisible image a later switch would resurrect.
+    if (!next.needs_image) clearSelection()
   }
 
   const deleteMutation = useMutation({
@@ -445,44 +402,52 @@ export const CreatePanel: React.FC = () => {
         </div>
 
         <div className="p-4 space-y-4 flex-1">
-          {/* Workflow Type — drives which input components are shown */}
+          {/* Workflow Type — the kinds' groups. Data, not a fixed list. */}
           <div className="space-y-2">
             <Label>Workflow Type</Label>
             <Select
-              value={config.workflow_type}
+              value={group}
               onValueChange={(v) => {
-                // Image Generation's default graph depends on the mode, so read
-                // it from there rather than from the type.
-                const next =
-                  v === 'image_generation'
-                    ? generationModeMeta(genMode).defaultWorkflow
-                    : workflowTypeMeta(v).defaultWorkflow
-                setConfig(p => ({ ...p, workflow_type: v, workflow_name: next }))
+                // Land on the new group's first kind, which also re-picks the
+                // workflow from the files tagged for it.
+                const first = kindsInGroup(kinds, v)[0]
+                if (first) selectKind(first)
+                else setConfig(p => ({ ...p, workflow_type: v, workflow_name: '' }))
               }}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {WORKFLOW_TYPES.map(t => (
-                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                {groups.map(g => (
+                  <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {!isImageGen && <p className="text-xs text-muted-foreground">{typeMeta.hint}</p>}
+            {/* With one kind in the group there is no Mode select to carry the
+                hint, so it belongs here. */}
+            {modes.length <= 1 && kind.hint && (
+              <p className="text-xs text-muted-foreground">{kind.hint}</p>
+            )}
           </div>
 
-          {/* Mode — Image Generation's one nested choice: T2I or I2I */}
-          {isImageGen && (
+          {/* Mode — only for a type with more than one kind under it. */}
+          {modes.length > 1 && (
             <div className="space-y-2">
               <Label>Mode</Label>
-              <Select value={genMode} onValueChange={(v) => selectGenerationMode(v as GenerationMode)}>
+              <Select
+                value={kind.value}
+                onValueChange={(v) => {
+                  const next = modes.find(m => m.value === v)
+                  if (next) selectKind(next)
+                }}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {GENERATION_MODES.map(m => (
+                  {modes.map(m => (
                     <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{modeMeta.hint}</p>
+              {kind.hint && <p className="text-xs text-muted-foreground">{kind.hint}</p>}
             </div>
           )}
 
@@ -493,18 +458,32 @@ export const CreatePanel: React.FC = () => {
               value={workflowName}
               onValueChange={(v) => setConfig(p => ({ ...p, workflow_name: v }))}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="No workflow" /></SelectTrigger>
               <SelectContent>
-                {workflows.map(w => (
+                {choices.matching.map(w => (
+                  <SelectItem key={w} value={w}>{w.replace(/\.json$/i, '')}</SelectItem>
+                ))}
+                {choices.untagged.length > 0 && (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    {choices.matching.length > 0 ? 'Untagged' : 'Untagged — tag these in Configure › Workflows'}
+                  </div>
+                )}
+                {choices.untagged.map(w => (
                   <SelectItem key={w} value={w}>{w.replace(/\.json$/i, '')}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {choices.matching.length === 0 && choices.untagged.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                No workflow is tagged “{kind.label}” yet — tag one in Configure › Workflows and
+                this list will narrow to it.
+              </p>
+            )}
           </div>
 
-          {/* Prompt text — goes to the CLIP Text Encode node (image gen / multiangle).
-              In T2I it is the only input, so it stops being optional. */}
-          {typeMeta.usesText && (
+          {/* Prompt text — goes to the graph's prompt node. With no source
+              image it is the only input, so it stops being optional. */}
+          {kind.uses_text && (
             <div className="space-y-2">
               <Label>
                 Prompt{' '}
@@ -518,7 +497,7 @@ export const CreatePanel: React.FC = () => {
                     ? enhancePrompt
                       ? 'What you want, in your own words — the agent writes the final prompt'
                       : 'The prompt, exactly as ComfyUI should receive it'
-                    : typeMeta.usesAI
+                    : kind.uses_ai
                       ? 'Leave empty to let the AI write the prompt from the selected image'
                       : 'Edit instruction, e.g. "rotate the camera to a low three-quarter view"'
                 }
@@ -529,9 +508,9 @@ export const CreatePanel: React.FC = () => {
             </div>
           )}
 
-          {/* T2I has no image for the agent to read, so using it is a choice
-              rather than a consequence of leaving the prompt empty. */}
-          {isImageGen && !needsImage && (
+          {/* With no image for the agent to read, using it is a choice rather
+              than a consequence of leaving the prompt empty. */}
+          {kind.uses_ai && !needsImage && (
             <label className="flex items-start gap-2.5 cursor-pointer">
               <Checkbox
                 checked={enhancePrompt}
@@ -550,9 +529,9 @@ export const CreatePanel: React.FC = () => {
           )}
 
           {/* Prompt-agent settings — only when a press will actually use it:
-              always in I2I (an empty prompt hands over to the agent), and in
-              T2I only while the checkbox is on. */}
-          {isImageGen && (needsImage || enhancePrompt) && (
+              with an image, an empty prompt hands over to the agent; without
+              one, only while the checkbox is on. */}
+          {kind.uses_ai && (needsImage || enhancePrompt) && (
             <>
               <Separator />
 
@@ -656,13 +635,13 @@ export const CreatePanel: React.FC = () => {
         </div>
 
         {!needsImage ? (
-          // T2I takes no source image, so the library would only be a decoy.
+          // This kind takes no source image, so the library would only be a decoy.
           <div className="flex-1 flex items-center justify-center px-8">
             <div className="max-w-sm text-center space-y-1.5">
-              <p className="text-sm font-medium">Text to image</p>
+              <p className="text-sm font-medium">{kind.label}</p>
               <p className="text-xs text-muted-foreground">
                 No source image needed — the prompt in the sidebar is the whole input.
-                Switch to I2I to generate from one of your images instead.
+                {modes.length > 1 && ' Pick another mode to generate from one of your images instead.'}
               </p>
             </div>
           </div>
