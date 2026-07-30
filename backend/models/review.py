@@ -54,6 +54,11 @@ class ReviewListResponse(BaseModel):
     total: int
     page: int
     pages: int
+    # Rows per status across the whole queue (project/batch scope applies, the
+    # `status` filter and pagination do not) — the Flow rail's stage counters
+    # read this instead of counting the returned page. Statuses with no rows
+    # are absent.
+    status_counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class ReviewPatchRequest(BaseModel):

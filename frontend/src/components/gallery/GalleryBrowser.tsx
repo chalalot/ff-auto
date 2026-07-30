@@ -1,3 +1,7 @@
+// One status of the gallery, browsable: bulk bar, grid, pagination, detail
+// modal, delete confirmation. Extracted from GalleryPage so the Flow surface's
+// Image Review panel (pending) and the Library's Approved/Disapproved tabs are
+// the same component with a different `status`.
 import React, { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -5,23 +9,22 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Slider } from '@/components/ui/slider'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { evaluationsApi } from '@/api/evaluations'
 import {
-  useGalleryImages, useGalleryStats,
+  useGalleryImages,
   useApproveImages, useDisapproveImages, useUndoImages, useDeleteImages
 } from '@/hooks/useGalleryImages'
 import { galleryApi, type GalleryStatus } from '@/api/gallery'
 import { useProjectId } from '@/hooks/useProjectId'
 import { useMutation } from '@tanstack/react-query'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { formatDistanceToNow } from 'date-fns'
 import {
   CheckCircle, XCircle, RotateCcw, Download, RefreshCw,
   Image as ImageIcon, Loader2, ChevronLeft, ChevronRight,
   LayoutGrid, Info, X, Sparkles, Trash2
 } from 'lucide-react'
-import type { ImageMetadata } from '@/types'
-import type { GalleryImage } from '@/types'
+import type { ImageMetadata, GalleryImage } from '@/types'
 import type { EvaluationResult } from '@/types/evaluation'
 
 const ITEMS_PER_PAGE = 20
@@ -32,14 +35,17 @@ const formatDimension = (dimension: string) =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 
-export const GalleryPage: React.FC = () => {
+export const GalleryBrowser: React.FC<{
+  status: GalleryStatus
+  /** Fired after images leave this status, so the caller can toast or nudge. */
+  onAfterAction?: (action: 'approve' | 'disapprove' | 'undo', filenames: string[]) => void
+}> = ({ status, onAfterAction }) => {
   const projectId = useProjectId() ?? undefined
-  const [activeTab, setActiveTab] = useState<GalleryStatus>('pending')
   const [page, setPage] = useState(1)
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set())
   const [renameMap, setRenameMap] = useState<Record<string, string>>({})
   const [columns, setColumns] = useState(4)
-  const [detailImage, setDetailImage] = useState<{ image: GalleryImage; status: GalleryStatus } | null>(null)
+  const [detailImage, setDetailImage] = useState<GalleryImage | null>(null)
   // Filenames staged for permanent deletion; non-null opens the confirm dialog.
   const [pendingDelete, setPendingDelete] = useState<string[] | null>(null)
 
@@ -47,8 +53,7 @@ export const GalleryPage: React.FC = () => {
   // land on a now-out-of-range page (e.g. page 3 of a much smaller project).
   React.useEffect(() => { setPage(1) }, [projectId])
 
-  const { data: gallery, isLoading, refetch } = useGalleryImages(activeTab, page, ITEMS_PER_PAGE, projectId)
-  const { data: stats } = useGalleryStats(projectId)
+  const { data: gallery, isLoading, refetch } = useGalleryImages(status, page, ITEMS_PER_PAGE, projectId)
   const approveMutation = useApproveImages()
   const disapproveMutation = useDisapproveImages()
   const undoMutation = useUndoImages()
@@ -56,20 +61,13 @@ export const GalleryPage: React.FC = () => {
 
   const handleConfirmDelete = async () => {
     if (!pendingDelete) return
-    await deleteMutation.mutateAsync({ filenames: pendingDelete, status: activeTab })
+    await deleteMutation.mutateAsync({ filenames: pendingDelete, status })
     setSelectedImages(prev => {
       const next = new Set(prev)
       pendingDelete.forEach(f => next.delete(f))
       return next
     })
     setPendingDelete(null)
-  }
-
-  const handleTabChange = (tab: string) => {
-    setActiveTab(tab as GalleryStatus)
-    setPage(1)
-    setSelectedImages(new Set())
-    setRenameMap({})
   }
 
   const toggleImage = (filename: string) => {
@@ -82,19 +80,29 @@ export const GalleryPage: React.FC = () => {
   }
 
   const handleApprove = async () => {
+    const filenames = Array.from(selectedImages)
     await approveMutation.mutateAsync({
-      filenames: Array.from(selectedImages),
+      filenames,
       renameMap: Object.fromEntries(
         Object.entries(renameMap).filter(([k]) => selectedImages.has(k))
       ),
     })
     setSelectedImages(new Set())
     setRenameMap({})
+    onAfterAction?.('approve', filenames)
   }
 
   const handleDisapprove = async () => {
-    await disapproveMutation.mutateAsync(Array.from(selectedImages))
+    const filenames = Array.from(selectedImages)
+    await disapproveMutation.mutateAsync(filenames)
     setSelectedImages(new Set())
+    onAfterAction?.('disapprove', filenames)
+  }
+
+  const handleUndo = () => {
+    const filenames = Array.from(selectedImages)
+    undoMutation.mutate({ filenames, fromStatus: status as 'approved' | 'disapproved' })
+    onAfterAction?.('undo', filenames)
   }
 
   const handleDownloadZip = async () => {
@@ -107,39 +115,16 @@ export const GalleryPage: React.FC = () => {
     URL.revokeObjectURL(url)
   }
 
-  const totals = stats?.totals || { pending: 0, approved: 0, disapproved: 0 }
-
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold">Gallery</h1>
-          <div className="flex gap-3 text-sm">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-warning inline-block" />
-              {totals.pending} pending
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-success inline-block" />
-              {totals.approved} approved
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-destructive inline-block" />
-              {totals.disapproved} disapproved
-            </span>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="w-4 h-4 mr-2" />Refresh
-        </Button>
-      </div>
-
+    <div className="flex flex-col min-h-0 flex-1">
       {/* Bulk Actions */}
       {selectedImages.size > 0 && (
-        <div className="px-4 py-2 bg-muted border-b flex items-center gap-2">
+        // Sticky, not just first-in-flow: the browser can sit inside a page-level
+        // scroll container (Flow › Image Review), where a static bar would scroll
+        // away and take Approve with it.
+        <div className="sticky top-0 z-20 px-4 py-2 bg-muted border-b flex items-center gap-2 shrink-0">
           <Badge variant="secondary">{selectedImages.size} selected</Badge>
-          {activeTab === 'pending' && (
+          {status === 'pending' && (
             <>
               <Button size="sm" variant="success" onClick={handleApprove} isLoading={approveMutation.isPending}>
                 <CheckCircle className="w-4 h-4 mr-2" />Approve
@@ -149,13 +134,13 @@ export const GalleryPage: React.FC = () => {
               </Button>
             </>
           )}
-          {activeTab === 'approved' && (
-            <Button size="sm" variant="outline" onClick={() => undoMutation.mutate({ filenames: Array.from(selectedImages), fromStatus: 'approved' })}>
+          {status === 'approved' && (
+            <Button size="sm" variant="outline" onClick={handleUndo}>
               <RotateCcw className="w-4 h-4 mr-2" />Undo
             </Button>
           )}
-          {activeTab === 'disapproved' && (
-            <Button size="sm" variant="outline" onClick={() => undoMutation.mutate({ filenames: Array.from(selectedImages), fromStatus: 'disapproved' })}>
+          {status === 'disapproved' && (
+            <Button size="sm" variant="outline" onClick={handleUndo}>
               <RotateCcw className="w-4 h-4 mr-2" />Recover
             </Button>
           )}
@@ -169,65 +154,64 @@ export const GalleryPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="mx-4 mt-4 w-fit">
-          <TabsTrigger value="pending">
-            Pending <Badge variant="outline" className="ml-2 text-xs">{totals.pending}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="approved">
-            Approved <Badge variant="outline" className="ml-2 text-xs">{totals.approved}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="disapproved">
-            Disapproved <Badge variant="outline" className="ml-2 text-xs">{totals.disapproved}</Badge>
-          </TabsTrigger>
-        </TabsList>
+      <div className="flex-1 overflow-auto px-4 pb-4">
+        <div className="flex justify-end pt-3">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="w-4 h-4 mr-2" />Refresh
+          </Button>
+        </div>
 
-        {(['pending', 'approved', 'disapproved'] as GalleryStatus[]).map(status => (
-          <TabsContent key={status} value={status} className="flex-1 overflow-auto px-4 pb-4">
-            <ImageGrid
-              images={gallery?.items || []}
-              status={status}
-              isLoading={isLoading}
-              selectedImages={selectedImages}
-              renameMap={renameMap}
-              columns={columns}
-              onColumnsChange={setColumns}
-              onToggle={toggleImage}
-              onRename={(filename, value) => setRenameMap(prev => ({ ...prev, [filename]: value }))}
-              onSelectAll={() => setSelectedImages(new Set((gallery?.items || []).map(i => i.filename)))}
-              onClearAll={() => setSelectedImages(new Set())}
-              onShowDetail={(image) => setDetailImage({ image, status })}
-              onRequestDelete={(filename) => setPendingDelete([filename])}
-              onAction={async (action, filename) => {
-                if (action === 'approve') await approveMutation.mutateAsync({ filenames: [filename] })
-                if (action === 'disapprove') await disapproveMutation.mutateAsync([filename])
-                if (action === 'undo-approved') await undoMutation.mutateAsync({ filenames: [filename], fromStatus: 'approved' })
-                if (action === 'undo-disapproved') await undoMutation.mutateAsync({ filenames: [filename], fromStatus: 'disapproved' })
-              }}
-            />
-            {/* Pagination */}
-            {gallery && gallery.pages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-4">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  Page {page} of {gallery.pages} ({gallery.total} total)
-                </span>
-                <Button variant="outline" size="sm" disabled={page >= gallery.pages} onClick={() => setPage(p => p + 1)}>
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-          </TabsContent>
-        ))}
-      </Tabs>
+        <ImageGrid
+          images={gallery?.items || []}
+          status={status}
+          isLoading={isLoading}
+          selectedImages={selectedImages}
+          renameMap={renameMap}
+          columns={columns}
+          onColumnsChange={setColumns}
+          onToggle={toggleImage}
+          onRename={(filename, value) => setRenameMap(prev => ({ ...prev, [filename]: value }))}
+          onSelectAll={() => setSelectedImages(new Set((gallery?.items || []).map(i => i.filename)))}
+          onClearAll={() => setSelectedImages(new Set())}
+          onShowDetail={setDetailImage}
+          onRequestDelete={(filename) => setPendingDelete([filename])}
+          onAction={async (action, filename) => {
+            if (action === 'approve') {
+              await approveMutation.mutateAsync({
+                filenames: [filename],
+                renameMap: renameMap[filename] ? { [filename]: renameMap[filename] } : undefined,
+              })
+              onAfterAction?.('approve', [filename])
+            }
+            if (action === 'disapprove') {
+              await disapproveMutation.mutateAsync([filename])
+              onAfterAction?.('disapprove', [filename])
+            }
+            if (action === 'undo-approved') await undoMutation.mutateAsync({ filenames: [filename], fromStatus: 'approved' })
+            if (action === 'undo-disapproved') await undoMutation.mutateAsync({ filenames: [filename], fromStatus: 'disapproved' })
+          }}
+        />
+
+        {/* Pagination */}
+        {gallery && gallery.pages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {page} of {gallery.pages} ({gallery.total} total)
+            </span>
+            <Button variant="outline" size="sm" disabled={page >= gallery.pages} onClick={() => setPage(p => p + 1)}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
+      </div>
 
       {detailImage && (
         <ImageDetailModal
-          image={detailImage.image}
-          status={detailImage.status}
+          image={detailImage}
+          status={status}
           onClose={() => setDetailImage(null)}
         />
       )}

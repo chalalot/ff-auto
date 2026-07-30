@@ -4,14 +4,17 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertTriangle, Loader2, RefreshCcw, RotateCcw, Send, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Loader2, RefreshCcw, RotateCcw, Send, Trash2 } from 'lucide-react'
 import { reviewApi } from '@/api/review'
 import { projectsApi } from '@/api/projects'
 import { workspaceApi } from '@/api/workspace'
 import { useProjectId } from '@/hooks/useProjectId'
+import { useReviewRequests } from '@/hooks/useReviewRequests'
 import { usePersonas, useVisionModels, useLoraOptions } from '@/hooks/usePersonas'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParametersPanel'
+import { LazyDetails } from '@/components/shared/LazyDetails'
+import { IMAGE_PROVIDERS, PROVIDER_LABEL, type ReviewProvider } from '@/lib/providers'
 import type { ReviewRequestItem, ReviewStatus } from '@/types/review'
 import type { WorkflowParameters, PersonaSummary } from '@/types'
 import type { SelectOption } from '@/api/config'
@@ -25,29 +28,19 @@ const STATUS_BADGE: Record<ReviewStatus, 'default' | 'secondary' | 'destructive'
   discarded: 'outline',
 }
 
-const PROVIDER_LABEL: Record<string, string> = {
-  kling: 'Kling API',
-  comfy_video: 'ComfyUI video',
-  comfy_image: 'ComfyUI image',
-}
-
 const SELECTABLE: ReviewStatus[] = ['pending_review', 'failed', 'completed']
 
-// Inline sections rendered in this order; empty statuses are skipped.
-const STATUS_SECTIONS: Array<{ status: ReviewStatus; label: string }> = [
-  { status: 'pending_review', label: 'Pending Review' },
-  { status: 'dispatched', label: 'Dispatched' },
-  { status: 'completed', label: 'Completed' },
-  { status: 'failed', label: 'Failed' },
-  { status: 'approved', label: 'Approved' },
-  { status: 'discarded', label: 'Discarded' },
+// Every status is always rendered as its own collapsible section — no filter,
+// so a row can never be hidden by a control the reader forgot they set. The two
+// statuses that want a human open by default; the rest are history.
+const STATUS_SECTIONS: Array<{ status: ReviewStatus; label: string; openByDefault: boolean }> = [
+  { status: 'pending_review', label: 'Pending Review', openByDefault: true },
+  { status: 'dispatched', label: 'Dispatched', openByDefault: false },
+  { status: 'completed', label: 'Completed', openByDefault: false },
+  { status: 'failed', label: 'Failed', openByDefault: true },
+  { status: 'approved', label: 'Approved', openByDefault: false },
+  { status: 'discarded', label: 'Discarded', openByDefault: false },
 ]
-
-// Only actionable states are offered in the filter; approved/discarded still
-// show as sections under "All states".
-const FILTER_STATUSES = STATUS_SECTIONS.filter(
-  s => s.status !== 'approved' && s.status !== 'discarded',
-)
 
 function settingsEntries(settings: Record<string, unknown>): string[] {
   // Node overrides are applied last at dispatch, so they are the effective
@@ -142,6 +135,10 @@ export const RequestRow: React.FC<{
   const canRedispatch = item.status === 'completed' || item.status === 'failed'
 
   const workflowName = item.workflow_name || 'workflow.json'
+  // The parameters panel is a node-tree of inputs — the single most expensive
+  // thing in a row. Nobody edits it on most rows, so neither the panel nor its
+  // schema request happens until the row's disclosure is opened.
+  const [paramsOpen, setParamsOpen] = useState(false)
   const {
     data: workflowParams = null,
     isLoading: paramsLoading,
@@ -149,7 +146,7 @@ export const RequestRow: React.FC<{
   } = useQuery<WorkflowParameters>({
     queryKey: ['workflow-params', workflowName],
     queryFn: () => workspaceApi.getWorkflowParameters(workflowName),
-    enabled: editable && Boolean(workflowName),
+    enabled: editable && paramsOpen && Boolean(workflowName),
   })
 
   const currentOverrides =
@@ -197,6 +194,10 @@ export const RequestRow: React.FC<{
       <img
         src={reviewApi.getThumbnailUrl(item.id)}
         alt=""
+        // An open section can hold hundreds of rows; without this they all
+        // request their thumbnail at once and starve the API calls behind them.
+        loading="lazy"
+        decoding="async"
         className="h-20 w-20 rounded object-cover bg-muted shrink-0"
         onError={e => {
           ;(e.target as HTMLImageElement).style.visibility = 'hidden'
@@ -332,11 +333,16 @@ export const RequestRow: React.FC<{
             </div>
 
             {item.workflow_name && (
-              <details className="rounded border border-border/60 px-2.5 py-1.5 bg-muted/20">
+              <details
+                className="rounded border border-border/60 px-2.5 py-1.5 bg-muted/20"
+                onToggle={e => {
+                  if (e.currentTarget.open) setParamsOpen(true)
+                }}
+              >
                 <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                   Workflow Parameters ({item.workflow_name.replace(/\.json$/i, '')})
                 </summary>
-                <div className="mt-2.5 pt-2 border-t border-border/40">
+                {paramsOpen && <div className="mt-2.5 pt-2 border-t border-border/40">
                   {staleOverrides.length > 0 && (
                     <p className="mb-2 text-xs text-destructive">
                       No longer in this workflow — these fall back to the graph's defaults at
@@ -355,7 +361,7 @@ export const RequestRow: React.FC<{
                     onChange={handleOverrideChange}
                     onReset={() => settingsMutation.mutate({ workflow_overrides: {} })}
                   />
-                </div>
+                </div>}
               </details>
             )}
           </div>
@@ -416,25 +422,18 @@ function groupByBatch(items: ReviewRequestItem[]): Array<[string, ReviewRequestI
   return Array.from(map.entries())
 }
 
-export const ReviewQueueSection: React.FC = () => {
+// One queue, scoped to the providers of the surface it's mounted on: Flow shows
+// image work, the Video page shows video work. Both are the same review
+// mechanic, so this is the same component rather than two.
+export const ReviewQueueSection: React.FC<{
+  providers?: readonly ReviewProvider[]
+}> = ({ providers = IMAGE_PROVIDERS }) => {
   const projectId = useProjectId() ?? undefined
   const queryClient = useQueryClient()
-  const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'all'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['review-requests', statusFilter, projectId ?? 'all'],
-    queryFn: () =>
-      reviewApi.listRequests({
-        status: statusFilter === 'all' ? undefined : statusFilter,
-        per_page: 200,
-        project_id: projectId,
-      }),
-    // 200 rows per fetch — poll fast only while something is dispatched and
-    // its result is still pending; otherwise a slow refresh is enough.
-    refetchInterval: query =>
-      (query.state.data?.items ?? []).some(i => i.status === 'dispatched') ? 5000 : 30000,
-  })
+  // Shared with the surface's own counters — same key, one fetch.
+  const { data, isLoading } = useReviewRequests(providers)
 
   const { data: personas = [] } = usePersonas()
   const { data: visionModels = [] } = useVisionModels()
@@ -453,17 +452,22 @@ export const ReviewQueueSection: React.FC = () => {
 
   const items = useMemo(() => data?.items ?? [], [data])
 
-  // One inline section per status (in STATUS_SECTIONS order), each grouped
-  // by batch. Statuses with no items are skipped.
+  // One collapsible section per status (in STATUS_SECTIONS order), each grouped
+  // by batch. Every status is rendered, empty or not, so the queue's shape is
+  // always visible. `count` comes from the server's whole-queue tally, which
+  // can exceed the rows fetched.
   const statusSections = useMemo(
     () =>
-      STATUS_SECTIONS.map(section => ({
-        ...section,
-        items: items.filter(i => i.status === section.status),
-      }))
-        .filter(section => section.items.length > 0)
-        .map(section => ({ ...section, batches: groupByBatch(section.items) })),
-    [items],
+      STATUS_SECTIONS.map(section => {
+        const sectionItems = items.filter(i => i.status === section.status)
+        return {
+          ...section,
+          items: sectionItems,
+          count: data?.status_counts?.[section.status] ?? sectionItems.length,
+          batches: groupByBatch(sectionItems),
+        }
+      }),
+    [items, data],
   )
 
   const toggle = (id: string) =>
@@ -530,77 +534,75 @@ export const ReviewQueueSection: React.FC = () => {
 
   return (
     <section id="review-queue" className="flex flex-col">
-      <div className="pb-3 flex items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">Review Queue</h2>
-        <Select
-          value={statusFilter}
-          onValueChange={v => {
-            setStatusFilter(v as ReviewStatus | 'all')
-            setSelected(new Set())
-          }}
-        >
-          <SelectTrigger className="h-8 w-[170px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All states</SelectItem>
-            {FILTER_STATUSES.map(({ status, label }) => (
-              <SelectItem key={status} value={status}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-8">
+      <div>
         {isLoading ? (
           <div className="flex justify-center py-12">
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-12">
-            No requests{statusFilter !== 'all' ? ` with status "${statusFilter.replace('_', ' ')}"` : ''}.
-          </p>
         ) : (
-          statusSections.map(({ status, label, items: sectionItems, batches }) => (
-            <section key={status} className="space-y-3">
-              <div className="flex items-center gap-2 border-b pb-1.5">
-                <h3 className="text-sm font-semibold">{label}</h3>
-                <Badge variant={STATUS_BADGE[status]} className="text-xs">
-                  {sectionItems.length}
-                </Badge>
+          statusSections.map(({ status, label, openByDefault, items: sectionItems, count, batches }) => (
+            // LazyDetails, not <details>: a collapsed section's rows would
+            // otherwise still mount, and the history statuses hold most of the
+            // queue. The counter above is server-side, so a closed section
+            // still reports its true size without rendering a thing.
+            <LazyDetails
+              key={status}
+              defaultOpen={openByDefault}
+              className="group"
+              // Sticky so a long section keeps saying which status you are
+              // reading; each header pushes the previous one out.
+              summaryClassName="sticky top-0 z-10 -mx-4 flex cursor-pointer list-none items-center gap-2 border-b bg-background px-4 py-2 [&::-webkit-details-marker]:hidden"
+              summary={
+                <>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+                  <h3 className="text-sm font-semibold">{label}</h3>
+                  <Badge variant={STATUS_BADGE[status]} className="text-xs tabular-nums">
+                    {count}
+                  </Badge>
+                  {count > sectionItems.length && (
+                    <span className="text-xs text-muted-foreground">
+                      showing {sectionItems.length}
+                    </span>
+                  )}
+                </>
+              }
+            >
+              <div className="space-y-3 py-3">
+                {sectionItems.length === 0 ? (
+                  <p className="py-2 text-xs text-muted-foreground">Nothing in this state.</p>
+                ) : (
+                  batches.map(([batchId, batchItems]) => (
+                    <div key={batchId} className="space-y-2">
+                      <div className="flex items-center gap-3">
+                        <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                          Batch {batchId.slice(0, 8)} ({batchItems.length})
+                        </h4>
+                        {batchItems.some(i => SELECTABLE.includes(i.status)) && (
+                          <Button variant="outline" size="sm" onClick={() => toggleBatch(batchItems)}>
+                            Select all in batch
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        {batchItems.map(item => (
+                          <RequestRow
+                            key={item.id}
+                            item={item}
+                            checked={selected.has(item.id)}
+                            onToggle={toggle}
+                            projectName={!projectId && item.project_id ? projectNames.get(item.project_id) : undefined}
+                            personas={personas}
+                            visionModels={visionModels}
+                            loraOptions={loraOptions}
+                            imageOptions={refImages.map(i => i.filename)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-              {batches.map(([batchId, batchItems]) => (
-                <div key={batchId} className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                      Batch {batchId.slice(0, 8)} ({batchItems.length})
-                    </h4>
-                    {batchItems.some(i => SELECTABLE.includes(i.status)) && (
-                      <Button variant="outline" size="sm" onClick={() => toggleBatch(batchItems)}>
-                        Select all in batch
-                      </Button>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {batchItems.map(item => (
-                      <RequestRow
-                        key={item.id}
-                        item={item}
-                        checked={selected.has(item.id)}
-                        onToggle={toggle}
-                        projectName={!projectId && item.project_id ? projectNames.get(item.project_id) : undefined}
-                        personas={personas}
-                        visionModels={visionModels}
-                        loraOptions={loraOptions}
-                        imageOptions={refImages.map(i => i.filename)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </section>
+            </LazyDetails>
           ))
         )}
       </div>

@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ListChecks, Loader2, Send } from 'lucide-react'
@@ -29,9 +29,13 @@ export const BatchQueuePanel: React.FC<BatchQueuePanelProps> = ({
 }) => {
   const [sentCount, setSentCount] = React.useState<number | null>(null)
 
+  const queryClient = useQueryClient()
   const mutation = useMutation({
     mutationFn: (reviewItems: ReviewItemCreate[]) =>
       reviewApi.createRequests({ items: reviewItems }),
+    // Without this the queue tab's count — and the sidebar badge reading the same
+    // query — stay stale until the next 30s poll, so the link below looks broken.
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['review-requests'] }),
   })
 
   const handleSend = async () => {
@@ -86,7 +90,9 @@ export const BatchQueuePanel: React.FC<BatchQueuePanelProps> = ({
         <div className="flex items-center gap-2 rounded-md border p-3 text-sm">
           <ListChecks className="w-4 h-4 text-muted-foreground" />
           <span>{sentCount} request{sentCount !== 1 ? 's' : ''} awaiting review.</span>
-          <Link to="/workspace" className="text-primary hover:underline">Open Review Queue</Link>
+          {/* Video rows are reviewed here, on the Video page's own queue — not on
+              Flow, which is the image conveyor. */}
+          <Link to="/video?tab=queue" className="text-primary hover:underline">Open Review Queue</Link>
         </div>
       )}
     </div>

@@ -1,6 +1,11 @@
 import React, { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { ReviewQueueSection } from '@/components/review/ReviewQueueSection'
+import { useVideoQueueCount } from '@/hooks/useVideoQueueCount'
+import { VIDEO_PROVIDERS } from '@/lib/providers'
 import { KlingSettingsPanel } from '@/components/video/KlingSettingsPanel'
 import { KlingPresetManager } from '@/components/video/KlingPresetManager'
 import { ImageSelector } from '@/components/video/ImageSelector'
@@ -33,6 +38,17 @@ interface QueueItem {
 }
 
 export const VideoPage: React.FC = () => {
+  // The tab lives in the URL so "Open Review Queue" after sending a batch, and
+  // any bookmark of it, land on the right one.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'create'
+  const setTab = (next: string) => {
+    const updated = new URLSearchParams(params)
+    updated.set('tab', next)
+    setParams(updated, { replace: true })
+  }
+  const queued = useVideoQueueCount()
+
   // Create Video tab state
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [queueItems, setQueueItems] = useState<QueueItem[]>([])
@@ -102,9 +118,15 @@ export const VideoPage: React.FC = () => {
         <h1 className="text-xl font-bold">Video</h1>
       </div>
 
-      <Tabs defaultValue="create" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="mx-4 mt-4 w-fit">
           <TabsTrigger value="create">Create Video</TabsTrigger>
+          <TabsTrigger value="queue">
+            Prompt Review
+            {queued > 0 && (
+              <Badge variant="secondary" className="ml-2 text-xs tabular-nums">{queued}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="constructor">Video Constructor</TabsTrigger>
           <TabsTrigger value="gallery">Video Gallery</TabsTrigger>
           <TabsTrigger value="song">Song Producer</TabsTrigger>
@@ -236,7 +258,18 @@ export const VideoPage: React.FC = () => {
         </TabsContent>
 
         {/* ------------------------------------------------------------------ */}
-        {/* Tab 2: Video Constructor                                             */}
+        {/* Tab 2: Prompt Review — video rows only                               */}
+        {/* ------------------------------------------------------------------ */}
+        <TabsContent value="queue" className="flex-1 overflow-auto px-4 pb-6">
+          {/* Same review mechanic as Flow's Prompt Review, scoped to the video
+              providers. It lives here rather than on Flow because a video is a
+              chain of intermediate ComfyUI workflows, not one workflow end to
+              end — so it doesn't belong on the image conveyor. */}
+          <ReviewQueueSection providers={VIDEO_PROVIDERS} />
+        </TabsContent>
+
+        {/* ------------------------------------------------------------------ */}
+        {/* Tab 3: Video Constructor                                             */}
         {/* ------------------------------------------------------------------ */}
         <TabsContent value="constructor" className="flex-1 overflow-auto px-4 pb-6">
           <div className="max-w-4xl mx-auto space-y-6 pt-4">
@@ -280,7 +313,7 @@ export const VideoPage: React.FC = () => {
         </TabsContent>
 
         {/* ------------------------------------------------------------------ */}
-        {/* Tab 3: Video Gallery                                                 */}
+        {/* Tab 4: Video Gallery                                                 */}
         {/* ------------------------------------------------------------------ */}
         <TabsContent value="gallery" className="flex-1 overflow-auto px-4 pb-6">
           <div className="max-w-4xl mx-auto pt-4">
@@ -289,7 +322,7 @@ export const VideoPage: React.FC = () => {
         </TabsContent>
 
         {/* ------------------------------------------------------------------ */}
-        {/* Tab 4: Song Producer                                                 */}
+        {/* Tab 5: Song Producer                                                 */}
         {/* ------------------------------------------------------------------ */}
         <TabsContent value="song" className="flex-1 overflow-auto px-4 pb-6">
           <div className="max-w-2xl mx-auto space-y-6 pt-4">

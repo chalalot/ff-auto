@@ -55,6 +55,88 @@ def test_list_invalid_status_422(client, storage):
     assert client.get("/api/review/requests?status=bogus").status_code == 422
 
 
+def test_status_counts_ignore_pagination_and_the_status_filter(client, storage):
+    # 3 pending + 1 failed. The Flow rail reads status_counts, so it must be the
+    # whole-queue breakdown no matter how the page is sliced.
+    for _ in range(3):
+        client.post("/api/review/requests", json=_payload())
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    storage.claim_for_dispatch([rid])
+    storage.mark_failed(rid, "boom")
+
+    expected = {"pending_review": 3, "failed": 1}
+    assert client.get("/api/review/requests").json()["status_counts"] == expected
+    # One row per page, and filtered to a single status — counts unchanged.
+    assert client.get(
+        "/api/review/requests?per_page=1"
+    ).json()["status_counts"] == expected
+    assert client.get(
+        "/api/review/requests?status=failed&per_page=1"
+    ).json()["status_counts"] == expected
+
+
+def test_provider_scopes_rows_and_counts(client, storage):
+    # Image and video work share this queue but live on separate surfaces: Flow
+    # is the image conveyor, Video its own page. A counter that ignored provider
+    # would report video jobs as image prompts to approve, and vice versa.
+    client.post("/api/review/requests", json=_payload())
+    client.post("/api/review/requests", json=_payload(provider="comfy_video", workflow_name="kling.json"))
+    client.post("/api/review/requests", json=_payload(provider="kling", workflow_name=None))
+
+    everything = client.get("/api/review/requests").json()
+    assert everything["total"] == 3
+    assert everything["status_counts"] == {"pending_review": 3}
+
+    image = client.get("/api/review/requests?provider=comfy_image").json()
+    assert image["total"] == 1
+    assert image["status_counts"] == {"pending_review": 1}
+    assert [i["provider"] for i in image["items"]] == ["comfy_image"]
+
+    # Repeatable param: the Video surface asks for both of its providers.
+    video = client.get("/api/review/requests?provider=comfy_video&provider=kling").json()
+    assert video["total"] == 2
+    assert video["status_counts"] == {"pending_review": 2}
+    assert sorted(i["provider"] for i in video["items"]) == ["comfy_video", "kling"]
+
+
+def test_provider_scope_survives_the_status_filter(client, storage):
+    # Provider is scope, so it narrows the counts too — unlike `status`, which
+    # narrows only the page.
+    img = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    client.post("/api/review/requests", json=_payload(provider="kling", workflow_name=None))
+    storage.claim_for_dispatch([img])
+    storage.mark_failed(img, "boom")
+
+    scoped = client.get("/api/review/requests?provider=comfy_image&status=failed").json()
+
+    assert scoped["status_counts"] == {"failed": 1}
+    assert [i["id"] for i in scoped["items"]] == [img]
+
+
+def test_unknown_provider_is_422(client, storage):
+    assert client.get("/api/review/requests?provider=midjourney").status_code == 422
+
+
+def test_status_counts_are_project_scoped(client, storage):
+    from backend.database.projects_storage import ProjectsStorage
+    pid = ProjectsStorage().create_project("counts-proj")["id"]
+    client.post("/api/review/requests", json=_payload(), headers={"X-Project-Id": pid})
+    client.post("/api/review/requests", json=_payload())
+
+    assert client.get("/api/review/requests").json()["status_counts"] == {
+        "pending_review": 2
+    }
+    scoped = client.get(f"/api/review/requests?project_id={pid}").json()
+    assert scoped["status_counts"] == {"pending_review": 1}
+    assert client.get(
+        "/api/review/requests?project_id=unassigned"
+    ).json()["status_counts"] == {"pending_review": 1}
+
+
+def test_status_counts_empty_queue(client, storage):
+    assert client.get("/api/review/requests").json()["status_counts"] == {}
+
+
 def test_patch_prompt(client, storage):
     rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
     r = client.patch(f"/api/review/requests/{rid}", json={"prompt": "edited"})
@@ -85,6 +167,43 @@ def test_discard_dispatched_409(client, storage):
     storage.claim_for_dispatch([rid])
     storage.begin_dispatch(rid)
     assert client.delete(f"/api/review/requests/{rid}").status_code == 409
+
+
+def test_fail_reaps_a_dispatched_row_with_no_worker_callback(client, storage):
+    # The state discard/patch can't reach: dispatched, no result, no task left
+    # to poll. Marking it failed is its only exit.
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    storage.claim_for_dispatch([rid])
+    storage.begin_dispatch(rid)
+
+    r = client.post(f"/api/review/requests/{rid}/fail")
+
+    assert r.status_code == 200
+    assert r.json()["status"] == "failed"
+    assert r.json()["error"]
+    # Failed rows are retryable and discardable, so the row is actionable again.
+    assert client.post(f"/api/review/requests/{rid}/redispatch").status_code == 200
+
+
+def test_fail_reaps_an_approved_row_whose_dispatch_never_started(client, storage):
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+    storage.claim_for_dispatch([rid])  # → approved, dispatch task never ran
+
+    assert client.post(f"/api/review/requests/{rid}/fail").json()["status"] == "failed"
+
+
+def test_fail_refuses_a_row_that_is_not_in_flight(client, storage):
+    rid = client.post("/api/review/requests", json=_payload()).json()["request_ids"][0]
+
+    r = client.post(f"/api/review/requests/{rid}/fail")
+
+    # pending_review is not stuck — reaping it would discard work silently.
+    assert r.status_code == 409
+    assert client.get(f"/api/review/requests").json()["items"][0]["status"] == "pending_review"
+
+
+def test_fail_missing_404(client, storage):
+    assert client.post("/api/review/requests/nope/fail").status_code == 404
 
 
 def test_regenerate_pending_dispatches_and_leaves_row_untouched(client, storage):

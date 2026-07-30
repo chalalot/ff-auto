@@ -7,6 +7,10 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // FastAPI reads a repeated key (?provider=a&provider=b) for list params.
+  // Axios' default would send provider[]=a&provider[]=b, which arrives as no
+  // value at all — a silently unscoped query rather than an error.
+  paramsSerializer: { indexes: null },
 })
 
 apiClient.interceptors.request.use(config => {

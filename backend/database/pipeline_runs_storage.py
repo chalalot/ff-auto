@@ -10,6 +10,10 @@ from .models import PipelineRun, PipelineStep
 
 logger = logging.getLogger(__name__)
 
+# A run in one of these has not reached a terminal state. Nothing but the worker
+# that owns it — or an explicit reap — takes it out.
+IN_FLIGHT = ("queued", "running")
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -261,6 +265,26 @@ class PipelineRunsStorage:
                 .values(status="failed", error=error, finished_at=now, updated_at=now)
             )
 
+    def fail_stalled_run(self, run_id: str, error: dict) -> Optional[dict]:
+        """queued/running -> failed, for a run no worker is going to finish.
+
+        Guarded and reporting, unlike ``fail_run``: this one is reachable from
+        the UI, so a finished run must not be rewritten by a stray click, and
+        the caller needs to know whether anything changed.
+        """
+        now = _now()
+        with session_scope() as session:
+            row = session.execute(
+                update(PipelineRun)
+                .where(
+                    PipelineRun.id == run_id,
+                    PipelineRun.status.in_(IN_FLIGHT),
+                )
+                .values(status="failed", error=error, finished_at=now, updated_at=now)
+                .returning(PipelineRun)
+            ).scalars().first()
+            return _run_dict(row) if row else None
+
     def get_run_with_steps(self, run_id: str) -> Optional[dict]:
         with session_scope() as session:
             run = session.execute(
@@ -281,11 +305,20 @@ class PipelineRunsStorage:
         self,
         limit: int = 20,
         project_id: Optional[str] = None,
+        statuses: Optional[tuple] = None,
     ) -> list[dict]:
+        """Newest runs first. ``statuses`` narrows to specific states.
+
+        The in-flight filter matters because a run that stalled weeks ago sits
+        far outside the newest-20 window, so it is invisible — and therefore
+        unfixable — in a plain recent list.
+        """
         with session_scope() as session:
             query = select(PipelineRun)
             if project_id is not None:
                 query = query.where(PipelineRun.project_id == project_id)
+            if statuses:
+                query = query.where(PipelineRun.status.in_(statuses))
             query = query.order_by(
                 PipelineRun.created_at.desc(), PipelineRun.id.desc()
             ).limit(limit)

@@ -14,11 +14,14 @@ from backend.api.identity import Identity, get_identity
 from backend.database.generation_requests_storage import (
     GenerationRequestsStorage,
     InvalidStateError,
+    APPROVED,
+    DISPATCHED,
     PENDING_REVIEW,
     COMPLETED,
     FAILED,
 )
 from backend.models.review import (
+    Provider,
     ReviewCreateRequest,
     ReviewCreateResponse,
     ReviewDispatchRequest,
@@ -92,13 +95,18 @@ def list_requests(
     status: ReviewStatus | None = Query(default=None),
     batch_id: str | None = Query(default=None),
     project_id: str | None = Query(default=None),
+    provider: list[Provider] | None = Query(
+        default=None,
+        description="Repeatable. Scopes rows *and* status_counts — the image and "
+                    "video surfaces share this queue and must not count each other.",
+    ),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=50, ge=1, le=200),
     storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
 ):
     result = storage.list_requests(
         status=status, batch_id=batch_id, project_id=project_id,
-        page=page, per_page=per_page
+        providers=provider, page=page, per_page=per_page
     )
     _annotate_stale_overrides(result["items"])
     return result
@@ -153,6 +161,36 @@ def discard_request(
     if row is None:
         raise HTTPException(status_code=404, detail="Request not found")
     return row
+
+
+@router.post("/requests/{request_id}/fail", response_model=ReviewRequestItem)
+def fail_request(
+    request_id: str,
+    storage: GenerationRequestsStorage = Depends(GenerationRequestsStorage),
+):
+    """Give an orphaned in-flight row a way out.
+
+    A row goes approved -> dispatched and then waits for its worker callback. If
+    the worker died in between there is nothing left to move it: the row has no
+    Celery task of its own to poll, and discard/patch accept only
+    pending_review/failed. Marking it failed is the honest terminal state and
+    lands it back in Prompt Review, where Retry and Discard already work.
+    """
+    row = storage.mark_failed(
+        request_id, "Marked failed from Generating: no worker callback."
+    )
+    if row is not None:
+        return _annotate_stale_overrides([row])[0]
+    current = storage.get_request(request_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"Request is {current['status']!r}; only in-flight "
+            f"({APPROVED!r}/{DISPATCHED!r}) rows can be marked failed."
+        ),
+    )
 
 
 @router.post("/requests/{request_id}/regenerate", status_code=202)

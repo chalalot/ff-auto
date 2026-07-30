@@ -4,7 +4,10 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { workspaceApi } from '@/api/workspace'
+import { galleryApi } from '@/api/gallery'
 import { useTaskProgress } from '@/hooks/useTaskProgress'
+import { useGalleryImages } from '@/hooks/useGalleryImages'
+import { useProjectId } from '@/hooks/useProjectId'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +19,7 @@ import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Play, Loader2, Upload, Trash2, X, Download, FileText, HardDrive, CheckCircle2, Cpu, PenLine, Copy, ExternalLink, BookOpen } from 'lucide-react'
 import { resolveDroppedFiles, uploadErrorMessage } from '@/lib/uploads'
-import type { ProcessImageConfig, ActiveTask, CaptionExportEntry } from '@/types'
+import type { ProcessImageConfig, ActiveTask, CaptionExportEntry, GalleryImage } from '@/types'
 
 interface LoraConfig {
   dataset_source: string
@@ -118,7 +121,7 @@ export const CaptionExportTab: React.FC<{
   }, [activeTasks, started])
 
   // Google Drive state
-  const [source, setSource] = useState<'local' | 'drive' | 'manual'>('local')
+  const [source, setSource] = useState<'local' | 'drive' | 'manual' | 'approved'>('local')
   const [driveFolderUrl, setDriveFolderUrl] = useState('')
   const [driveMaxDimension, setDriveMaxDimension] = useState(1024)
   const [driveFetching, setDriveFetching] = useState(false)
@@ -478,6 +481,17 @@ export const CaptionExportTab: React.FC<{
               Local Upload
             </button>
             <button
+              onClick={() => { setSource('approved'); setEntries([]) }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                source === 'approved'
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Approved Set
+            </button>
+            <button
               onClick={() => { setSource('drive'); setEntries([]) }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
                 source === 'drive'
@@ -533,6 +547,13 @@ export const CaptionExportTab: React.FC<{
               <p className="text-xs text-muted-foreground/60 mt-1">PNG, JPG, JPEG, WEBP • up to 30 images</p>
               {dropError && <p className="text-xs text-destructive mt-1">{dropError}</p>}
             </label>
+          )}
+
+          {source === 'approved' && (
+            <ApprovedSetPicker
+              onLoad={setEntries}
+              loadedStems={new Set(entries.map(e => e.stem))}
+            />
           )}
 
           {source === 'drive' && (
@@ -1283,6 +1304,132 @@ const RunpodJobCard: React.FC<{
         <pre className="text-xs bg-muted rounded p-2 overflow-x-auto max-h-40">
           {JSON.stringify(job.job_input, null, 2)}
         </pre>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ApprovedSetPicker
+// ---------------------------------------------------------------------------
+// Seeds the caption queue straight from images approved in Image Review, so a
+// LoRA dataset no longer has to be re-uploaded from disk. Entries are built
+// client-side: the worker only needs a readable path, and approved images are
+// on the same volume.
+const ApprovedSetPicker: React.FC<{
+  onLoad: (entries: CaptionExportEntry[]) => void
+  loadedStems: Set<string>
+}> = ({ onLoad, loadedStems }) => {
+  const projectId = useProjectId() ?? undefined
+  const [page, setPage] = useState(1)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const { data, isLoading } = useGalleryImages('approved', page, 48, projectId)
+  const images = data?.items ?? []
+
+  const toEntry = (img: GalleryImage): CaptionExportEntry => {
+    const match = /\.[^.]+$/.exec(img.filename)
+    return {
+      stem: match ? img.filename.slice(0, -match[0].length) : img.filename,
+      path: img.path,
+      original_ext: match ? match[0] : '.png',
+    }
+  }
+
+  const toggle = (filename: string) =>
+    setPicked(prev => {
+      const next = new Set(prev)
+      if (next.has(filename)) next.delete(filename)
+      else next.add(filename)
+      return next
+    })
+
+  return (
+    <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
+      <div className="space-y-1.5">
+        <Label>Approved images</Label>
+        <p className="text-xs text-muted-foreground">
+          Pick from what you approved in Image Review — no re-upload, no downscale.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : images.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          Nothing approved yet.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPicked(new Set(images.map(i => i.filename)))}
+            >
+              Select page
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPicked(new Set())}>
+              Clear
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {picked.size} selected
+              {picked.size > 30 && ' — more than 30 will take a while'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+            {images.map(img => {
+              const isPicked = picked.has(img.filename)
+              return (
+                <button
+                  key={img.filename}
+                  onClick={() => toggle(img.filename)}
+                  title={img.filename}
+                  className={`relative aspect-square overflow-hidden rounded border-2 transition-colors ${
+                    isPicked ? 'border-primary' : 'border-transparent hover:border-muted-foreground/40'
+                  }`}
+                >
+                  <img
+                    src={galleryApi.getThumbnailUrl(img.filename, 'approved')}
+                    alt={img.filename}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                  />
+                  {loadedStems.has(toEntry(img).stem) && (
+                    <span className="absolute bottom-0 right-0 bg-primary/90 px-1 text-[10px] text-primary-foreground">
+                      queued
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {data && data.pages > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                Prev
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Page {page} of {data.pages} ({data.total} approved)
+              </span>
+              <Button variant="outline" size="sm" disabled={page >= data.pages} onClick={() => setPage(p => p + 1)}>
+                Next
+              </Button>
+            </div>
+          )}
+
+          <Button
+            size="sm"
+            disabled={picked.size === 0}
+            onClick={() => onLoad(images.filter(i => picked.has(i.filename)).map(toEntry))}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+            Load {picked.size} into the queue
+          </Button>
+        </>
       )}
     </div>
   )

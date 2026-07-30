@@ -97,19 +97,31 @@ class GenerationRequestsStorage:
         status: Optional[str] = None,
         batch_id: Optional[str] = None,
         project_id: Optional[str] = None,
+        providers: Optional[list] = None,
         page: int = 1,
         per_page: int = 50,
     ) -> dict:
+        # Scope (project/batch/provider) applies to both the page and the
+        # per-status counts; `status` narrows the page only, so a caller
+        # filtering to one status still sees the whole breakdown.
+        #
+        # `providers` is what keeps the image and video surfaces honest: both
+        # write into this one queue, so a counter that ignores provider reports
+        # video work as image work.
+        scope = []
+        if batch_id:
+            scope.append(GenerationRequest.batch_id == batch_id)
+        if project_id == "unassigned":
+            scope.append(GenerationRequest.project_id.is_(None))
+        elif project_id:
+            scope.append(GenerationRequest.project_id == project_id)
+        if providers:
+            scope.append(GenerationRequest.provider.in_(providers))
+
         with session_scope() as session:
-            query = select(GenerationRequest)
+            query = select(GenerationRequest).where(*scope)
             if status:
                 query = query.where(GenerationRequest.status == status)
-            if batch_id:
-                query = query.where(GenerationRequest.batch_id == batch_id)
-            if project_id == "unassigned":
-                query = query.where(GenerationRequest.project_id.is_(None))
-            elif project_id:
-                query = query.where(GenerationRequest.project_id == project_id)
             total = session.execute(
                 select(func.count()).select_from(query.subquery())
             ).scalar() or 0
@@ -119,11 +131,21 @@ class GenerationRequestsStorage:
                 .offset((page - 1) * per_page)
                 .limit(per_page)
             ).scalars().all()
+            # One GROUP BY instead of six queries. Independent of pagination so
+            # the Flow rail's stage counters stay right past `per_page`.
+            status_counts = dict(
+                session.execute(
+                    select(GenerationRequest.status, func.count())
+                    .where(*scope)
+                    .group_by(GenerationRequest.status)
+                ).all()
+            )
             return {
                 "items": [_row_dict(r) for r in rows],
                 "total": total,
                 "page": page,
                 "pages": max(1, math.ceil(total / per_page)),
+                "status_counts": status_counts,
             }
 
     def update_request(
@@ -219,16 +241,23 @@ class GenerationRequestsStorage:
                 .values(execution_id=execution_id, updated_at=func.now())
             )
 
-    def mark_failed(self, request_id: str, error: str) -> None:
+    def mark_failed(self, request_id: str, error: str) -> Optional[dict]:
+        """approved/dispatched -> failed.
+
+        Returns the updated row, or None if it wasn't in flight. Worker callers
+        ignore the return; the reaper endpoint uses it to tell 404 from 409.
+        """
         with session_scope() as session:
-            session.execute(
+            row = session.execute(
                 update(GenerationRequest)
                 .where(
                     GenerationRequest.id == request_id,
                     GenerationRequest.status.in_([APPROVED, DISPATCHED]),
                 )
                 .values(status=FAILED, error=error, updated_at=func.now())
-            )
+                .returning(GenerationRequest)
+            ).scalars().first()
+            return _row_dict(row) if row else None
 
     def mark_completed_by_execution(
         self, execution_id: str, result_path: Optional[str] = None

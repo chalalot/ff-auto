@@ -13,6 +13,8 @@ export const reviewApi = {
     status?: ReviewStatus
     batch_id?: string
     project_id?: string
+    // Repeatable on the wire (?provider=a&provider=b); scopes rows and counts.
+    provider?: string[]
     page?: number
     per_page?: number
   }) =>
@@ -29,6 +31,11 @@ export const reviewApi = {
 
   dispatch: (ids: string[]) =>
     apiClient.post<ReviewDispatchResponse>('/review/dispatch', { ids }).then(r => r.data),
+
+  // Reap a row stuck in flight: approved/dispatched -> failed, which is the
+  // only exit it has if its worker never called back.
+  markFailed: (id: string) =>
+    apiClient.post<ReviewRequestItem>(`/review/requests/${id}/fail`).then(r => r.data),
 
   redispatch: (id: string) =>
     apiClient.post<ReviewRequestItem>(`/review/requests/${id}/redispatch`).then(r => r.data),

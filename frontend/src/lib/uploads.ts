@@ -1,5 +1,5 @@
 // Drag-and-drop → File resolution and upload error extraction, shared by
-// WorkspacePage and CaptionExportTab.
+// CreatePanel and CaptionExportTab.
 import { workspaceApi } from '@/api/workspace'
 
 const DROPPED_MIME_TO_EXT: Record<string, string> = {

@@ -3,6 +3,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { LazyDetails } from '@/components/shared/LazyDetails'
 import type { WorkflowParameters, WorkflowParamInput } from '@/types'
 
 // "owner__repo__name_v7.safetensors" → "name_v7"
@@ -45,11 +46,20 @@ export const WorkflowParametersPanel: React.FC<Props> = ({
         </button>
       </div>
       {params.nodes.map(node => (
-        <details key={node.node_id} className="rounded border border-border/60 px-2 py-1.5">
-          <summary className="cursor-pointer text-xs font-medium">
-            {node.title}
-            <span className="ml-1 font-mono text-[10px] text-muted-foreground">{node.class_type}</span>
-          </summary>
+        // A graph can carry a dozen nodes with a field each, and every field is
+        // an Input or a Radix Select. LazyDetails keeps a collapsed node's
+        // fields out of the DOM entirely.
+        <LazyDetails
+          key={node.node_id}
+          className="rounded border border-border/60 px-2 py-1.5"
+          summaryClassName="cursor-pointer text-xs font-medium"
+          summary={
+            <>
+              {node.title}
+              <span className="ml-1 font-mono text-[10px] text-muted-foreground">{node.class_type}</span>
+            </>
+          }
+        >
           <div className="mt-2 space-y-2">
             {node.inputs.map(inp => (
               <ParamField
@@ -64,7 +74,7 @@ export const WorkflowParametersPanel: React.FC<Props> = ({
               />
             ))}
           </div>
-        </details>
+        </LazyDetails>
       ))}
     </div>
   )

@@ -35,6 +35,11 @@ export interface ReviewListResponse {
   total: number
   page: number
   pages: number
+  // Rows per status across the whole queue — project scope applies, the status
+  // filter and pagination do not. Statuses with no rows are absent, so read it
+  // through `??  0`. The Flow rail counts from this, never from `items`, which
+  // is capped at per_page.
+  status_counts?: Partial<Record<ReviewStatus, number>>
 }
 
 export interface ReviewItemCreate {

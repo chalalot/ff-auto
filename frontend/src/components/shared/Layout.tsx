@@ -1,11 +1,14 @@
 import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Image, Grid, Video, Activity, FileText, Archive, Loader2, BarChart3, Workflow } from 'lucide-react'
+import { Grid, Video, Activity, Loader2, BarChart3, Boxes, Settings, Workflow } from 'lucide-react'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
+import { useFlowCounts } from '@/hooks/useFlowCounts'
+import { useVideoQueueCount } from '@/hooks/useVideoQueueCount'
 import type { ActiveTask } from '@/types'
 import { MemberPickerModal } from '@/components/shared/MemberPickerModal'
 import { ProjectSelector } from '@/components/shared/ProjectSelector'
+import { Toaster } from '@/components/shared/Toaster'
 
 const TERMINAL = new Set(['SUCCESS', 'FAILURE', 'REVOKED'])
 
@@ -30,23 +33,32 @@ function getWorkerBanner(tasks: ActiveTask[]): { label: string; detail: string }
 }
 
 const navItems: { to: string; label: string; icon: React.FC<React.SVGProps<SVGSVGElement>>; disabled?: boolean }[] = [
-  { to: '/workspace', label: 'Workspace', icon: Image },
-  { to: '/gallery', label: 'Gallery', icon: Grid },
+  { to: '/flow', label: 'Flow', icon: Workflow },
+  { to: '/library', label: 'Library', icon: Grid },
+  // Its own destination, not a Flow stage: it consumes a set of approved images
+  // to build a dataset and train a character LoRA.
+  { to: '/lora', label: 'LoRA', icon: Boxes },
   { to: '/analysis', label: 'Analysis', icon: BarChart3 },
-  { to: '/archive', label: 'Archive', icon: Archive },
   { to: '/video', label: 'Video', icon: Video },
   { to: '/monitor', label: 'Monitor', icon: Activity },
-  { to: '/prompts', label: 'Prompts', icon: FileText },
-  { to: '/workflows', label: 'Workflows', icon: Workflow },
+  { to: '/configure', label: 'Configure', icon: Settings },
 ]
 
 export const Layout: React.FC = () => {
   const { data: activeTasks = [] } = useActiveTasks()
   const workerBanner = getWorkerBanner(activeTasks)
+  // Two badges, two meanings. Flow's red one is a queue of work blocked on a
+  // human. LoRA's green one is material available to train on — nothing is
+  // waiting, so it must not read as an alarm.
+  const { waiting, approved } = useFlowCounts()
+  // Video has its own queue on its own surface, so it carries its own count —
+  // Flow's badge is image work only.
+  const videoWaiting = useVideoQueueCount()
 
   return (
     <div className="flex h-screen bg-background">
       <MemberPickerModal />
+      <Toaster />
       {/* Sidebar */}
       <aside className="w-16 lg:w-56 flex flex-col border-r bg-card">
         <div className="p-4 border-b">
@@ -79,6 +91,30 @@ export const Layout: React.FC = () => {
             >
               <Icon className="w-5 h-5 shrink-0" />
               <span className="hidden lg:block">{label}</span>
+              {to === '/flow' && waiting > 0 && (
+                <span
+                  title={`${waiting} waiting on you`}
+                  className="ml-auto rounded-full bg-red-500/15 px-1.5 text-[11px] font-semibold tabular-nums text-red-700 dark:text-red-400"
+                >
+                  {waiting}
+                </span>
+              )}
+              {to === '/video' && videoWaiting > 0 && (
+                <span
+                  title={`${videoWaiting} video prompt${videoWaiting === 1 ? '' : 's'} waiting on you`}
+                  className="ml-auto rounded-full bg-red-500/15 px-1.5 text-[11px] font-semibold tabular-nums text-red-700 dark:text-red-400"
+                >
+                  {videoWaiting}
+                </span>
+              )}
+              {to === '/lora' && approved > 0 && (
+                <span
+                  title={`${approved} approved images available to train on`}
+                  className="ml-auto rounded-full bg-emerald-500/15 px-1.5 text-[11px] font-semibold tabular-nums text-emerald-700 dark:text-emerald-400"
+                >
+                  {approved}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
