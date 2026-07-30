@@ -95,7 +95,11 @@ export const GlobalTaskCard: React.FC<{ task: ActiveTask }> = ({ task }) => {
           {isCaptionExport && task.image_count != null && (
             <p className="text-xs text-muted-foreground">{task.image_count} images</p>
           )}
-          <p className="text-sm">{statusMessage}</p>
+          {/* A failed task is listed for 15 minutes (see _FAILED_GRACE) with the
+              exception text as its status — read it as an error, not progress. */}
+          <p className={state === 'FAILURE' ? 'text-sm text-destructive' : 'text-sm'}>
+            {statusMessage}
+          </p>
           {task.run_id && !isCaptionExport && (
             <Link
               to={`/pipeline-runs/${task.run_id}`}

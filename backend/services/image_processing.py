@@ -29,6 +29,10 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 _ACTIVE_TASKS_SET = "ff_auto:active_tasks"   # Redis Set of task_ids
 _TASK_META_PREFIX = "ff_auto:task_meta:"     # Redis String (JSON) per task
 _TASK_META_TTL = 6 * 3600                    # 6 hours TTL
+# How long a crashed task stays listed. A direct ComfyUI run has no review row
+# to fall back on, so pruning it the instant it fails leaves the Generating tab
+# empty with no hint that anything went wrong.
+_FAILED_GRACE = 15 * 60
 
 
 def _redis_client() -> _redis.Redis:
@@ -307,7 +311,8 @@ class ImageProcessingService:
     def get_active_tasks(self) -> List[dict]:
         """
         Return all tasks currently registered in Redis (dispatched but not yet
-        completed). Automatically prunes tasks that have reached a terminal state.
+        completed), plus recent failures so a crash is visible rather than silent.
+        Prunes tasks that have succeeded, and failures older than _FAILED_GRACE.
         Any user who calls this endpoint sees every running task, not just their own.
         """
         try:
@@ -323,13 +328,42 @@ class ImageProcessingService:
                 result = AsyncResult(tid, app=celery_app)
                 state = result.state
 
-                if state in ("SUCCESS", "FAILURE", "REVOKED"):
+                if state in ("SUCCESS", "REVOKED"):
                     # Prune from registry — task is done
                     r.srem(_ACTIVE_TASKS_SET, tid)
                     r.delete(_TASK_META_PREFIX + tid)
                     continue
 
                 meta_raw = r.get(_TASK_META_PREFIX + tid)
+
+                if state == "FAILURE":
+                    # Keep it listed for a grace window, stamping when it died on
+                    # first sight, so the Generating tab can show the error before
+                    # the row disappears.
+                    meta = json.loads(meta_raw) if meta_raw else {}
+                    failed_at = meta.get("failed_at")
+                    if failed_at is None:
+                        failed_at = time.time()
+                        meta["failed_at"] = failed_at
+                        r.setex(_TASK_META_PREFIX + tid, _TASK_META_TTL, json.dumps(meta))
+                    if time.time() - failed_at > _FAILED_GRACE:
+                        r.srem(_ACTIVE_TASKS_SET, tid)
+                        r.delete(_TASK_META_PREFIX + tid)
+                        continue
+                    # result.info is the exception itself, not the progress dict.
+                    tasks.append({
+                        "task_id": tid,
+                        "state": state,
+                        "status_message": str(result.info) or "Task failed",
+                        "progress": 0,
+                        "image_path": meta.get("image_path"),
+                        "run_id": meta.get("run_id"),
+                        "persona": meta.get("persona", ""),
+                        "dispatched_at": meta.get("dispatched_at"),
+                        "task_type": meta.get("task_type", "image_process"),
+                        "image_count": meta.get("image_count"),
+                    })
+                    continue
 
                 # Self-heal stale orphans: a task still PENDING after its
                 # metadata has expired (TTL 6h, vs. a ~1h max real poll time) was

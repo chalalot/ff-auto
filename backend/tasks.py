@@ -83,6 +83,20 @@ def download_execution_task(self, execution_id: str, image_ref_path: str):
                         if paths and isinstance(paths, list):
                             comfy_image_paths.extend(paths)
 
+        # A PreviewImage node writes to ComfyUI's temp store, a SaveImage node to
+        # its output store, and history reports both. Keeping the previews would
+        # file every intermediate VAEDecode in the gallery as if it were a result
+        # — the ZIB-ZIT T2I graph alone previews three. Drop them, unless the
+        # graph saves nothing at all, in which case a preview is the only result
+        # there is.
+        saved_only = [p for p in comfy_image_paths if "type=temp" not in p]
+        if saved_only and len(saved_only) != len(comfy_image_paths):
+            logger.info(
+                f"[download_execution_task] {execution_id}: ignoring "
+                f"{len(comfy_image_paths) - len(saved_only)} preview image(s)"
+            )
+            comfy_image_paths = saved_only
+
         if not comfy_image_paths:
             logger.warning(f"[download_execution_task] No output image paths found for {execution_id}")
             storage.mark_as_failed(execution_id)

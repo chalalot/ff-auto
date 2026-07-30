@@ -157,3 +157,51 @@ def test_poll_comfy_video_task_failure_fails_queue_row(storage):
     row = storage.get_request(rid)
     assert row["status"] == "failed"
     assert "node exploded" in row["error"]
+
+
+def _download_run(storage, tmp_path, monkeypatch, output_images):
+    """Run download_execution_task against a stubbed ComfyUI, returning the
+    ComfyUI paths it chose to fetch."""
+    from backend import tasks as tasks_module
+    _dispatched_row(storage, execution_id="exec-preview")
+
+    fetched = []
+
+    async def fake_check_status(execution_id):
+        return {"status": "completed", "output_images": output_images}
+
+    async def fake_download(path):
+        fetched.append(path)
+        return b"png-bytes"
+
+    fake_client = MagicMock()
+    fake_client.check_status = fake_check_status
+    fake_client.download_image_by_path = fake_download
+
+    monkeypatch.setattr(tasks_module.GlobalConfig, "OUTPUT_DIR", str(tmp_path), raising=False)
+    with patch.object(tasks_module, "get_instances",
+                      return_value=(None, fake_client, MagicMock())):
+        tasks_module.download_execution_task.run("exec-preview", None)
+    return fetched
+
+
+def test_download_execution_task_ignores_preview_images(storage, tmp_path, monkeypatch):
+    # The ZIB-ZIT T2I graph previews three intermediate VAEDecodes and saves one
+    # image; filing the previews in the gallery would read as four results.
+    fetched = _download_run(storage, tmp_path, monkeypatch, [
+        {"20": ["preview-a.png?type=temp"]},
+        {"23": ["preview-b.png?type=temp"]},
+        {"26": ["preview-c.png?type=temp"]},
+        {"35": ["Z-Image_00002_.png?type=output"]},
+    ])
+
+    assert fetched == ["Z-Image_00002_.png?type=output"]
+
+
+def test_download_execution_task_keeps_previews_when_nothing_is_saved(storage, tmp_path, monkeypatch):
+    # A graph with no SaveImage node: the preview is the only result there is.
+    fetched = _download_run(storage, tmp_path, monkeypatch, [
+        {"20": ["preview-only.png?type=temp"]},
+    ])
+
+    assert fetched == ["preview-only.png?type=temp"]

@@ -157,3 +157,91 @@ def test_input_thumbnail_generated(svc, _temp_dirs):
 def test_input_thumbnail_not_found(svc):
     result = svc.get_input_image_thumbnail("ghost.png")
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_active_tasks: a crashed task must be visible, not silently pruned
+# ---------------------------------------------------------------------------
+
+class _FakeRedis:
+    """Just enough Redis for the active-task registry."""
+
+    def __init__(self, members=(), meta=None):
+        self.members = set(members)
+        self.meta = dict(meta or {})
+
+    def smembers(self, key):
+        return set(self.members)
+
+    def srem(self, key, member):
+        self.members.discard(member)
+
+    def get(self, key):
+        return self.meta.get(key)
+
+    def delete(self, key):
+        self.meta.pop(key, None)
+
+    def setex(self, key, ttl, value):
+        self.meta[key] = value
+
+
+def _registry(monkeypatch, task_id, state, meta, info=None):
+    """Point the service at a one-task registry and a stubbed Celery result."""
+    import json
+    from backend.services import image_processing as ip
+
+    redis = _FakeRedis([task_id], {ip._TASK_META_PREFIX + task_id: json.dumps(meta)})
+    monkeypatch.setattr(ip, "_redis_client", lambda: redis)
+
+    result = MagicMock()
+    result.state = state
+    result.info = info
+    monkeypatch.setattr(ip, "AsyncResult", lambda *a, **k: result)
+    return redis
+
+
+def test_active_tasks_lists_a_failed_task_with_its_error(svc, monkeypatch, _temp_dirs):
+    import json
+    from backend.services import image_processing as ip
+
+    redis = _registry(
+        monkeypatch, "boom", "FAILURE",
+        {"image_path": None, "dispatched_at": 100.0},
+        info=TypeError("expected str, bytes or os.PathLike object, not NoneType"),
+    )
+
+    tasks = svc.get_active_tasks()
+
+    # Pruning it on the first poll is what made the Generating tab go quiet.
+    assert [t["task_id"] for t in tasks] == ["boom"]
+    assert tasks[0]["state"] == "FAILURE"
+    assert "NoneType" in tasks[0]["status_message"]
+    assert "boom" in redis.members
+    # The death is stamped so the grace window is measured from the first sight
+    # of the failure, not from every poll.
+    assert json.loads(redis.meta[ip._TASK_META_PREFIX + "boom"])["failed_at"] > 0
+
+
+def test_active_tasks_prunes_a_failure_past_the_grace_window(svc, monkeypatch):
+    import time
+    from backend.services import image_processing as ip
+
+    redis = _registry(
+        monkeypatch, "old-boom", "FAILURE",
+        {"failed_at": time.time() - ip._FAILED_GRACE - 1},
+        info=RuntimeError("ComfyUI returned no execution id"),
+    )
+
+    assert svc.get_active_tasks() == []
+    assert redis.members == set()
+    assert ip._TASK_META_PREFIX + "old-boom" not in redis.meta
+
+
+def test_active_tasks_still_prunes_a_succeeded_task(svc, monkeypatch):
+    from backend.services import image_processing as ip
+
+    redis = _registry(monkeypatch, "done", "SUCCESS", {"dispatched_at": 1.0})
+
+    assert svc.get_active_tasks() == []
+    assert redis.members == set()
