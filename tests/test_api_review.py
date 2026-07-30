@@ -412,3 +412,30 @@ def test_missing_workflow_file_does_not_break_listing(client, storage, monkeypat
     r = client.get("/api/review/requests")
     assert r.status_code == 200
     assert r.json()["items"][0]["stale_overrides"] == []
+
+
+def test_list_serializes_a_text_to_image_row(client, storage):
+    # A T2I row has no source image. Typing the response field `str` made one
+    # such row 500 the entire list, which read as an empty Prompt Review, empty
+    # Generating and zeroed Flow counters rather than as an error.
+    storage.create_requests([{
+        "source_image_path": None,
+        "prompt": "a red maple leaf on wet stone",
+        "provider": "comfy_image",
+        "workflow_name": "ZIB-ZIT.json",
+        "settings": {"persona": "Emi"},
+    }])
+    storage.create_requests([{
+        "source_image_path": os.path.join(os.environ["PROCESSED_DIR"], "img.png"),
+        "prompt": "an i2i prompt",
+        "provider": "comfy_image",
+        "workflow_name": "wf.json",
+        "settings": {},
+    }])
+
+    r = client.get("/api/review/requests")
+
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 2
+    assert [i["source_image_path"] for i in items].count(None) == 1

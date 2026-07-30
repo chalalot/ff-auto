@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertTriangle, ChevronRight, Loader2, RefreshCcw, RotateCcw, Send, Trash2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Loader2, RefreshCcw, RotateCcw, Send, Trash2, Type } from 'lucide-react'
 import { reviewApi } from '@/api/review'
 import { projectsApi } from '@/api/projects'
 import { workspaceApi } from '@/api/workspace'
@@ -191,18 +191,26 @@ export const RequestRow: React.FC<{
           onCheckedChange={() => onToggle(item.id)}
         />
       </div>
-      <img
-        src={reviewApi.getThumbnailUrl(item.id)}
-        alt=""
-        // An open section can hold hundreds of rows; without this they all
-        // request their thumbnail at once and starve the API calls behind them.
-        loading="lazy"
-        decoding="async"
-        className="h-20 w-20 rounded object-cover bg-muted shrink-0"
-        onError={e => {
-          ;(e.target as HTMLImageElement).style.visibility = 'hidden'
-        }}
-      />
+      {/* A text-to-image row has no source image, so asking for its thumbnail
+          would only ever 404. Keep the square so the rows stay aligned. */}
+      {item.source_image_path ? (
+        <img
+          src={reviewApi.getThumbnailUrl(item.id)}
+          alt=""
+          // An open section can hold hundreds of rows; without this they all
+          // request their thumbnail at once and starve the API calls behind them.
+          loading="lazy"
+          decoding="async"
+          className="h-20 w-20 rounded object-cover bg-muted shrink-0"
+          onError={e => {
+            ;(e.target as HTMLImageElement).style.visibility = 'hidden'
+          }}
+        />
+      ) : (
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded bg-muted">
+          <Type className="h-6 w-6 text-muted-foreground/60" aria-hidden="true" />
+        </div>
+      )}
       <div className="flex-1 min-w-0 space-y-2">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge variant={STATUS_BADGE[item.status]} className="text-xs capitalize">
@@ -228,7 +236,8 @@ export const RequestRow: React.FC<{
             </Badge>
           )}
           <span className="text-xs text-muted-foreground truncate">
-            {item.source_image_path.split('/').pop()}
+            {/* A text-to-image row has no reference image to name. */}
+            {item.source_image_path?.split('/').pop() ?? 'text to image'}
           </span>
         </div>
 

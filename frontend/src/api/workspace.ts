@@ -59,6 +59,10 @@ export const workspaceApi = {
   getActiveTasks: () =>
     apiClient.get<ActiveTask[]>('/workspace/active-tasks').then(r => r.data),
 
+  // Clears a stopped task from the shared list. 409 if it is still working.
+  dismissActiveTask: (taskId: string) =>
+    apiClient.delete(`/workspace/active-tasks/${taskId}`).then(r => r.data),
+
   getExecutions: (params?: { limit?: number; status?: string; project_id?: string }) =>
     apiClient.get<ExecutionRecord[]>('/workspace/executions', { params }).then(r => r.data),
 

@@ -9,6 +9,10 @@ ReviewStatus = Literal[
 
 
 class ReviewItemCreate(BaseModel):
+    # Required on the way in: the only caller of POST /review/requests is the
+    # video batch panel, and a video row with no first frame cannot be
+    # dispatched. Text-to-image rows are written by the prompt pipeline itself,
+    # not through this endpoint.
     source_image_path: str
     prompt: str
     provider: Provider
@@ -29,7 +33,10 @@ class ReviewCreateResponse(BaseModel):
 class ReviewRequestItem(BaseModel):
     id: str
     batch_id: str
-    source_image_path: str
+    # None for a text-to-image row. Typing this `str` made one T2I row 500 the
+    # whole list — and with the list gone, Prompt Review, the Generating panel's
+    # dispatched rows and every Flow counter read empty.
+    source_image_path: Optional[str] = None
     original_prompt: str
     prompt: str
     provider: str

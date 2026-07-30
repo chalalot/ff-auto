@@ -5,8 +5,9 @@ import { formatDistanceToNow } from 'date-fns'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { AlertTriangle, ArrowRight, Loader2, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Loader2, Type, Zap } from 'lucide-react'
 import { reviewApi } from '@/api/review'
+import { workspaceApi } from '@/api/workspace'
 import { toast } from '@/hooks/useToast'
 import { useActiveTasks } from '@/hooks/useActiveTasks'
 import { useReviewRequests } from '@/hooks/useReviewRequests'
@@ -21,6 +22,10 @@ import type { ReviewRequestItem } from '@/types/review'
 // legitimately run long, hence the split.
 const STALE_AFTER_MIN: Record<string, number> = { comfy_video: 90, kling: 90 }
 const DEFAULT_STALE_AFTER_MIN = 20
+
+// States the backend holds in the registry rather than pruning on sight — a
+// crashed run is kept for _FAILED_GRACE so it can be read and then cleared.
+const STOPPED_STATES = new Set(['FAILURE', 'SUCCESS', 'REVOKED'])
 
 const staleSince = (item: ReviewRequestItem): boolean => {
   if (!item.updated_at) return false
@@ -49,12 +54,19 @@ const DispatchedRow: React.FC<{ item: ReviewRequestItem }> = ({ item }) => {
   return (
     <Card className={stale ? 'border-destructive/40' : undefined}>
       <CardContent className="flex items-start gap-3 p-3">
-        <img
-          src={reviewApi.getThumbnailUrl(item.id)}
-          alt=""
-          className="h-12 w-12 shrink-0 rounded-md border bg-muted object-cover"
-          onError={e => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
-        />
+        {item.source_image_path ? (
+          <img
+            src={reviewApi.getThumbnailUrl(item.id)}
+            alt=""
+            className="h-12 w-12 shrink-0 rounded-md border bg-muted object-cover"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.visibility = 'hidden' }}
+          />
+        ) : (
+          // Text to image: no source image, so no thumbnail to ask for.
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-muted">
+            <Type className="h-4 w-4 text-muted-foreground/60" aria-hidden="true" />
+          </div>
+        )}
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
             {stale ? (
@@ -107,6 +119,7 @@ const DispatchedRow: React.FC<{ item: ReviewRequestItem }> = ({ item }) => {
 // pipeline, caption exports, direct ComfyUI runs) and review rows already
 // handed to a provider.
 export const GeneratingPanel: React.FC = () => {
+  const queryClient = useQueryClient()
   const { data: activeTasks = [] } = useActiveTasks()
   // Image work only — video generation is watched on the Video page.
   const { data: review } = useReviewRequests(IMAGE_PROVIDERS)
@@ -114,6 +127,14 @@ export const GeneratingPanel: React.FC = () => {
   const dispatched = (review?.items ?? []).filter(i => i.status === 'dispatched')
   const failed = review?.status_counts?.failed ?? 0
   const nothingRunning = activeTasks.length === 0 && dispatched.length === 0
+
+  // Crashed tasks are held for 15 minutes so they can be read. Once read, one
+  // click should clear the lot rather than an X per card.
+  const stoppedTasks = activeTasks.filter(t => STOPPED_STATES.has(t.state))
+  const clearStopped = useMutation({
+    mutationFn: () => Promise.all(stoppedTasks.map(t => workspaceApi.dismissActiveTask(t.task_id))),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['workspace', 'active-tasks'] }),
+  })
 
   return (
     <div className="space-y-4 px-4 py-4">
@@ -133,6 +154,24 @@ export const GeneratingPanel: React.FC = () => {
             <ArrowRight className="h-3 w-3" aria-hidden="true" />
           </span>
         </Link>
+      )}
+
+      {stoppedTasks.length > 1 && (
+        <div className="flex items-center justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={clearStopped.isPending}
+            onClick={() => clearStopped.mutate()}
+          >
+            {clearStopped.isPending ? (
+              <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Clearing…</>
+            ) : (
+              `Clear ${stoppedTasks.length} finished`
+            )}
+          </Button>
+        </div>
       )}
 
       {nothingRunning ? (

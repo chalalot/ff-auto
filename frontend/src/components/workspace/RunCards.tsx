@@ -50,12 +50,21 @@ export const InfoModal: React.FC<{ title: string; onClose: () => void; children:
 // the 5s global refresh.
 export const GlobalTaskCard: React.FC<{ task: ActiveTask }> = ({ task }) => {
   const { data: live } = useTaskProgress(task.task_id)
+  const queryClient = useQueryClient()
 
   const state = live?.state ?? task.state
   const statusMessage = live?.status_message ?? task.status_message
   const progress = live?.progress ?? task.progress
   const isCaptionExport = task.task_type === 'caption_export'
   const refFilename = isCaptionExport ? null : refFilenameFromPath(task.image_path)
+
+  // A stopped task is held in the shared registry so it can be read; this is how
+  // the reader clears it, for everyone, instead of waiting the grace period out.
+  const stopped = state === 'FAILURE' || state === 'SUCCESS' || state === 'REVOKED'
+  const dismissMutation = useMutation({
+    mutationFn: () => workspaceApi.dismissActiveTask(task.task_id),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['workspace', 'active-tasks'] }),
+  })
 
   return (
     <Card className={state === 'FAILURE' ? 'border-destructive' : state === 'SUCCESS' ? 'border-green-500' : ''}>
@@ -90,6 +99,18 @@ export const GlobalTaskCard: React.FC<{ task: ActiveTask }> = ({ task }) => {
               }>
                 {state}
               </Badge>
+              {stopped && (
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  title="Clear this from Generating"
+                  className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                  disabled={dismissMutation.isPending}
+                  onClick={() => dismissMutation.mutate()}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
           </div>
           {isCaptionExport && task.image_count != null && (

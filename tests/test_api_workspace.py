@@ -587,3 +587,35 @@ def test_fetch_image_pins_each_redirect_hop(client):
         "https://93.184.216.34/pic",
         "https://151.101.1.140/real.png",
     ]
+
+
+# ---- dismissing a stopped task ----
+
+def _patch_dismiss(**kwargs):
+    from backend.services.image_processing import ImageProcessingService
+    return patch.object(ImageProcessingService, "dismiss_task", **kwargs)
+
+
+def test_dismiss_active_task(client):
+    with _patch_dismiss(return_value=True) as dismiss:
+        r = client.delete("/api/workspace/active-tasks/boom")
+
+    assert r.status_code == 200
+    assert r.json() == {"task_id": "boom", "dismissed": True}
+    dismiss.assert_called_once_with("boom")
+
+
+def test_dismiss_active_task_conflict_while_running(client):
+    # 409, not a silent no-op: the caller asked to hide work that is still live.
+    with _patch_dismiss(side_effect=ValueError("task is still queueing")):
+        r = client.delete("/api/workspace/active-tasks/busy")
+
+    assert r.status_code == 409
+    assert "still queueing" in r.json()["detail"]
+
+
+def test_dismiss_active_task_unknown_id_404(client):
+    with _patch_dismiss(return_value=False):
+        r = client.delete("/api/workspace/active-tasks/ghost")
+
+    assert r.status_code == 404

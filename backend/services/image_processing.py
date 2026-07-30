@@ -396,6 +396,25 @@ class ImageProcessingService:
         tasks.sort(key=lambda x: x.get("dispatched_at") or 0, reverse=True)
         return tasks
 
+    def dismiss_task(self, task_id: str) -> bool:
+        """Remove a stopped task from the registry. False if it was not listed.
+
+        Raises ValueError for a task that is still working — the registry is the
+        shared live view, so dropping a running task would blind every client to
+        it, and it has no other home to be recovered from.
+        """
+        r = _redis_client()
+        if not r.sismember(_ACTIVE_TASKS_SET, task_id):
+            return False
+
+        state = AsyncResult(task_id, app=celery_app).state
+        if state not in ("SUCCESS", "FAILURE", "REVOKED"):
+            raise ValueError(f"task is still {state.lower()}")
+
+        r.srem(_ACTIVE_TASKS_SET, task_id)
+        r.delete(_TASK_META_PREFIX + task_id)
+        return True
+
     # ------------------------------------------------------------------
     # Reference image library (processed/ directory)
     # ------------------------------------------------------------------

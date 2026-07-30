@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -10,6 +10,7 @@ vi.mock('@/api/workspace', () => ({
   workspaceApi: {
     getRefImageThumbnailUrl: vi.fn((filename: string) => `/thumbs/${filename}`),
     getTaskStatus: vi.fn(),
+    dismissActiveTask: vi.fn(() => Promise.resolve({ dismissed: true })),
   },
 }))
 
@@ -58,6 +59,22 @@ describe('GlobalTaskCard', () => {
     const message = screen.getByText(/expected str, bytes/)
     expect(message.className).toContain('text-destructive')
     expect(screen.getByText('FAILURE')).toBeInTheDocument()
+  })
+
+  it('dismisses a failed task so the list can be cleaned', async () => {
+    const { workspaceApi } = await import('@/api/workspace')
+    renderCard(task({ state: 'FAILURE', status_message: 'google vision call failed: 503' }))
+
+    fireEvent.click(screen.getByLabelText('Dismiss'))
+
+    await waitFor(() => expect(workspaceApi.dismissActiveTask).toHaveBeenCalledWith('task-1'))
+  })
+
+  it('offers no dismiss while the task is still working', () => {
+    // Clearing live work would hide it from every client, not just this one.
+    renderCard(task())
+
+    expect(screen.queryByLabelText('Dismiss')).toBeNull()
   })
 
   it('shows a running task without error styling', () => {

@@ -11,7 +11,8 @@ export type ReviewStatus =
 export interface ReviewRequestItem {
   id: string
   batch_id: string
-  source_image_path: string
+  // Null for a text-to-image row: the prompt is the whole input.
+  source_image_path: string | null
   original_prompt: string
   prompt: string
   provider: ReviewProvider

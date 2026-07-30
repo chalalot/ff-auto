@@ -173,6 +173,9 @@ class _FakeRedis:
     def smembers(self, key):
         return set(self.members)
 
+    def sismember(self, key, member):
+        return member in self.members
+
     def srem(self, key, member):
         self.members.discard(member)
 
@@ -245,3 +248,28 @@ def test_active_tasks_still_prunes_a_succeeded_task(svc, monkeypatch):
 
     assert svc.get_active_tasks() == []
     assert redis.members == set()
+
+
+def test_dismiss_task_clears_a_failed_task(svc, monkeypatch):
+    from backend.services import image_processing as ip
+
+    redis = _registry(monkeypatch, "boom", "FAILURE", {"failed_at": 1.0})
+
+    assert svc.dismiss_task("boom") is True
+    assert redis.members == set()
+    assert ip._TASK_META_PREFIX + "boom" not in redis.meta
+
+
+def test_dismiss_task_refuses_a_running_task(svc, monkeypatch):
+    _registry(monkeypatch, "busy", "QUEUEING", {"dispatched_at": 1.0})
+
+    # Dropping live work would blind every client to it — the registry is the
+    # only place a dispatched task is recorded.
+    with pytest.raises(ValueError, match="still queueing"):
+        svc.dismiss_task("busy")
+
+
+def test_dismiss_task_reports_an_unknown_id(svc, monkeypatch):
+    _registry(monkeypatch, "known", "FAILURE", {"failed_at": 1.0})
+
+    assert svc.dismiss_task("never-heard-of-it") is False

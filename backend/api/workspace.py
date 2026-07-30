@@ -426,6 +426,24 @@ def list_active_tasks(svc: ImageProcessingService = Depends(get_image_processing
     return svc.get_active_tasks()
 
 
+@router.delete("/active-tasks/{task_id}")
+def dismiss_active_task(task_id: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
+    """Drop a finished task from the shared registry.
+
+    Only for tasks that have stopped: a failure is held for 15 minutes so it can
+    be read, and this is how the reader says they are done with it. Dismissing
+    live work would hide it from everyone, so that is refused rather than
+    silently ignored.
+    """
+    try:
+        dismissed = svc.dismiss_task(task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not dismissed:
+        raise HTTPException(status_code=404, detail="No such task in the registry")
+    return {"task_id": task_id, "dismissed": True}
+
+
 @router.get("/task/{task_id}/status", response_model=TaskStatusResponse)
 def task_status(task_id: str, svc: ImageProcessingService = Depends(get_image_processing_service)):
     return svc.get_task_status(task_id)
