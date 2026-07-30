@@ -1,0 +1,319 @@
+{
+  "19": {
+    "inputs": {
+      "samples": [
+        "29",
+        0
+      ],
+      "vae": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "20": {
+    "inputs": {
+      "images": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "21": {
+    "inputs": {
+      "text": "A full-body shot from extremely high angle above eye level and angled down, of a young adult Western woman in her early 20s. She has atypical small rounded oval face, almond-shaped pale eyes and long lashes, fair luminous skin, long voluminous wavy blonde hair, light natural makeup with muted red lips, neutral expression, her chin slightly lowered, face square to the lens, head level, looking directly at the camera. She is wearing a maroon lace-trim camisole under a maroon zip-up athletic jacket with white stripes on the sleeves draped off her shoulders, paired with distressed dark wash denim jeans and a delicate silver chain necklace with a small cherry charm. She is sitting on a wooden chair; a small black round table enters the bottom-left foreground containing a clear plastic cup of iced coffee and a red patent leather handbag, both heavily out of focus. The environment is an open-air rooftop bar with a grey tiled counter topped with liquor bottles and warm under-cabinet lighting, wooden bar stools, and a hazy city skyline in the far background dissolved into soft twilight bokeh. Lifestyle photography, digital editorial with subtle film grain and soft digital bloom, warm ambient twilight lighting mixed with artificial golden-yellow light from the bar, side-lit from the left creating soft shadows on the right side of her face, 35mm lens, f/2.8, shallow depth of field, sharp focus on the subject, warm muted color palette, moderate contrast, lifted blacks, fine grain.",
+      "clip": [
+        "25",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "22": {
+    "inputs": {
+      "samples": [
+        "27",
+        0
+      ],
+      "vae": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "23": {
+    "inputs": {
+      "images": [
+        "19",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "24": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "25": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "26": {
+    "inputs": {
+      "images": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "27": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 999515128589484,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "lcm",
+      "scheduler": "beta57",
+      "start_at_step": 0,
+      "end_at_step": 3,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "33",
+        0
+      ],
+      "positive": [
+        "21",
+        0
+      ],
+      "negative": [
+        "28",
+        0
+      ],
+      "latent_image": [
+        "63",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "28": {
+    "inputs": {
+      "conditioning": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "Conditioning Zero Out"
+    }
+  },
+  "29": {
+    "inputs": {
+      "add_noise": "enable",
+      "noise_seed": 41541363427,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "exp_heun_2_x0_sde",
+      "scheduler": "beta57",
+      "start_at_step": 3,
+      "end_at_step": 7,
+      "return_with_leftover_noise": "enable",
+      "model": [
+        "64",
+        0
+      ],
+      "positive": [
+        "21",
+        0
+      ],
+      "negative": [
+        "28",
+        0
+      ],
+      "latent_image": [
+        "27",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "30": {
+    "inputs": {
+      "add_noise": "disable",
+      "noise_seed": 83564327,
+      "steps": 10,
+      "cfg": 1,
+      "sampler_name": "res_2s",
+      "scheduler": "beta57",
+      "start_at_step": 7,
+      "end_at_step": 10000,
+      "return_with_leftover_noise": "disable",
+      "model": [
+        "64",
+        0
+      ],
+      "positive": [
+        "21",
+        0
+      ],
+      "negative": [
+        "28",
+        0
+      ],
+      "latent_image": [
+        "29",
+        0
+      ]
+    },
+    "class_type": "KSamplerAdvanced",
+    "_meta": {
+      "title": "KSampler (Advanced)"
+    }
+  },
+  "31": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "32": {
+    "inputs": {
+      "unet_name": "z_image_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "33": {
+    "inputs": {
+      "lora_name": "alibaba-pai__Z-Image-Fun-Lora-Distill__Z-Image-Fun-Lora-Distill-8-Steps-2603-ComfyUI.safetensors",
+      "strength_model": 0.4000000000000001,
+      "model": [
+        "32",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "34": {
+    "inputs": {
+      "samples": [
+        "30",
+        0
+      ],
+      "vae": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "35": {
+    "inputs": {
+      "filename_prefix": "Z-Image",
+      "images": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "38": {
+    "inputs": {
+      "opacity": 100,
+      "image": [
+        "34",
+        0
+      ],
+      "color_ref_image": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "LayerColor: ColorAdapter",
+    "_meta": {
+      "title": "LayerColor: ColorAdapter"
+    }
+  },
+  "63": {
+    "inputs": {
+      "width": 768,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "64": {
+    "inputs": {
+      "lora_name": "Macincesht__ff-loras__emi_v4.safetensors",
+      "strength_model": 1.15,
+      "model": [
+        "31",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  }
+}
