@@ -193,6 +193,102 @@ def test_run_direct_dispatches_task(client, input_png, monkeypatch, _temp_dirs):
     assert send.call_args.kwargs["kwargs"]["image_path"] == str(input_png)
 
 
+def test_run_direct_t2i_dispatches_one_run_without_an_image(client, monkeypatch, _temp_dirs):
+    """Text-to-image: no image_paths at all, so one run is dispatched with
+    image_path=None rather than none at all (the old min_length=1 made this a 422
+    and left the Process button permanently blocked on a selection)."""
+    import backend.pipelines as pipelines_pkg
+
+    monkeypatch.setattr(pipelines_pkg, "list_workflow_files", lambda: ["ZIB-ZIT.json"])
+    mock_task = MagicMock()
+    mock_task.id = "t2i-task-1"
+
+    with patch("backend.celery_app.celery_app.send_task", return_value=mock_task) as send:
+        r = client.post(
+            "/api/workspace/run-direct",
+            json={
+                "image_paths": [],
+                "workflow_name": "ZIB-ZIT.json",
+                "workflow_type": "image_generation",
+                "prompt": "a woman in a cafe, golden hour",
+            },
+        )
+    assert r.status_code == 200
+    assert r.json()["task_ids"] == ["t2i-task-1"]
+    kwargs = send.call_args.kwargs["kwargs"]
+    assert kwargs["image_path"] is None
+    assert kwargs["prompt"] == "a woman in a cafe, golden hour"
+
+
+def test_run_direct_rejects_neither_image_nor_prompt(client, monkeypatch):
+    """A request with no image and no prompt carries no input — reject it rather
+    than queue the bare graph."""
+    import backend.pipelines as pipelines_pkg
+
+    monkeypatch.setattr(pipelines_pkg, "list_workflow_files", lambda: ["ZIB-ZIT.json"])
+    with patch("backend.celery_app.celery_app.send_task") as send:
+        r = client.post(
+            "/api/workspace/run-direct",
+            json={"image_paths": [], "workflow_name": "ZIB-ZIT.json"},
+        )
+    assert r.status_code == 422
+    send.assert_not_called()
+
+    with patch("backend.celery_app.celery_app.send_task") as send:
+        r = client.post(
+            "/api/workspace/run-direct",
+            json={"image_paths": [], "workflow_name": "ZIB-ZIT.json", "prompt": "   "},
+        )
+    assert r.status_code == 422
+    send.assert_not_called()
+
+
+def test_run_workflow_direct_task_t2i_skips_the_comfy_upload(monkeypatch):
+    """The task must not try to upload a source image it doesn't have —
+    upload_image(None) would throw before ComfyUI ever saw the prompt."""
+    from backend import tasks as tasks_module
+
+    async def fail_upload(*args, **kwargs):  # pragma: no cover - must not run
+        raise AssertionError("upload_image called for a T2I run")
+
+    async def fake_queue_prompt(graph):
+        return "exec-t2i-1"
+
+    client_mock = MagicMock()
+    client_mock.upload_image = fail_upload
+    client_mock.queue_prompt = fake_queue_prompt
+    storage_mock = MagicMock()
+
+    injected = {}
+
+    monkeypatch.setattr(tasks_module, "get_instances", lambda: (MagicMock(), client_mock, storage_mock))
+    monkeypatch.setattr(
+        tasks_module.download_execution_task, "apply_async", lambda *a, **k: None
+    )
+    # Progress updates would go to the Redis result backend, which the test
+    # container has no reason to reach.
+    monkeypatch.setattr(
+        tasks_module.run_workflow_direct_task, "update_state", lambda **kwargs: None
+    )
+    with patch("backend.pipelines.load_workflow_template", return_value={"1": {"class_type": "CLIPTextEncode"}}), \
+         patch("backend.pipelines.patch_load_image") as patch_load, \
+         patch("backend.pipelines.image._inject_single_prompt",
+               side_effect=lambda graph, text: injected.update(prompt=text)):
+        result = tasks_module.run_workflow_direct_task.run(
+            image_path=None,
+            workflow_name="ZIB-ZIT.json",
+            workflow_type="image_generation",
+            prompt="a woman in a cafe",
+        )
+
+    assert result["success"] is True
+    assert result["execution_id"] == "exec-t2i-1"
+    # No image → nothing to patch into a LoadImage node either.
+    patch_load.assert_not_called()
+    assert injected["prompt"] == "a woman in a cafe"
+    assert storage_mock.log_execution.call_args.kwargs["image_ref_path"] is None
+
+
 def test_run_direct_unknown_workflow_404(client, input_png):
     r = client.post(
         "/api/workspace/run-direct",

@@ -395,6 +395,9 @@ def run_workflow_direct_task(
     Uploads the source image and patches it into the LoadImage node; ``prompt``
     (when given) is patched into the CLIPTextEncode node if the graph has one.
     All other node inputs come from the workflow JSON plus ``workflow_overrides``.
+
+    ``image_path`` is None for text-to-image, where the prompt is the whole
+    input and the graph has no LoadImage node to patch.
     """
     from backend.pipelines import (
         apply_workflow_overrides,
@@ -412,16 +415,17 @@ def run_workflow_direct_task(
     )
     workflow_data = load_workflow_template(workflow_name)
 
-    self.update_state(
-        state="UPLOADING",
-        meta={"status": "⬆️ Uploading image to ComfyUI...", "progress": 30},
-    )
-    uploaded_filename = asyncio.run(client.upload_image(image_path))
-    if not patch_load_image(workflow_data, uploaded_filename):
-        logger.warning(
-            f"[run_workflow_direct_task] {workflow_name} has no LoadImage node — "
-            "the selected image is ignored"
+    if image_path:
+        self.update_state(
+            state="UPLOADING",
+            meta={"status": "⬆️ Uploading image to ComfyUI...", "progress": 30},
         )
+        uploaded_filename = asyncio.run(client.upload_image(image_path))
+        if not patch_load_image(workflow_data, uploaded_filename):
+            logger.warning(
+                f"[run_workflow_direct_task] {workflow_name} has no LoadImage node — "
+                "the selected image is ignored"
+            )
 
     if prompt and prompt.strip():
         _inject_single_prompt(workflow_data, prompt.strip())

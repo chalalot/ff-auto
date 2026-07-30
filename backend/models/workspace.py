@@ -64,18 +64,30 @@ class ProcessBatchRequest(BaseModel):
 class RunWorkflowDirectRequest(BaseModel):
     """Direct ComfyUI submission — no prompt-writing agent, no review queue.
 
-    Used by the Image Upscaler and Multiangle-Edit workflow types (and by
-    Image Generation when the user supplies the prompt text themselves).
-    The image is uploaded to ComfyUI and patched into the LoadImage node;
+    Used by the Image Upscaler and Multiangle-Edit workflow types, by Image
+    Generation I2I when the user supplies the prompt text themselves, and by
+    Image Generation T2I, where the prompt is the whole input. An image (when
+    given) is uploaded to ComfyUI and patched into the LoadImage node;
     ``prompt`` (when given) is patched into the CLIPTextEncode node if the
     graph has one. Everything else is edited via ``workflow_overrides``.
     """
 
-    image_paths: List[str] = Field(min_length=1)
+    # Empty for text-to-image: a T2I graph has no LoadImage node, so there is
+    # nothing to select and one run is dispatched rather than one per image.
+    image_paths: List[str] = []
     workflow_name: str
     workflow_type: str = "image_upscaler"
     prompt: Optional[str] = None
     workflow_overrides: Dict[str, Dict[str, Any]] = {}
+
+    @model_validator(mode="after")
+    def _require_image_or_prompt(self):
+        # Neither an image nor a prompt means the request carries no input at
+        # all — previously impossible (image_paths had min_length=1), and worth
+        # rejecting loudly rather than silently queueing the bare graph.
+        if not self.image_paths and not (self.prompt and self.prompt.strip()):
+            raise ValueError("at least one of `image_paths` or `prompt` is required")
+        return self
 
 
 class TaskStatusResponse(BaseModel):

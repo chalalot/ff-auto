@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Play, Upload } from 'lucide-react'
 import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParametersPanel'
 import { ImageLibrary } from '@/components/workspace/ImageLibrary'
@@ -32,10 +33,12 @@ const WORKFLOW_TYPES: Array<{
   {
     value: 'image_generation',
     label: 'Image Generation',
+    // Nested one level further — see GENERATION_MODES, which supplies the real
+    // default workflow and hint for this type.
     defaultWorkflow: 'Z-image-control-net.json',
     usesText: true,
     usesAI: true,
-    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Leave the prompt empty to let the AI write it from the image.',
+    hint: '',
   },
   {
     value: 'image_upscaler',
@@ -58,6 +61,38 @@ const WORKFLOW_TYPES: Array<{
 const workflowTypeMeta = (value: string) =>
   WORKFLOW_TYPES.find(t => t.value === value) ?? WORKFLOW_TYPES[0]
 
+// Image Generation is the one type with two shapes of input. T2I needs a prompt
+// and nothing else; I2I needs a source image. Nothing about the mode is sent to
+// the server — it already tells the two apart by whether a source image is
+// present, so a mode field on the request would be a second source of truth.
+export type GenerationMode = 't2i' | 'i2i'
+
+const GENERATION_MODES: Array<{
+  value: GenerationMode
+  label: string
+  defaultWorkflow: string
+  needsImage: boolean
+  hint: string
+}> = [
+  {
+    value: 'i2i',
+    label: 'I2I — from a source image',
+    defaultWorkflow: 'Z-image-control-net.json',
+    needsImage: true,
+    hint: 'Image → LoadImage, prompt → CLIP Text Encode. Leave the prompt empty to let the AI write it from the image.',
+  },
+  {
+    value: 't2i',
+    label: 'T2I — prompt only',
+    defaultWorkflow: 'ZIB-ZIT.json',
+    needsImage: false,
+    hint: 'Prompt → CLIP Text Encode. A T2I graph has no LoadImage node, so there is no image to select.',
+  },
+]
+
+const generationModeMeta = (value: string) =>
+  GENERATION_MODES.find(m => m.value === value) ?? GENERATION_MODES[0]
+
 // Drop the `image` override from a node, removing the node entry when empty.
 const withoutImageOverride = (
   prev: Record<string, Record<string, unknown>>,
@@ -78,6 +113,11 @@ export const CreatePanel: React.FC = () => {
   // Unified library selection — all images live in processed/
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [config, setConfig] = useState<Omit<ProcessImageConfig, 'image_path'>>(DEFAULT_CONFIG)
+  const [genMode, setGenMode] = useState<GenerationMode>('i2i')
+  // T2I only: send the typed prompt to the prompt agent to be rewritten (via
+  // Prompt Review) instead of straight to ComfyUI. Off by default — what you
+  // type is what gets generated unless you ask for the rewrite.
+  const [enhancePrompt, setEnhancePrompt] = useState(false)
   const [promptText, setPromptText] = useState('')
   const [overrides, setOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const configInitializedRef = React.useRef(false)
@@ -88,10 +128,21 @@ export const CreatePanel: React.FC = () => {
   })
 
   const typeMeta = workflowTypeMeta(config.workflow_type)
-  // Selected workflow file: explicit choice → the type's default → first available.
+  const isImageGen = config.workflow_type === 'image_generation'
+  const modeMeta = generationModeMeta(genMode)
+  // Only Image Generation is nested; every other type runs on a source image.
+  const needsImage = !isImageGen || modeMeta.needsImage
+  const defaultWorkflow = isImageGen ? modeMeta.defaultWorkflow : typeMeta.defaultWorkflow
+  const prompt = promptText.trim()
+  // Which pipeline a Process press takes. I2I keeps today's rule (an empty
+  // prompt means "let the agent write one from the image"); T2I always has a
+  // prompt, so the checkbox is the only thing that can ask for the agent.
+  const useAIPipeline = isImageGen && (needsImage ? !prompt : enhancePrompt)
+
+  // Selected workflow file: explicit choice → the type/mode default → first available.
   const workflowName =
     (config.workflow_name && workflows.includes(config.workflow_name) && config.workflow_name) ||
-    (workflows.includes(typeMeta.defaultWorkflow) && typeMeta.defaultWorkflow) ||
+    (workflows.includes(defaultWorkflow) && defaultWorkflow) ||
     workflows[0] ||
     ''
   const {
@@ -170,19 +221,29 @@ export const CreatePanel: React.FC = () => {
 
   const effectivePaths = React.useMemo(
     () =>
-      selectedPaths.size > 0
-        ? Array.from(selectedPaths)
-        : overrideImagePath
-          ? [overrideImagePath]
-          : [],
-    [selectedPaths, overrideImagePath],
+      // T2I dispatches no image even if a selection or LoadImage pick lingers.
+      !needsImage
+        ? []
+        : selectedPaths.size > 0
+          ? Array.from(selectedPaths)
+          : overrideImagePath
+            ? [overrideImagePath]
+            : [],
+    [needsImage, selectedPaths, overrideImagePath],
   )
+
+  // What Process needs before it can run: an image, or — in T2I — a prompt.
+  const canDispatch = needsImage ? effectivePaths.length > 0 : prompt.length > 0
 
   // Load last used config on mount — runs once when query resolves
   React.useEffect(() => {
     if (!lastUsedLoaded) return
     if (lastUsed) {
       const knownType = WORKFLOW_TYPES.some(t => t.value === lastUsed.workflow_type)
+      if (GENERATION_MODES.some(m => m.value === lastUsed.generation_mode)) {
+        setGenMode(lastUsed.generation_mode as GenerationMode)
+      }
+      setEnhancePrompt(Boolean(lastUsed.enhance_prompt))
       setConfig(prev => ({
         ...prev,
         persona: lastUsed.persona || prev.persona,
@@ -206,10 +267,12 @@ export const CreatePanel: React.FC = () => {
         variations: config.variation_count,
         workflow_type: config.workflow_type,
         workflow_name: config.workflow_name || undefined,
+        generation_mode: genMode,
+        enhance_prompt: enhancePrompt,
       })
     }, 600)
     return () => clearTimeout(timer)
-  }, [config])
+  }, [config, genMode, enhancePrompt])
 
   // Set first persona as default
   React.useEffect(() => {
@@ -222,13 +285,34 @@ export const CreatePanel: React.FC = () => {
   const processMutation = useMutation({
     mutationFn: async () => {
       const paths = effectivePaths
-      const prompt = promptText.trim()
-      // Image Generation without a manual prompt → AI prompt pipeline.
-      // Everything else submits the workflow straight to ComfyUI.
-      const useAIPipeline = typeMeta.usesAI && !prompt
       let taskIds: string[]
       let runIds: Array<string | null>
-      if (!useAIPipeline) {
+      if (!needsImage) {
+        // T2I: one run, no source image. With the agent on, the typed text is a
+        // brief for it to write from (→ Prompt Review); with it off, the text is
+        // the prompt and goes straight to ComfyUI (→ Image Review).
+        if (useAIPipeline) {
+          const result = await workspaceApi.process({
+            ...config,
+            workflow_name: workflowName,
+            workflow_overrides: overrides,
+            brief: prompt,
+            skip_prepare: true,
+          })
+          taskIds = [result.task_id]
+          runIds = [result.run_id ?? null]
+        } else {
+          const result = await workspaceApi.runDirect({
+            image_paths: [],
+            workflow_name: workflowName,
+            workflow_type: config.workflow_type,
+            prompt,
+            workflow_overrides: overrides,
+          })
+          taskIds = result.task_ids
+          runIds = result.run_ids ?? []
+        }
+      } else if (!useAIPipeline) {
         const result = await workspaceApi.runDirect({
           image_paths: paths,
           workflow_name: workflowName,
@@ -322,6 +406,14 @@ export const CreatePanel: React.FC = () => {
     if (loadImageNodeId) setOverrides(prev => withoutImageOverride(prev, loadImageNodeId))
   }
 
+  const selectGenerationMode = (mode: GenerationMode) => {
+    setGenMode(mode)
+    setConfig(p => ({ ...p, workflow_name: generationModeMeta(mode).defaultWorkflow }))
+    // Leaving I2I hides the library, so drop the selection with it rather than
+    // keeping an invisible image that a later switch back would resurrect.
+    if (!generationModeMeta(mode).needsImage) clearSelection()
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (filename: string) => workspaceApi.deleteRefImage(filename),
     onSuccess: (_, filename) => {
@@ -359,8 +451,13 @@ export const CreatePanel: React.FC = () => {
             <Select
               value={config.workflow_type}
               onValueChange={(v) => {
-                const meta = workflowTypeMeta(v)
-                setConfig(p => ({ ...p, workflow_type: v, workflow_name: meta.defaultWorkflow }))
+                // Image Generation's default graph depends on the mode, so read
+                // it from there rather than from the type.
+                const next =
+                  v === 'image_generation'
+                    ? generationModeMeta(genMode).defaultWorkflow
+                    : workflowTypeMeta(v).defaultWorkflow
+                setConfig(p => ({ ...p, workflow_type: v, workflow_name: next }))
               }}
             >
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -370,8 +467,24 @@ export const CreatePanel: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">{typeMeta.hint}</p>
+            {!isImageGen && <p className="text-xs text-muted-foreground">{typeMeta.hint}</p>}
           </div>
+
+          {/* Mode — Image Generation's one nested choice: T2I or I2I */}
+          {isImageGen && (
+            <div className="space-y-2">
+              <Label>Mode</Label>
+              <Select value={genMode} onValueChange={(v) => selectGenerationMode(v as GenerationMode)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {GENERATION_MODES.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{modeMeta.hint}</p>
+            </div>
+          )}
 
           {/* Workflow JSON graph */}
           <div className="space-y-2">
@@ -389,17 +502,25 @@ export const CreatePanel: React.FC = () => {
             </Select>
           </div>
 
-          {/* Prompt text — goes to the CLIP Text Encode node (image gen / multiangle) */}
+          {/* Prompt text — goes to the CLIP Text Encode node (image gen / multiangle).
+              In T2I it is the only input, so it stops being optional. */}
           {typeMeta.usesText && (
             <div className="space-y-2">
               <Label>
-                Prompt <span className="text-muted-foreground text-xs">(optional)</span>
+                Prompt{' '}
+                <span className="text-muted-foreground text-xs">
+                  {needsImage ? '(optional)' : '(required)'}
+                </span>
               </Label>
               <Textarea
                 placeholder={
-                  typeMeta.usesAI
-                    ? 'Leave empty to let the AI write the prompt from the selected image'
-                    : 'Edit instruction, e.g. "rotate the camera to a low three-quarter view"'
+                  !needsImage
+                    ? enhancePrompt
+                      ? 'What you want, in your own words — the agent writes the final prompt'
+                      : 'The prompt, exactly as ComfyUI should receive it'
+                    : typeMeta.usesAI
+                      ? 'Leave empty to let the AI write the prompt from the selected image'
+                      : 'Edit instruction, e.g. "rotate the camera to a low three-quarter view"'
                 }
                 value={promptText}
                 onChange={(e) => setPromptText(e.target.value)}
@@ -408,8 +529,30 @@ export const CreatePanel: React.FC = () => {
             </div>
           )}
 
-          {/* AI prompt pipeline settings — Image Generation only */}
-          {typeMeta.usesAI && (
+          {/* T2I has no image for the agent to read, so using it is a choice
+              rather than a consequence of leaving the prompt empty. */}
+          {isImageGen && !needsImage && (
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <Checkbox
+                checked={enhancePrompt}
+                onCheckedChange={(v) => setEnhancePrompt(v === true)}
+                className="mt-0.5"
+              />
+              <span className="space-y-0.5">
+                <span className="block text-sm font-medium leading-none">Enhance with the prompt agent</span>
+                <span className="block text-xs text-muted-foreground">
+                  {enhancePrompt
+                    ? 'Your text is a brief. The agent rewrites it with the persona’s identity lock, and it lands in Prompt Review first.'
+                    : 'Your text goes to ComfyUI unchanged, straight to Image Review.'}
+                </span>
+              </span>
+            </label>
+          )}
+
+          {/* Prompt-agent settings — only when a press will actually use it:
+              always in I2I (an empty prompt hands over to the agent), and in
+              T2I only while the checkbox is on. */}
+          {isImageGen && (needsImage || enhancePrompt) && (
             <>
               <Separator />
 
@@ -426,9 +569,11 @@ export const CreatePanel: React.FC = () => {
                 </Select>
               </div>
 
-              {/* Vision Model */}
+              {/* The model that writes the prompt. It reads the image in I2I;
+                  in T2I there is nothing to look at, so don't call it a vision
+                  model there. */}
               <div className="space-y-2">
-                <Label>Vision Model</Label>
+                <Label>{needsImage ? 'Vision Model' : 'Prompt Model'}</Label>
                 <Select value={config.vision_model} onValueChange={(v) => setConfig(p => ({ ...p, vision_model: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -495,9 +640,14 @@ export const CreatePanel: React.FC = () => {
           ) : effectivePaths.length > 0 ? (
             <Badge variant="secondary">from Load Image</Badge>
           ) : null}
+          {/* T2I's blocker is an empty prompt, not an empty selection — say so,
+              since the sidebar is the only place that can unblock it. */}
+          {!canDispatch && !needsImage && (
+            <span className="text-xs text-muted-foreground">Write a prompt to enable Process</span>
+          )}
           <Button
             onClick={() => processMutation.mutate()}
-            disabled={effectivePaths.length === 0 || processMutation.isPending}
+            disabled={!canDispatch || processMutation.isPending}
             isLoading={processMutation.isPending}
           >
             <Play className="w-4 h-4 mr-2" />
@@ -505,6 +655,18 @@ export const CreatePanel: React.FC = () => {
           </Button>
         </div>
 
+        {!needsImage ? (
+          // T2I takes no source image, so the library would only be a decoy.
+          <div className="flex-1 flex items-center justify-center px-8">
+            <div className="max-w-sm text-center space-y-1.5">
+              <p className="text-sm font-medium">Text to image</p>
+              <p className="text-xs text-muted-foreground">
+                No source image needed — the prompt in the sidebar is the whole input.
+                Switch to I2I to generate from one of your images instead.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 overflow-auto px-4 py-4">
           {/* Upload zone */}
           <label
@@ -535,6 +697,7 @@ export const CreatePanel: React.FC = () => {
             onRefresh={() => refetchLibrary()}
           />
         </div>
+        )}
       </div>
     </div>
   )

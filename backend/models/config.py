@@ -14,6 +14,13 @@ class PresetConfig(BaseModel):
 class LastUsedConfig(BaseModel):
     persona: str = ""
     workflow_type: str = "image_generation"
+    # Image Generation is nested: "i2i" starts from a source image, "t2i" from
+    # the prompt alone. Unknown to the other workflow types, which always need
+    # an image. Listed here because the PUT is typed — a field missing from this
+    # model is silently dropped on save.
+    generation_mode: str = "i2i"
+    # T2I only: run the typed prompt through the prompt agent before generating.
+    enhance_prompt: bool = False
     workflow_name: str = ""
     vision_model: str = "gpt-4o"
     variations: int = 1

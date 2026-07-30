@@ -214,9 +214,12 @@ class ImageProcessingService:
         Used by the Image Upscaler / Multiangle-Edit workflow types (and manual
         prompts): the image goes to the LoadImage node, ``prompt`` to the
         CLIPTextEncode node, everything else via ``workflow_overrides``.
+
+        No images at all is text-to-image: one run, ``image_path=None``, and the
+        prompt is the only input.
         """
         dispatches = []
-        for image_path in image_paths:
+        for image_path in image_paths or [None]:
             task = celery_app.send_task(
                 "backend.tasks.run_workflow_direct_task",
                 kwargs={

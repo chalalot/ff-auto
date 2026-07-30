@@ -15,6 +15,9 @@ export interface LastUsedConfig {
   variations?: number
   workflow_type?: string
   workflow_name?: string
+  // Image Generation only: 't2i' | 'i2i' (see GENERATION_MODES in CreatePanel).
+  generation_mode?: string
+  enhance_prompt?: boolean
 }
 
 // Workspace types
@@ -92,11 +95,15 @@ export interface WorkflowSummary {
 }
 
 export interface ProcessImageConfig {
+  // Omitted for text-to-image, where `brief` is the only input.
   image_path?: string
   persona: string
   workflow_type: string
   vision_model: string
   variation_count: number
+  // Text the prompt agent writes *from* rather than a finished prompt. With no
+  // image_path this is the whole input (T2I with enhancement on).
+  brief?: string
   // Which workflows/*.json graph to build from.
   workflow_name?: string
   // Per-run node-input overrides: { node_id: { input_key: value } }.
