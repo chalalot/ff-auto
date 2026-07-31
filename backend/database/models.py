@@ -82,6 +82,9 @@ class ImageLog(Base):
     execution_id: Mapped[str] = mapped_column(Text, nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     persona: Mapped[Optional[str]] = mapped_column(Text)
+    # The workflow file this image was generated with, so the gallery can say
+    # which graph produced a result. Null on rows written before it was stored.
+    workflow_name: Mapped[Optional[str]] = mapped_column(Text)
     image_ref_path: Mapped[Optional[str]] = mapped_column(Text)
     result_image_path: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text, server_default="pending")

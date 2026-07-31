@@ -61,6 +61,66 @@ def test_extract_metadata_no_embed(svc, _temp_dirs):
     assert isinstance(meta["raw_metadata"], dict)
 
 
+def test_extract_metadata_names_the_workflow_and_its_note(
+    svc, _temp_dirs, tmp_path, monkeypatch,
+):
+    from backend.config import GlobalConfig
+    from backend.services import workflow_registry
+
+    make_png(_temp_dirs["OUTPUT_DIR"], "svc_wf.png")
+    monkeypatch.setattr(GlobalConfig, "PROMPTS_DIR", str(tmp_path), raising=False)
+    workflow_registry.save_entry(
+        "zib.json", {"kinds": [], "note": "Best for close-up portraits."},
+    )
+    monkeypatch.setattr(
+        svc.storage, "get_execution_by_result_path",
+        lambda path: {"execution_id": "e1", "workflow_name": "zib.json",
+                      "prompt": "p", "persona": "EMI"},
+    )
+
+    meta = svc.extract_metadata("svc_wf.png", status="pending")
+
+    assert meta["workflow"] == "zib.json"
+    assert meta["workflow_note"] == "Best for close-up portraits."
+
+
+def test_extract_metadata_falls_back_to_the_dispatching_request(
+    svc, _temp_dirs, monkeypatch,
+):
+    """Images predating image_logs.workflow_name still name their workflow."""
+    from backend.database import generation_requests_storage as grs
+
+    make_png(_temp_dirs["OUTPUT_DIR"], "svc_wf_old.png")
+    monkeypatch.setattr(
+        svc.storage, "get_execution_by_result_path",
+        lambda path: {"execution_id": "e-old", "workflow_name": None,
+                      "prompt": "p", "persona": None},
+    )
+
+    class FakeRequests:
+        def get_by_execution_id(self, execution_id):
+            assert execution_id == "e-old"
+            return {"workflow_name": "legacy.json"}
+
+    monkeypatch.setattr(grs, "GenerationRequestsStorage", FakeRequests)
+
+    meta = svc.extract_metadata("svc_wf_old.png", status="pending")
+
+    assert meta["workflow"] == "legacy.json"
+
+
+def test_extract_metadata_without_a_known_workflow(svc, _temp_dirs, monkeypatch):
+    make_png(_temp_dirs["OUTPUT_DIR"], "svc_wf_none.png")
+    monkeypatch.setattr(
+        svc.storage, "get_execution_by_result_path", lambda path: None,
+    )
+
+    meta = svc.extract_metadata("svc_wf_none.png", status="pending")
+
+    assert meta["workflow"] is None
+    assert meta["workflow_note"] == ""
+
+
 def test_approve_moves_file(svc, _temp_dirs):
     img = make_png(_temp_dirs["OUTPUT_DIR"], "svc_approve.png")
     result = svc.approve_images(["svc_approve.png"])

@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { CheckCircle, Loader2, Save } from 'lucide-react'
 import { workflowsApi } from '@/api/workflows'
@@ -40,6 +41,7 @@ export const WorkflowTagsPanel: React.FC<{
   const [selected, setSelected] = useState<string[]>([])
   const [promptNode, setPromptNode] = useState(DETECT)
   const [imageNode, setImageNode] = useState(DETECT)
+  const [note, setNote] = useState('')
 
   // Re-seed from the server whenever the file or its stored entry changes, so
   // switching workflows in the sidebar never shows the previous one's tags.
@@ -53,6 +55,7 @@ export const WorkflowTagsPanel: React.FC<{
     setSelected(stored?.kinds ?? [])
     setPromptNode(stored?.prompt_node || DETECT)
     setImageNode(stored?.image_node || DETECT)
+    setNote(stored?.note ?? '')
   }
 
   // `text` or `prompt` — a Qwen text node uses the latter.
@@ -62,7 +65,8 @@ export const WorkflowTagsPanel: React.FC<{
   const dirty =
     JSON.stringify([...selected].sort()) !== JSON.stringify([...(stored?.kinds ?? [])].sort()) ||
     promptNode !== (stored?.prompt_node || DETECT) ||
-    imageNode !== (stored?.image_node || DETECT)
+    imageNode !== (stored?.image_node || DETECT) ||
+    note !== (stored?.note ?? '')
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -70,6 +74,7 @@ export const WorkflowTagsPanel: React.FC<{
         kinds: selected,
         prompt_node: promptNode === DETECT ? null : promptNode,
         image_node: imageNode === DETECT ? null : imageNode,
+        note,
       }),
     onSuccess: () => {
       // The Create sidebar reads both of these to build its dropdowns.
@@ -179,6 +184,22 @@ export const WorkflowTagsPanel: React.FC<{
             )}
           </div>
         </div>
+      </div>
+
+      <div className="space-y-3 border-t pt-4">
+        <div>
+          <Label>Note</Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            What this workflow is best at, and anything to watch out for. Shown
+            next to the workflow name on every image it produced.
+          </p>
+        </div>
+        <Textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="e.g. Best for close-up portraits; washes out wide shots."
+          className="min-h-[80px] text-sm"
+        />
       </div>
 
       <div className="flex items-center gap-2 border-t pt-4">

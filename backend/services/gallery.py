@@ -160,7 +160,15 @@ class GalleryService:
 
     def extract_metadata(self, filename: str, status: str = "pending") -> dict:
         path = self._dir_for_status(status) / filename
-        metadata = {"seed": None, "prompt": None, "persona": None, "ref_image": None, "raw_metadata": {}}
+        metadata = {
+            "seed": None,
+            "prompt": None,
+            "persona": None,
+            "workflow": None,
+            "workflow_note": "",
+            "ref_image": None,
+            "raw_metadata": {},
+        }
 
         try:
             with Image.open(path) as img:
@@ -209,10 +217,43 @@ class GalleryService:
                 ref_path = record.get("image_ref_path")
                 if ref_path and Path(ref_path).exists():
                     metadata["ref_image"] = ref_path
+                metadata["workflow"] = self._workflow_for(record)
         except Exception as e:
             logger.debug(f"Could not look up DB record for {filename}: {e}")
 
+        if metadata["workflow"]:
+            try:
+                from backend.services.workflow_registry import get_note
+
+                metadata["workflow_note"] = get_note(metadata["workflow"])
+            except Exception as e:
+                logger.debug(f"Could not read note for {metadata['workflow']}: {e}")
+
         return metadata
+
+    def _workflow_for(self, record: dict) -> Optional[str]:
+        """The workflow file behind an execution.
+
+        Images generated before ``image_logs.workflow_name`` existed have it
+        empty; for those, the review-queue row that dispatched the execution
+        still knows, so fall back to it rather than showing nothing.
+        """
+        name = record.get("workflow_name")
+        if name:
+            return name
+        execution_id = record.get("execution_id")
+        if not execution_id:
+            return None
+        try:
+            from backend.database.generation_requests_storage import (
+                GenerationRequestsStorage,
+            )
+
+            request = GenerationRequestsStorage().get_by_execution_id(execution_id)
+            return (request or {}).get("workflow_name")
+        except Exception as e:
+            logger.debug(f"Could not resolve workflow for {execution_id}: {e}")
+            return None
 
     def get_ref_image(self, filename: str, status: str = "pending") -> Optional[bytes]:
         path = self._dir_for_status(status) / filename

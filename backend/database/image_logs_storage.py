@@ -18,6 +18,7 @@ def _row_dict(row: ImageLog) -> dict:
         "execution_id": row.execution_id,
         "prompt": row.prompt,
         "persona": row.persona,
+        "workflow_name": row.workflow_name,
         "image_ref_path": row.image_ref_path,
         "result_image_path": row.result_image_path,
         "status": row.status,
@@ -34,7 +35,7 @@ class ImageLogsStorage:
         """Initialize storage. Schema is owned by Alembic."""
         pass
 
-    def log_execution(self, execution_id: str, prompt: str, image_ref_path: str = None, persona: str = None, project_id: str = None, created_by_member_id: str = None) -> int:
+    def log_execution(self, execution_id: str, prompt: str, image_ref_path: str = None, persona: str = None, project_id: str = None, created_by_member_id: str = None, workflow_name: str = None) -> int:
         """
         Log a new execution.
 
@@ -47,6 +48,7 @@ class ImageLogsStorage:
                     execution_id=execution_id,
                     prompt=prompt,
                     persona=persona,
+                    workflow_name=workflow_name,
                     image_ref_path=image_ref_path,
                     result_image_path=None,
                     status="pending",

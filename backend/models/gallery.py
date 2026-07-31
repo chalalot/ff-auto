@@ -57,5 +57,9 @@ class ImageMetadata(BaseModel):
     seed: Optional[int] = None
     prompt: Optional[str] = None
     persona: Optional[str] = None
+    # Which workflow file produced the image, and the operator's note about it.
+    # Null on images generated before the name was recorded.
+    workflow: Optional[str] = None
+    workflow_note: str = ""
     ref_image: Optional[str] = None
     raw_metadata: dict = {}

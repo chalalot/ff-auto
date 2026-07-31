@@ -9,13 +9,15 @@ Modes under it (``image_generation`` → I2I / T2I). ``needs_image``,
 ``uses_text`` and ``uses_ai`` are what the sidebar reads to decide which
 controls to show and whether Process may fire without a selected image.
 
-**Tags and bindings** — per workflow file: which kinds it can serve (so the
+**Tags, bindings and notes** — per workflow file: which kinds it can serve (so the
 Workflow dropdown can be filtered to the ones that fit) and, optionally, which
 node the prompt and the source image are written into. The bindings exist
 because auto-detection has to guess: it takes the first ``CLIPTextEncode`` with
 a literal ``text`` input, which is the negative prompt in about half the graphs
 that have two. A binding is an override, not a requirement — with none set,
-detection behaves exactly as it did before.
+detection behaves exactly as it did before. The note is free text the operator
+writes about the file ("best for close-up portraits"), shown wherever a result
+names the workflow that produced it.
 
 Stored as one JSON file in PROMPTS_DIR alongside ``options.json``, which is the
 directory this deployment already bind-mounts for live-editable config.
@@ -198,7 +200,7 @@ def save_kinds(kinds: Any) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def _blank_entry() -> Dict[str, Any]:
-    return {"kinds": [], "prompt_node": None, "image_node": None}
+    return {"kinds": [], "prompt_node": None, "image_node": None, "note": ""}
 
 
 def get_tags() -> Dict[str, Dict[str, Any]]:
@@ -222,6 +224,7 @@ def _clean_entry(raw: Dict[str, Any]) -> Dict[str, Any]:
         "kinds": [str(k) for k in kinds if isinstance(k, (str, int))] if isinstance(kinds, list) else [],
         "prompt_node": node("prompt_node"),
         "image_node": node("image_node"),
+        "note": str(raw.get("note") or "").strip(),
     }
 
 
@@ -231,10 +234,14 @@ def get_entry(workflow_name: str) -> Dict[str, Any]:
 
 
 def save_entry(workflow_name: str, entry: Any) -> Dict[str, Any]:
-    """Store one workflow's tags and bindings. Returns the stored entry."""
+    """Store one workflow's tags, bindings and note. Returns the stored entry."""
     if not isinstance(entry, dict):
         raise RegistryValidationError("Entry must be an object")
     cleaned = _clean_entry(entry)
+    # A caller that never mentions the note keeps the stored one, so a client
+    # that predates notes — or only means to set bindings — can't erase one.
+    if "note" not in entry:
+        cleaned["note"] = get_entry(workflow_name)["note"]
 
     known = {k["value"] for k in get_kinds()}
     unknown = [k for k in cleaned["kinds"] if k not in known]
@@ -276,6 +283,17 @@ def delete_entry(workflow_name: str) -> None:
     del workflows[workflow_name]
     data["workflows"] = workflows
     _write(data)
+
+
+def get_note(workflow_name: Optional[str]) -> str:
+    """The free-text note for a workflow — what it is good for, gotchas, etc.
+
+    Read on every gallery metadata lookup, so a result can say what the graph
+    behind it is for. Written only through :func:`save_entry`.
+    """
+    if not workflow_name:
+        return ""
+    return get_entry(workflow_name)["note"]
 
 
 def get_bindings(workflow_name: Optional[str]) -> Tuple[Optional[str], Optional[str]]:

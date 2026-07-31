@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Slider } from '@/components/ui/slider'
 import { archiveApi } from '@/api/archive'
+import { ImageMetadataDetails } from '@/components/gallery/ImageMetadataDetails'
 import { useProjectId } from '@/hooks/useProjectId'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -385,40 +386,7 @@ const ArchiveDetailModal: React.FC<ArchiveDetailModalProps> = ({
 
         {/* Metadata */}
         <div className="mt-4 space-y-3">
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading metadata...
-            </div>
-          )}
-          {!loading && metadata && (
-            <>
-              {metadata.persona && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Persona</p>
-                  <p className="text-sm">{metadata.persona}</p>
-                </div>
-              )}
-              {metadata.seed != null && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Seed</p>
-                  <p className="text-sm font-mono">{metadata.seed}</p>
-                </div>
-              )}
-              {metadata.prompt && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Prompt</p>
-                  <p className="text-sm whitespace-pre-wrap break-words">
-                    {metadata.prompt}
-                  </p>
-                </div>
-              )}
-              {!metadata.persona && metadata.seed == null && !metadata.prompt && (
-                <p className="text-sm text-muted-foreground">
-                  No metadata available
-                </p>
-              )}
-            </>
-          )}
+          <ImageMetadataDetails metadata={metadata} loading={loading} />
         </div>
       </div>
     </div>

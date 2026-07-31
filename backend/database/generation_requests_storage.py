@@ -259,6 +259,19 @@ class GenerationRequestsStorage:
             ).scalars().first()
             return _row_dict(row) if row else None
 
+    def get_by_execution_id(self, execution_id: str) -> Optional[dict]:
+        """The request that produced an execution, whatever state it ended in.
+
+        A batch dispatches one request per execution, so this is unambiguous.
+        """
+        with session_scope() as session:
+            row = session.execute(
+                select(GenerationRequest)
+                .where(GenerationRequest.execution_id == execution_id)
+                .order_by(GenerationRequest.created_at.desc())
+            ).scalars().first()
+            return _row_dict(row) if row else None
+
     def mark_completed_by_execution(
         self, execution_id: str, result_path: Optional[str] = None
     ) -> bool:

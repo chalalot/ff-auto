@@ -16,6 +16,7 @@ import {
   useApproveImages, useDisapproveImages, useUndoImages, useDeleteImages
 } from '@/hooks/useGalleryImages'
 import { galleryApi, type GalleryStatus } from '@/api/gallery'
+import { ImageMetadataDetails } from '@/components/gallery/ImageMetadataDetails'
 import { useProjectId } from '@/hooks/useProjectId'
 import { useMutation } from '@tanstack/react-query'
 import { formatDistanceToNow } from 'date-fns'
@@ -446,36 +447,7 @@ const ImageDetailModal: React.FC<ImageDetailModalProps> = ({ image, status, onCl
             </div>
 
             <div className="space-y-3">
-              {loading && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading metadata...
-                </div>
-              )}
-              {!loading && metadata && (
-                <>
-                  {metadata.persona && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">Persona</p>
-                      <p className="text-sm">{metadata.persona}</p>
-                    </div>
-                  )}
-                  {metadata.seed != null && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">Seed</p>
-                      <p className="text-sm font-mono">{metadata.seed}</p>
-                    </div>
-                  )}
-                  {metadata.prompt && (
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-0.5">Prompt</p>
-                      <p className="text-sm whitespace-pre-wrap break-words">{metadata.prompt}</p>
-                    </div>
-                  )}
-                  {!metadata.persona && metadata.seed == null && !metadata.prompt && (
-                    <p className="text-sm text-muted-foreground">No metadata available</p>
-                  )}
-                </>
-              )}
+              <ImageMetadataDetails metadata={metadata} loading={loading} />
             </div>
           </TabsContent>
 

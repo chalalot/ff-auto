@@ -181,12 +181,14 @@ class WorkflowTagEntry(BaseModel):
     """Which kinds a workflow file can serve, and where its inputs go.
 
     ``prompt_node`` / ``image_node`` are node ids from this graph. Left unset,
-    the dispatcher detects them as it always has.
+    the dispatcher detects them as it always has. ``note`` is the operator's
+    free-text description of what the workflow is good for.
     """
 
     kinds: List[str] = []
     prompt_node: Optional[str] = None
     image_node: Optional[str] = None
+    note: str = ""
 
 
 class WorkflowGraphResponse(BaseModel):

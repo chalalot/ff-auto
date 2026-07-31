@@ -471,6 +471,7 @@ def run_workflow_direct_task(
         persona=None,
         project_id=project_id,
         created_by_member_id=created_by_member_id,
+        workflow_name=workflow_name,
     )
     download_execution_task.apply_async(
         args=[execution_id, image_path],
@@ -735,6 +736,7 @@ def dispatch_generation_request_task(self, request_id: str):
                 persona=settings.get("persona"),
                 project_id=row.get("project_id"),
                 created_by_member_id=row.get("created_by_member_id"),
+                workflow_name=row["workflow_name"],
             )
             download_execution_task.apply_async(
                 args=[execution_id, row["source_image_path"]],

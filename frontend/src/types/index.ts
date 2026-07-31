@@ -98,6 +98,8 @@ export interface WorkflowTagEntry {
   prompt_node?: string | null
   /** Node id the source image is written to; null means detect. */
   image_node?: string | null
+  /** Free text on what the workflow is good for. Empty when never written. */
+  note?: string
 }
 
 /** filename → entry. Untagged files are absent, not empty. */
@@ -195,7 +197,10 @@ export interface GalleryImage {
 export interface ImageMetadata {
   seed?: number
   prompt?: string
-  workflow?: string
+  /** Workflow file that produced the image; absent on older results. */
+  workflow?: string | null
+  /** The operator's note about that workflow, editable from the detail view. */
+  workflow_note?: string
   persona?: string
   ref_image?: string
 }

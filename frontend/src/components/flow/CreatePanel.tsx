@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider'
 import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2, Play, Upload } from 'lucide-react'
+import { Info, Loader2, Play, Upload } from 'lucide-react'
 import { WorkflowParametersPanel } from '@/components/workspace/WorkflowParametersPanel'
 import { ImageLibrary } from '@/components/workspace/ImageLibrary'
 import { resolveDroppedFiles, uploadErrorMessage } from '@/lib/uploads'
@@ -97,6 +97,8 @@ export const CreatePanel: React.FC = () => {
     [workflows, tags, kind.value],
   )
   const workflowName = pickWorkflow(choices, config.workflow_name || undefined)
+  // What the operator wrote about this file — what it is good at, what to avoid.
+  const workflowNote = tags[workflowName]?.note ?? ''
   const {
     data: workflowParams = null,
     isLoading: paramsLoading,
@@ -473,6 +475,14 @@ export const CreatePanel: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
+            {/* The note is written in the gallery or Configure › Workflows;
+                here it is only read, to inform the pick above. */}
+            {workflowNote && (
+              <p className="flex gap-1.5 text-xs text-muted-foreground">
+                <Info className="mt-0.5 h-3 w-3 shrink-0" />
+                <span className="whitespace-pre-wrap break-words">{workflowNote}</span>
+              </p>
+            )}
             {choices.matching.length === 0 && choices.untagged.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 No workflow is tagged “{kind.label}” yet — tag one in Configure › Workflows and

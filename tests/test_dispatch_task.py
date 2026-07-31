@@ -52,6 +52,8 @@ def test_dispatch_comfy_image(storage):
     assert fake_client.captured["positive_prompt"] == "a prompt"
     assert fake_client.captured["pipeline_type"] == "image.subject_environment"
     fake_image_storage.log_execution.assert_called_once()
+    # The gallery names the workflow behind a result from this row.
+    assert fake_image_storage.log_execution.call_args.kwargs["workflow_name"] == "wf.json"
     mock_dl.assert_called_once()
     row = storage.get_request(rid)
     assert row["status"] == "dispatched"
